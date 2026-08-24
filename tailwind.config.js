@@ -1,7 +1,6 @@
-```js
-import tailwindcssAnimate from 'tailwindcss-animate';
+const tailwindcssAnimate = require('tailwindcss-animate');
 
-export default {
+module.exports = {
   darkMode: ['class'],
 
   content: [
@@ -104,4 +103,3 @@ export default {
     tailwindcssAnimate,
   ],
 };
-```
