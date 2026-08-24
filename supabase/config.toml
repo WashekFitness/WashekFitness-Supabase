@@ -1,0 +1,7 @@
+project_id = ""
+
+[functions.ai-generate]
+verify_jwt = true
+
+[functions.send-contact-email]
+verify_jwt = true
