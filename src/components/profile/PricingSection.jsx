@@ -1,5 +1,10 @@
-```jsx
-import { Check, Zap, Crown, Flame } from 'lucide-react';
+import {
+  Check,
+  Zap,
+  Crown,
+  Flame,
+} from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,16 +15,23 @@ const plans = [
   {
     name: 'Progress',
     planKey: 'progress',
-    paymentLink: `https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600?client_reference_id=progress&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=progress'
-    )}`,
+
+    paymentLink:
+      `https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600?client_reference_id=progress&success_url=${encodeURIComponent(
+        APP_URL +
+          '/subscription-return?plan=progress'
+      )}`,
+
     price: '$7.99',
     period: '/mo',
+
     icon: Flame,
     color: 'text-accent',
     borderColor: 'border-accent/30',
     bgColor: 'bg-accent/5',
+
     badge: null,
+
     features: [
       '300 Kael AI messages/month',
       'Smarter, faster AI responses',
@@ -33,16 +45,23 @@ const plans = [
   {
     name: 'Performance',
     planKey: 'performance',
-    paymentLink: `https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601?client_reference_id=performance&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=performance'
-    )}`,
+
+    paymentLink:
+      `https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601?client_reference_id=performance&success_url=${encodeURIComponent(
+        APP_URL +
+          '/subscription-return?plan=performance'
+      )}`,
+
     price: '$14.99',
     period: '/mo',
+
     icon: Zap,
     color: 'text-primary',
     borderColor: 'border-primary/40',
     bgColor: 'bg-primary/5',
+
     badge: 'Most Popular',
+
     features: [
       '800 Kael AI messages/month',
       'Advanced coaching + progressive overload tracking',
@@ -51,6 +70,7 @@ const plans = [
       'Nutrition insights & suggestions',
       'Workout analytics dashboard',
     ],
+
     disclaimer:
       '* AI body fat estimates are approximations only and may not be fully accurate.',
   },
@@ -58,22 +78,28 @@ const plans = [
   {
     name: 'Elite',
     planKey: 'elite',
-    paymentLink: `https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602?client_reference_id=elite&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=elite'
-    )}`,
+
+    paymentLink:
+      `https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602?client_reference_id=elite&success_url=${encodeURIComponent(
+        APP_URL +
+          '/subscription-return?plan=elite'
+      )}`,
+
     price: '$24.99',
     period: '/mo',
+
     icon: Crown,
     color: 'text-chart-4',
     borderColor: 'border-chart-4/40',
     bgColor: 'bg-chart-4/5',
+
     badge: 'Best',
 
     features: [
       '2,000 Kael AI messages/month',
       'Highest-level AI, fastest responses',
 
-      // ELITE-ONLY
+      // IMPORTANT:
       'Real-time workout adjustments',
 
       'Form Analysis: AI calisthenics form analysis with video',
@@ -97,7 +123,9 @@ export default function PricingSection() {
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        Unlock the full Washek experience.
+        The Live Workout Tracker is free for everyone.
+        Elite adds real-time program adjustments based
+        on workout performance.
       </p>
 
       {plans.map((plan) => {
@@ -175,14 +203,8 @@ export default function PricingSection() {
       })}
 
       <p className="text-[10px] text-muted-foreground text-center">
-        The Live Workout Tracker is available to everyone.
-        Elite unlocks real-time AI workout adjustments.
-      </p>
-
-      <p className="text-[10px] text-muted-foreground text-center">
         Cancel anytime. Billed monthly.
       </p>
     </div>
   );
 }
-```
