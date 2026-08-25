@@ -1,173 +1,50 @@
-```css
-@import "tailwindcss";
+# src/index.css
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
-@theme {
-  --font-heading: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
-
-  --color-background: hsl(220 20% 4%);
-  --color-foreground: hsl(210 20% 95%);
-  --color-card: hsl(220 18% 7%);
-  --color-card-foreground: hsl(210 20% 95%);
-  --color-popover: hsl(220 18% 7%);
-  --color-popover-foreground: hsl(210 20% 95%);
-  --color-primary: hsl(210 100% 56%);
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-secondary: hsl(220 15% 13%);
-  --color-secondary-foreground: hsl(210 20% 85%);
-  --color-muted: hsl(220 15% 11%);
-  --color-muted-foreground: hsl(220 10% 50%);
-  --color-accent: hsl(160 84% 45%);
-  --color-accent-foreground: hsl(0 0% 100%);
-  --color-destructive: hsl(0 72% 55%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(220 15% 15%);
-  --color-input: hsl(220 15% 15%);
-  --color-ring: hsl(210 100% 56%);
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --font-heading: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
-
-  --background: 220 20% 4%;
-  --foreground: 210 20% 95%;
-  --card: 220 18% 7%;
-  --card-foreground: 210 20% 95%;
-  --popover: 220 18% 7%;
-  --popover-foreground: 210 20% 95%;
-  --primary: 210 100% 56%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 15% 13%;
-  --secondary-foreground: 210 20% 85%;
-  --muted: 220 15% 11%;
-  --muted-foreground: 220 10% 50%;
-  --accent: 160 84% 45%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 55%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 220 15% 15%;
-  --input: 220 15% 15%;
-  --ring: 210 100% 56%;
-  --radius: 0.75rem;
+font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+color: #111827;
+background: #ffffff;
+font-synthesis: none;
+text-rendering: optimizeLegibility;
+-webkit-font-smoothing: antialiased;
+-moz-osx-font-smoothing: grayscale;
 }
 
-.dark {
-  --background: 220 20% 4%;
-  --foreground: 210 20% 95%;
-  --card: 220 18% 7%;
-  --card-foreground: 210 20% 95%;
-  --popover: 220 18% 7%;
-  --popover-foreground: 210 20% 95%;
-  --primary: 210 100% 56%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 15% 13%;
-  --secondary-foreground: 210 20% 85%;
-  --muted: 220 15% 11%;
-  --muted-foreground: 220 10% 50%;
-  --accent: 160 84% 45%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 55%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 220 15% 15%;
-  --input: 220 15% 15%;
-  --ring: 210 100% 56%;
+html,
+body,
+#root {
+min-height: 100%;
+width: 100%;
+margin: 0;
+padding: 0;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not(.dark) {
-    --background: 0 0% 97%;
-    --foreground: 220 20% 8%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 8%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 8%;
-    --primary: 210 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 15% 92%;
-    --secondary-foreground: 220 20% 20%;
-    --muted: 220 15% 93%;
-    --muted-foreground: 220 10% 45%;
-    --accent: 160 84% 38%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 50%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 15% 86%;
-    --input: 220 15% 86%;
-    --ring: 210 100% 50%;
-  }
+body {
+min-height: 100vh;
+background: #ffffff;
 }
 
-.light {
-  --background: 0 0% 97%;
-  --foreground: 220 20% 8%;
-  --card: 0 0% 100%;
-  --card-foreground: 220 20% 8%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 220 20% 8%;
-  --primary: 210 100% 50%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 15% 92%;
-  --secondary-foreground: 220 20% 20%;
-  --muted: 220 15% 93%;
-  --muted-foreground: 220 10% 45%;
-  --accent: 160 84% 38%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 50%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 220 15% 86%;
-  --input: 220 15% 86%;
-  --ring: 210 100% 50%;
-}
-
-@layer base {
-  * {
-    box-sizing: border-box;
-    border-color: hsl(var(--border));
-    outline-color: hsl(var(--ring) / 0.5);
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
+* {
+  box-sizing: border-box;
   }
 
-  html,
-  body,
-  #root {
-    min-height: 100%;
-    margin: 0;
-  }
-
-  body {
-    background: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: var(--font-body);
-    overscroll-behavior: none;
-  }
-
-  button,
-  a,
-  svg {
-    user-select: none;
-    -webkit-user-select: none;
-  }
+button,
+input,
+textarea,
+select {
+font: inherit;
 }
 
-.safe-top {
-  padding-top: max(3rem, env(safe-area-inset-top));
+button {
+cursor: pointer;
 }
 
-.safe-bottom {
-  padding-bottom: max(6rem, calc(env(safe-area-inset-bottom) + 5rem));
+img,
+svg {
+display: block;
+max-width: 100%;
 }
-
-@media (min-width: 640px) {
-  .safe-bottom {
-    padding-bottom: 1.5rem;
-  }
-}
-
-.pb-safe {
-  padding-bottom: max(6rem, calc(env(safe-area-inset-bottom) + 5rem));
-}
-```
