@@ -4,14 +4,14 @@ import { supabase } from '@/lib/supabase';
 const MEDIA_BUCKET =
   import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || 'user-media';
 
-const AI_FUNCTION =
-  import.meta.env.VITE_SUPABASE_AI_FUNCTION || 'ai-generate';
+const AI_FUNCTION = 'ai-generate';
 
 const EMAIL_FUNCTION =
   import.meta.env.VITE_SUPABASE_EMAIL_FUNCTION || 'send-contact-email';
 
 function errorFrom(error, fallback = 'Supabase request failed.') {
   if (!error) return new Error(fallback);
+
   if (error instanceof Error) return error;
 
   return new Error(
@@ -23,10 +23,7 @@ function errorFrom(error, fallback = 'Supabase request failed.') {
 }
 
 async function requireUser() {
-  const {
-    data,
-    error,
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
 
   if (error) {
     throw errorFrom(
@@ -36,19 +33,14 @@ async function requireUser() {
   }
 
   if (!data?.user) {
-    throw new Error(
-      'You must be signed in to do that.'
-    );
+    throw new Error('You must be signed in to do that.');
   }
 
   return data.user;
 }
 
 async function getProfile(userId) {
-  const {
-    data,
-    error,
-  } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -77,9 +69,7 @@ function normalizeUser(authUser, profile) {
 
   const fullName =
     profile.full_name ||
-    [firstName, lastName]
-      .filter(Boolean)
-      .join(' ') ||
+    [firstName, lastName].filter(Boolean).join(' ') ||
     authUser.user_metadata?.full_name ||
     authUser.email ||
     'Athlete';
@@ -91,9 +81,7 @@ function normalizeUser(authUser, profile) {
       profile.role ||
       authUser.user_metadata?.role ||
       'user',
-
     ...profile,
-
     first_name: firstName,
     last_name: lastName,
     full_name: fullName,
@@ -101,10 +89,7 @@ function normalizeUser(authUser, profile) {
 }
 
 async function currentUser() {
-  const {
-    data,
-    error,
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
 
   if (error) {
     throw errorFrom(
@@ -119,10 +104,7 @@ async function currentUser() {
 
   const profile = await getProfile(data.user.id);
 
-  return normalizeUser(
-    data.user,
-    profile
-  );
+  return normalizeUser(data.user, profile);
 }
 
 const ORDER_ALIASES = {
@@ -133,19 +115,14 @@ const ORDER_ALIASES = {
 function applyFilters(query, filters = {}, userId) {
   let q = query;
 
-  const entries = Object.entries(
-    filters || {}
-  );
+  const entries = Object.entries(filters || {});
 
   for (const [key, value] of entries) {
     if (key === 'created_by') {
       continue;
     }
 
-    if (
-      value === undefined ||
-      value === null
-    ) {
+    if (value === undefined || value === null) {
       continue;
     }
 
@@ -165,22 +142,19 @@ function applyFilters(query, filters = {}, userId) {
 
 function entity(table) {
   return {
-    async list(
-      sort = '-created_at',
-      limit = 100
-    ) {
+    async list(sort = '-created_at', limit = 100) {
       const user = await requireUser();
 
+      const sortKey = sort.startsWith('-')
+        ? sort.slice(1)
+        : sort;
+
       const column =
-        ORDER_ALIASES[
-          sort.replace(/^-/, '')
-        ] ||
-        sort.replace(/^-/, '');
+        ORDER_ALIASES[sortKey] || sortKey;
 
-      const ascending =
-        !sort.startsWith('-');
+      const ascending = !sort.startsWith('-');
 
-      let q = supabase
+      let query = supabase
         .from(table)
         .select('*')
         .eq('user_id', user.id)
@@ -189,13 +163,10 @@ function entity(table) {
         });
 
       if (Number.isFinite(limit)) {
-        q = q.limit(limit);
+        query = query.limit(limit);
       }
 
-      const {
-        data,
-        error,
-      } = await q;
+      const { data, error } = await query;
 
       if (error) {
         throw errorFrom(
@@ -214,19 +185,17 @@ function entity(table) {
     ) {
       const user = await requireUser();
 
+      const sortKey = sort.startsWith('-')
+        ? sort.slice(1)
+        : sort;
+
       const column =
-        ORDER_ALIASES[
-          sort.replace(/^-/, '')
-        ] ||
-        sort.replace(/^-/, '');
+        ORDER_ALIASES[sortKey] || sortKey;
 
-      const ascending =
-        !sort.startsWith('-');
+      const ascending = !sort.startsWith('-');
 
-      let q = applyFilters(
-        supabase
-          .from(table)
-          .select('*'),
+      let query = applyFilters(
+        supabase.from(table).select('*'),
         filters,
         user.id
       ).order(column, {
@@ -234,13 +203,10 @@ function entity(table) {
       });
 
       if (Number.isFinite(limit)) {
-        q = q.limit(limit);
+        query = query.limit(limit);
       }
 
-      const {
-        data,
-        error,
-      } = await q;
+      const { data, error } = await query;
 
       if (error) {
         throw errorFrom(
@@ -281,10 +247,7 @@ function entity(table) {
       return data;
     },
 
-    async update(
-      id,
-      payload = {}
-    ) {
+    async update(id, payload = {}) {
       const user = await requireUser();
 
       const row = {
@@ -318,9 +281,7 @@ function entity(table) {
     async delete(id) {
       const user = await requireUser();
 
-      const {
-        error,
-      } = await supabase
+      const { error } = await supabase
         .from(table)
         .delete()
         .eq('id', id)
@@ -342,25 +303,20 @@ async function uploadFile(
   input,
   folder = 'uploads'
 ) {
-  const file =
-    input?.file || input;
-
+  const file = input?.file || input;
   const actualFolder =
     input?.folder || folder;
 
   if (!file) {
-    throw new Error(
-      'No file was provided.'
-    );
+    throw new Error('No file was provided.');
   }
 
   const user = await requireUser();
 
-  const safeName =
-    file.name.replace(
-      /[^a-zA-Z0-9._-]/g,
-      '_'
-    );
+  const safeName = file.name.replace(
+    /[^a-zA-Z0-9._-]/g,
+    '_'
+  );
 
   const path =
     `${user.id}/${actualFolder}/${crypto.randomUUID()}-${safeName}`;
@@ -369,16 +325,12 @@ async function uploadFile(
     error,
   } = await supabase.storage
     .from(MEDIA_BUCKET)
-    .upload(
-      path,
-      file,
-      {
-        upsert: false,
-        contentType:
-          file.type ||
-          'application/octet-stream',
-      }
-    );
+    .upload(path, file, {
+      upsert: false,
+      contentType:
+        file.type ||
+        'application/octet-stream',
+    });
 
   if (error) {
     throw errorFrom(
@@ -405,17 +357,6 @@ async function uploadFile(
   };
 }
 
-/*
- * AI GENERATION
- *
- * This calls your Supabase Edge Function:
- *
- *     ai-generate
- *
- * The browser does NOT call OpenRouter directly.
- * The authenticated Supabase session is automatically
- * sent with the Edge Function request by supabase.functions.invoke().
- */
 async function invokeAI({
   prompt,
   file_urls = [],
@@ -424,37 +365,10 @@ async function invokeAI({
   schema = null,
   type = 'general',
 } = {}) {
-  if (!prompt?.trim()) {
+  if (!prompt || !String(prompt).trim()) {
     throw new Error(
       'An AI prompt is required.'
     );
-  }
-
-  // Make sure the user is actually authenticated
-  // before attempting the AI request.
-  await requireUser();
-
-  const requestBody = {
-    type,
-    prompt: prompt.trim(),
-    file_urls: Array.isArray(file_urls)
-      ? file_urls
-      : [],
-    schema:
-      schema ||
-      response_json_schema ||
-      null,
-  };
-
-  /*
-   * NOTE:
-   *
-   * "model" is intentionally included for compatibility
-   * with the existing frontend API, but your current
-   * ai-generate Edge Function chooses the model server-side.
-   */
-  if (model) {
-    requestBody.model = model;
   }
 
   const {
@@ -463,16 +377,22 @@ async function invokeAI({
   } = await supabase.functions.invoke(
     AI_FUNCTION,
     {
-      body: requestBody,
+      body: {
+        type,
+        prompt: String(prompt).trim(),
+        file_urls: Array.isArray(file_urls)
+          ? file_urls
+          : [],
+        model,
+        schema:
+          schema ||
+          response_json_schema ||
+          null,
+      },
     }
   );
 
   if (error) {
-    console.error(
-      '[AI] Supabase function error:',
-      error
-    );
-
     throw errorFrom(
       error,
       'AI generation failed.'
@@ -488,20 +408,19 @@ async function invokeAI({
   if (data.success === false) {
     throw new Error(
       data.error ||
-      'AI generation failed.'
+        'AI generation failed.'
     );
   }
 
-  if (
-    data.result === undefined ||
-    data.result === null
-  ) {
+  const result = data.result ?? data;
+
+  if (result == null) {
     throw new Error(
       'AI generation returned no result.'
     );
   }
 
-  return data.result;
+  return result;
 }
 
 async function sendEmail(payload) {
@@ -525,7 +444,7 @@ async function sendEmail(payload) {
   if (data?.success === false) {
     throw new Error(
       data.error ||
-      'Email could not be sent.'
+        'Email could not be sent.'
     );
   }
 
@@ -537,8 +456,7 @@ export const supabaseApi = {
     me: currentUser,
 
     updateMe: async (patch) => {
-      const user =
-        await requireUser();
+      const user = await requireUser();
 
       const profilePatch = {
         ...patch,
@@ -550,12 +468,9 @@ export const supabaseApi = {
         error,
       } = await supabase
         .from('profiles')
-        .upsert(
-          profilePatch,
-          {
-            onConflict: 'id',
-          }
-        )
+        .upsert(profilePatch, {
+          onConflict: 'id',
+        })
         .select()
         .single();
 
@@ -573,9 +488,8 @@ export const supabaseApi = {
     },
 
     logout: async () => {
-      const {
-        error,
-      } = await supabase.auth.signOut();
+      const { error } =
+        await supabase.auth.signOut();
 
       if (error) {
         throw errorFrom(
@@ -586,9 +500,7 @@ export const supabaseApi = {
     },
 
     redirectToLogin: () => {
-      window.location.assign(
-        '/login'
-      );
+      window.location.assign('/login');
     },
   },
 
