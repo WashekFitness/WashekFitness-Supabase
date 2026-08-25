@@ -1,4 +1,3 @@
-```js
 import { supabase } from '@/lib/supabase';
 
 const MEDIA_BUCKET =
@@ -10,9 +9,13 @@ const EMAIL_FUNCTION =
   import.meta.env.VITE_SUPABASE_EMAIL_FUNCTION || 'send-contact-email';
 
 function errorFrom(error, fallback = 'Supabase request failed.') {
-  if (!error) return new Error(fallback);
+  if (!error) {
+    return new Error(fallback);
+  }
 
-  if (error instanceof Error) return error;
+  if (error instanceof Error) {
+    return error;
+  }
 
   return new Error(
     error.message ||
@@ -32,8 +35,10 @@ async function requireUser() {
     );
   }
 
-  if (!data?.user) {
-    throw new Error('You must be signed in to do that.');
+  if (!data || !data.user) {
+    throw new Error(
+      'You must be signed in to do that.'
+    );
   }
 
   return data.user;
@@ -69,7 +74,9 @@ function normalizeUser(authUser, profile) {
 
   const fullName =
     profile.full_name ||
-    [firstName, lastName].filter(Boolean).join(' ') ||
+    [firstName, lastName]
+      .filter(Boolean)
+      .join(' ') ||
     authUser.user_metadata?.full_name ||
     authUser.email ||
     'Athlete';
@@ -89,7 +96,8 @@ function normalizeUser(authUser, profile) {
 }
 
 async function currentUser() {
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } =
+    await supabase.auth.getUser();
 
   if (error) {
     throw errorFrom(
@@ -98,7 +106,7 @@ async function currentUser() {
     );
   }
 
-  if (!data?.user) {
+  if (!data || !data.user) {
     throw new Error('Not authenticated.');
   }
 
@@ -115,9 +123,7 @@ const ORDER_ALIASES = {
 function applyFilters(query, filters = {}, userId) {
   let q = query;
 
-  const entries = Object.entries(filters || {});
-
-  for (const [key, value] of entries) {
+  for (const [key, value] of Object.entries(filters || {})) {
     if (key === 'created_by') {
       continue;
     }
@@ -145,12 +151,10 @@ function entity(table) {
     async list(sort = '-created_at', limit = 100) {
       const user = await requireUser();
 
-      const sortKey = sort.startsWith('-')
-        ? sort.slice(1)
-        : sort;
+      const cleanSort = sort.replace(/^-/, '');
 
       const column =
-        ORDER_ALIASES[sortKey] || sortKey;
+        ORDER_ALIASES[cleanSort] || cleanSort;
 
       const ascending = !sort.startsWith('-');
 
@@ -185,12 +189,10 @@ function entity(table) {
     ) {
       const user = await requireUser();
 
-      const sortKey = sort.startsWith('-')
-        ? sort.slice(1)
-        : sort;
+      const cleanSort = sort.replace(/^-/, '');
 
       const column =
-        ORDER_ALIASES[sortKey] || sortKey;
+        ORDER_ALIASES[cleanSort] || cleanSort;
 
       const ascending = !sort.startsWith('-');
 
@@ -198,7 +200,9 @@ function entity(table) {
         supabase.from(table).select('*'),
         filters,
         user.id
-      ).order(column, {
+      );
+
+      query = query.order(column, {
         ascending,
       });
 
@@ -228,10 +232,7 @@ function entity(table) {
 
       delete row.created_by;
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from(table)
         .insert(row)
         .select()
@@ -257,10 +258,7 @@ function entity(table) {
       delete row.user_id;
       delete row.created_by;
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from(table)
         .update(row)
         .eq('id', id)
@@ -308,12 +306,17 @@ async function uploadFile(
     input?.folder || folder;
 
   if (!file) {
-    throw new Error('No file was provided.');
+    throw new Error(
+      'No file was provided.'
+    );
   }
 
   const user = await requireUser();
 
-  const safeName = file.name.replace(
+  const originalName =
+    file.name || 'upload';
+
+  const safeName = originalName.replace(
     /[^a-zA-Z0-9._-]/g,
     '_'
   );
@@ -321,9 +324,7 @@ async function uploadFile(
   const path =
     `${user.id}/${actualFolder}/${crypto.randomUUID()}-${safeName}`;
 
-  const {
-    error,
-  } = await supabase.storage
+  const { error } = await supabase.storage
     .from(MEDIA_BUCKET)
     .upload(path, file, {
       upsert: false,
@@ -339,13 +340,12 @@ async function uploadFile(
     );
   }
 
-  const {
-    data,
-  } = supabase.storage
-    .from(MEDIA_BUCKET)
-    .getPublicUrl(path);
+  const { data } =
+    supabase.storage
+      .from(MEDIA_BUCKET)
+      .getPublicUrl(path);
 
-  if (!data?.publicUrl) {
+  if (!data || !data.publicUrl) {
     throw new Error(
       'The file uploaded, but no public URL was returned.'
     );
@@ -371,26 +371,34 @@ async function invokeAI({
     );
   }
 
-  const {
-    data,
-    error,
-  } = await supabase.functions.invoke(
-    AI_FUNCTION,
-    {
-      body: {
-        type,
-        prompt: String(prompt).trim(),
-        file_urls: Array.isArray(file_urls)
-          ? file_urls
-          : [],
-        model,
-        schema:
-          schema ||
-          response_json_schema ||
-          null,
-      },
-    }
-  );
+  const requestBody = {
+    type,
+    prompt: String(prompt).trim(),
+    file_urls: Array.isArray(file_urls)
+      ? file_urls
+      : [],
+    schema:
+      schema ||
+      response_json_schema ||
+      null,
+  };
+
+  /*
+   * The Edge Function is specifically named:
+   *
+   * ai-generate
+   *
+   * We intentionally do not send the model to the
+   * browser-controlled request because your Edge
+   * Function chooses the model server-side.
+   */
+  const { data, error } =
+    await supabase.functions.invoke(
+      AI_FUNCTION,
+      {
+        body: requestBody,
+      }
+    );
 
   if (error) {
     throw errorFrom(
@@ -412,27 +420,24 @@ async function invokeAI({
     );
   }
 
-  const result = data.result ?? data;
-
-  if (result == null) {
+  if (data.result === undefined ||
+      data.result === null) {
     throw new Error(
       'AI generation returned no result.'
     );
   }
 
-  return result;
+  return data.result;
 }
 
 async function sendEmail(payload) {
-  const {
-    data,
-    error,
-  } = await supabase.functions.invoke(
-    EMAIL_FUNCTION,
-    {
-      body: payload,
-    }
-  );
+  const { data, error } =
+    await supabase.functions.invoke(
+      EMAIL_FUNCTION,
+      {
+        body: payload,
+      }
+    );
 
   if (error) {
     throw errorFrom(
@@ -441,7 +446,10 @@ async function sendEmail(payload) {
     );
   }
 
-  if (data?.success === false) {
+  if (
+    data &&
+    data.success === false
+  ) {
     throw new Error(
       data.error ||
         'Email could not be sent.'
@@ -463,16 +471,17 @@ export const supabaseApi = {
         id: user.id,
       };
 
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('profiles')
-        .upsert(profilePatch, {
-          onConflict: 'id',
-        })
-        .select()
-        .single();
+      const { data, error } =
+        await supabase
+          .from('profiles')
+          .upsert(
+            profilePatch,
+            {
+              onConflict: 'id',
+            }
+          )
+          .select()
+          .single();
 
       if (error) {
         throw errorFrom(
@@ -544,4 +553,3 @@ export {
   requireUser,
   currentUser,
 };
-```
