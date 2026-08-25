@@ -1,17 +1,22 @@
 import { supabase } from '@/lib/supabase';
 
 const MEDIA_BUCKET =
-  import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || 'user-media';
+  import.meta.env.VITE_SUPABASE_MEDIA_BUCKET ||
+  'user-media';
 
-const AI_FUNCTION = 'ai-generate';
+const AI_FUNCTION =
+  import.meta.env.VITE_SUPABASE_AI_FUNCTION ||
+  'ai-generate';
 
 const EMAIL_FUNCTION =
-  import.meta.env.VITE_SUPABASE_EMAIL_FUNCTION || 'send-contact-email';
+  import.meta.env.VITE_SUPABASE_EMAIL_FUNCTION ||
+  'send-contact-email';
 
-function errorFrom(error, fallback = 'Supabase request failed.') {
-  if (!error) {
-    return new Error(fallback);
-  }
+function errorFrom(
+  error,
+  fallback = 'Supabase request failed.'
+) {
+  if (!error) return new Error(fallback);
 
   if (error instanceof Error) {
     return error;
@@ -19,14 +24,15 @@ function errorFrom(error, fallback = 'Supabase request failed.') {
 
   return new Error(
     error.message ||
-      error.details ||
-      error.hint ||
-      fallback
+    error.details ||
+    error.hint ||
+    fallback
   );
 }
 
 async function requireUser() {
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } =
+    await supabase.auth.getUser();
 
   if (error) {
     throw errorFrom(
@@ -35,7 +41,7 @@ async function requireUser() {
     );
   }
 
-  if (!data || !data.user) {
+  if (!data?.user) {
     throw new Error(
       'You must be signed in to do that.'
     );
@@ -45,11 +51,12 @@ async function requireUser() {
 }
 
 async function getProfile(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+  const { data, error } =
+    await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
   if (error) {
     throw errorFrom(
@@ -106,13 +113,14 @@ async function currentUser() {
     );
   }
 
-  if (!data || !data.user) {
+  if (!data?.user) {
     throw new Error('Not authenticated.');
   }
 
-  const profile = await getProfile(data.user.id);
-
-  return normalizeUser(data.user, profile);
+  return normalizeUser(
+    data.user,
+    await getProfile(data.user.id)
+  );
 }
 
 const ORDER_ALIASES = {
@@ -120,10 +128,16 @@ const ORDER_ALIASES = {
   updated_date: 'updated_at',
 };
 
-function applyFilters(query, filters = {}, userId) {
+function applyFilters(
+  query,
+  filters = {},
+  userId
+) {
   let q = query;
 
-  for (const [key, value] of Object.entries(filters || {})) {
+  for (const [key, value] of Object.entries(
+    filters || {}
+  )) {
     if (key === 'created_by') {
       continue;
     }
@@ -148,29 +162,31 @@ function applyFilters(query, filters = {}, userId) {
 
 function entity(table) {
   return {
-    async list(sort = '-created_at', limit = 100) {
+    async list(
+      sort = '-created_at',
+      limit = 100
+    ) {
       const user = await requireUser();
 
-      const cleanSort = sort.replace(/^-/, '');
+      const rawColumn = sort.replace(/^-/, '');
 
       const column =
-        ORDER_ALIASES[cleanSort] || cleanSort;
+        ORDER_ALIASES[rawColumn] ||
+        rawColumn;
 
       const ascending = !sort.startsWith('-');
 
-      let query = supabase
+      let q = supabase
         .from(table)
         .select('*')
         .eq('user_id', user.id)
-        .order(column, {
-          ascending,
-        });
+        .order(column, { ascending });
 
       if (Number.isFinite(limit)) {
-        query = query.limit(limit);
+        q = q.limit(limit);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await q;
 
       if (error) {
         throw errorFrom(
@@ -189,28 +205,27 @@ function entity(table) {
     ) {
       const user = await requireUser();
 
-      const cleanSort = sort.replace(/^-/, '');
+      const rawColumn = sort.replace(/^-/, '');
 
       const column =
-        ORDER_ALIASES[cleanSort] || cleanSort;
+        ORDER_ALIASES[rawColumn] ||
+        rawColumn;
 
       const ascending = !sort.startsWith('-');
 
-      let query = applyFilters(
-        supabase.from(table).select('*'),
+      let q = applyFilters(
+        supabase
+          .from(table)
+          .select('*'),
         filters,
         user.id
-      );
-
-      query = query.order(column, {
-        ascending,
-      });
+      ).order(column, { ascending });
 
       if (Number.isFinite(limit)) {
-        query = query.limit(limit);
+        q = q.limit(limit);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await q;
 
       if (error) {
         throw errorFrom(
@@ -232,11 +247,12 @@ function entity(table) {
 
       delete row.created_by;
 
-      const { data, error } = await supabase
-        .from(table)
-        .insert(row)
-        .select()
-        .single();
+      const { data, error } =
+        await supabase
+          .from(table)
+          .insert(row)
+          .select()
+          .single();
 
       if (error) {
         throw errorFrom(
@@ -258,13 +274,14 @@ function entity(table) {
       delete row.user_id;
       delete row.created_by;
 
-      const { data, error } = await supabase
-        .from(table)
-        .update(row)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select()
-        .single();
+      const { data, error } =
+        await supabase
+          .from(table)
+          .update(row)
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single();
 
       if (error) {
         throw errorFrom(
@@ -279,11 +296,12 @@ function entity(table) {
     async delete(id) {
       const user = await requireUser();
 
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+      const { error } =
+        await supabase
+          .from(table)
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
 
       if (error) {
         throw errorFrom(
@@ -306,32 +324,29 @@ async function uploadFile(
     input?.folder || folder;
 
   if (!file) {
-    throw new Error(
-      'No file was provided.'
-    );
+    throw new Error('No file was provided.');
   }
 
   const user = await requireUser();
 
-  const originalName =
-    file.name || 'upload';
-
-  const safeName = originalName.replace(
+  const safeName = file.name.replace(
     /[^a-zA-Z0-9._-]/g,
     '_'
   );
 
   const path =
-    `${user.id}/${actualFolder}/${crypto.randomUUID()}-${safeName}`;
+    `${user.id}/${actualFolder}/` +
+    `${crypto.randomUUID()}-${safeName}`;
 
-  const { error } = await supabase.storage
-    .from(MEDIA_BUCKET)
-    .upload(path, file, {
-      upsert: false,
-      contentType:
-        file.type ||
-        'application/octet-stream',
-    });
+  const { error } =
+    await supabase.storage
+      .from(MEDIA_BUCKET)
+      .upload(path, file, {
+        upsert: false,
+        contentType:
+          file.type ||
+          'application/octet-stream',
+      });
 
   if (error) {
     throw errorFrom(
@@ -345,7 +360,7 @@ async function uploadFile(
       .from(MEDIA_BUCKET)
       .getPublicUrl(path);
 
-  if (!data || !data.publicUrl) {
+  if (!data?.publicUrl) {
     throw new Error(
       'The file uploaded, but no public URL was returned.'
     );
@@ -365,38 +380,20 @@ async function invokeAI({
   schema = null,
   type = 'general',
 } = {}) {
-  if (!prompt || !String(prompt).trim()) {
-    throw new Error(
-      'An AI prompt is required.'
-    );
-  }
-
-  const requestBody = {
-    type,
-    prompt: String(prompt).trim(),
-    file_urls: Array.isArray(file_urls)
-      ? file_urls
-      : [],
-    schema:
-      schema ||
-      response_json_schema ||
-      null,
-  };
-
-  /*
-   * The Edge Function is specifically named:
-   *
-   * ai-generate
-   *
-   * We intentionally do not send the model to the
-   * browser-controlled request because your Edge
-   * Function chooses the model server-side.
-   */
   const { data, error } =
     await supabase.functions.invoke(
       AI_FUNCTION,
       {
-        body: requestBody,
+        body: {
+          type,
+          prompt,
+          file_urls,
+          model,
+          schema:
+            schema ||
+            response_json_schema ||
+            null,
+        },
       }
     );
 
@@ -407,35 +404,72 @@ async function invokeAI({
     );
   }
 
-  if (!data) {
-    throw new Error(
-      'AI generation returned no response.'
-    );
-  }
+  const result =
+    data?.result ?? data;
 
-  if (data.success === false) {
-    throw new Error(
-      data.error ||
-        'AI generation failed.'
-    );
-  }
-
-  if (data.result === undefined ||
-      data.result === null) {
+  if (result == null) {
     throw new Error(
       'AI generation returned no result.'
     );
   }
 
-  return data.result;
+  if (result?.success === false) {
+    throw new Error(
+      result.error ||
+      'AI generation failed.'
+    );
+  }
+
+  return result;
 }
 
-async function sendEmail(payload) {
+async function sendEmail({
+  name,
+  email,
+  message,
+} = {}) {
+  const cleanName =
+    typeof name === 'string'
+      ? name.trim()
+      : '';
+
+  const cleanEmail =
+    typeof email === 'string'
+      ? email.trim()
+      : '';
+
+  const cleanMessage =
+    typeof message === 'string'
+      ? message.trim()
+      : '';
+
+  if (!cleanName) {
+    throw new Error(
+      'Your name is required.'
+    );
+  }
+
+  if (!cleanEmail) {
+    throw new Error(
+      'Your email address is required.'
+    );
+  }
+
+  if (!cleanMessage) {
+    throw new Error(
+      'Your message is required.'
+    );
+  }
+
   const { data, error } =
     await supabase.functions.invoke(
       EMAIL_FUNCTION,
       {
-        body: payload,
+        body: {
+          name: cleanName,
+          email: cleanEmail,
+          message: cleanMessage,
+        },
       }
     );
 
@@ -446,13 +480,10 @@ async function sendEmail(payload) {
     );
   }
 
-  if (
-    data &&
-    data.success === false
-  ) {
+  if (data?.success === false) {
     throw new Error(
       data.error ||
-        'Email could not be sent.'
+      'Email could not be sent.'
     );
   }
 
@@ -476,9 +507,7 @@ export const supabaseApi = {
           .from('profiles')
           .upsert(
             profilePatch,
-            {
-              onConflict: 'id',
-            }
+            { onConflict: 'id' }
           )
           .select()
           .single();
