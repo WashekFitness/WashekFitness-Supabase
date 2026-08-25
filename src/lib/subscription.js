@@ -1,4 +1,3 @@
-```javascript
 /**
  * Subscription plan feature gates.
  *
@@ -9,9 +8,8 @@
  *   elite
  *
  * IMPORTANT:
- * The Live Workout Tracker is FREE.
- * Elite only unlocks real-time AI workout adjustments
- * and other explicitly Elite features.
+ * Live Workout is FREE for everyone.
+ * Only real-time/dynamic workout-program adjustments are Elite.
  */
 
 export const PLAN_HIERARCHY = [
@@ -22,11 +20,14 @@ export const PLAN_HIERARCHY = [
 ];
 
 /**
- * Returns true if the user's plan is >= the required plan.
+ * Returns true if the user's plan is at or above the required plan.
  */
 export function hasPlan(userPlan, requiredPlan) {
   const userIdx = PLAN_HIERARCHY.indexOf(userPlan || 'free');
   const reqIdx = PLAN_HIERARCHY.indexOf(requiredPlan);
+
+  // Unknown required features fail closed.
+  if (reqIdx === -1) return false;
 
   return userIdx >= reqIdx;
 }
@@ -34,37 +35,37 @@ export function hasPlan(userPlan, requiredPlan) {
 /**
  * Feature gates.
  *
- * The Live Workout Tracker itself is intentionally NOT here
- * because it is available to every user, including Free.
+ * live_workout:
+ *   FREE — the complete live workout tracker.
  *
- * Elite-only functionality should have its own gate.
+ * live_workout_adjustments:
+ *   ELITE — real-time/dynamic program changes based on performance.
  */
 export const FEATURE_PLANS = {
   snap_food: 'progress',
   scan_barcode: 'progress',
   progress_photos: 'progress',
+
   ai_body_analysis: 'performance',
+
   progress_graph: 'elite',
 
-  // Elite-only AI functionality:
+  // FREE FOR EVERYONE
+  live_workout: 'free',
+
+  // ELITE ONLY
   live_workout_adjustments: 'elite',
 
   kael_elite_tips: 'elite',
 };
 
 /**
- * Returns true if the user's plan can access a feature.
- *
- * Unknown features default to false so a new feature cannot
- * accidentally become available without an explicit entitlement.
+ * Check whether a user can access a feature.
  */
 export function canAccess(userPlan, feature) {
-  const requiredPlan = FEATURE_PLANS[feature];
-
-  if (!requiredPlan) {
+  if (!feature || !Object.prototype.hasOwnProperty.call(FEATURE_PLANS, feature)) {
     return false;
   }
 
-  return hasPlan(userPlan, requiredPlan);
+  return hasPlan(userPlan || 'free', FEATURE_PLANS[feature]);
 }
-```
