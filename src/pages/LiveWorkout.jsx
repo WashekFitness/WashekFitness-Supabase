@@ -1,14 +1,21 @@
-```jsx
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseApi } from '@/lib/supabaseApi';
+import { canAccess } from '@/lib/subscription';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '@/components/ui/tabs';
+
 import {
   ChevronLeft,
   CheckCircle2,
@@ -20,13 +27,15 @@ import {
   Minus,
   Sparkles,
   Zap,
-  Crown,
 } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { useAppSettings } from '@/lib/AppSettingsContext';
 import { toast } from 'sonner';
 
-// ─── Timer ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// Timer
+// ─────────────────────────────────────────────────────
 
 function useTimer() {
   const [seconds, setSeconds] = useState(0);
@@ -46,7 +55,9 @@ function useTimer() {
   }, [running]);
 
   const fmt = (s) =>
-    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(
+      s % 60
+    ).padStart(2, '0')}`;
 
   return {
     seconds,
@@ -56,7 +67,9 @@ function useTimer() {
   };
 }
 
-// ─── Rest Timer ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// Rest Timer
+// ─────────────────────────────────────────────────────
 
 function RestTimer({ seconds: restSecs, onDone }) {
   const [left, setLeft] = useState(restSecs);
@@ -75,45 +88,137 @@ function RestTimer({ seconds: restSecs, onDone }) {
 
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - start) / 1000);
-      const remaining = Math.max(0, initial - elapsed);
-
-      setLeft(remaining);
+      const remaining = initial - elapsed;
 
       if (remaining <= 0) {
         clearInterval(interval);
+        setLeft(0);
         onDoneRef.current();
+      } else {
+        setLeft(remaining);
       }
     }, 250);
 
     return () => clearInterval(interval);
-  }, [restSecs]);
+  }, []);
 
   return (
-    <Card className="p-6 text-center">
-      <Timer className="w-10 h-10 mx-auto mb-3 text-primary" />
-
-      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+    <div className="flex flex-col items-center justify-center py-8 gap-3">
+      <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
         Rest
       </p>
 
-      <p className="font-heading text-5xl font-bold tabular-nums mt-2">
-        {String(Math.floor(left / 60)).padStart(2, '0')}:
-        {String(left % 60).padStart(2, '0')}
+      <p className="font-heading text-6xl font-bold text-primary">
+        {left}s
       </p>
 
       <Button
         variant="outline"
-        className="mt-5"
-        onClick={onDone}
+        size="sm"
+        onClick={() => onDoneRef.current()}
       >
-        <SkipForward className="w-4 h-4 mr-2" />
         Skip Rest
       </Button>
-    </Card>
+    </div>
   );
 }
 
-// ─── Movement Input ────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// Movement Baseline
+// ─────────────────────────────────────────────────────
+
+const CALISTHENICS_MOVEMENTS = [
+  { key: 'push_ups', label: 'Push Ups', unit: 'reps' },
+  { key: 'pull_ups', label: 'Pull Ups', unit: 'reps' },
+  { key: 'dips', label: 'Dips', unit: 'reps' },
+  { key: 'squats', label: 'Squats', unit: 'reps' },
+  { key: 'pistol_squats', label: 'Pistol Squats', unit: 'reps' },
+  { key: 'muscle_ups', label: 'Muscle Ups', unit: 'reps' },
+  { key: 'dragon_flags', label: 'Dragon Flags', unit: 'reps' },
+  { key: 'toes_to_bar', label: 'Toes to Bar', unit: 'reps' },
+  { key: 'ring_dips', label: 'Ring Dips', unit: 'reps' },
+  { key: 'ring_push_ups', label: 'Ring Push Ups', unit: 'reps' },
+  {
+    key: 'handstand_hold_seconds',
+    label: 'Handstand Hold',
+    unit: 'seconds',
+  },
+  {
+    key: 'l_sit_hold_seconds',
+    label: 'L-Sit Hold',
+    unit: 'seconds',
+  },
+  {
+    key: 'front_lever_hold_seconds',
+    label: 'Front Lever Hold',
+    unit: 'seconds',
+  },
+  {
+    key: 'back_lever_hold_seconds',
+    label: 'Back Lever Hold',
+    unit: 'seconds',
+  },
+  {
+    key: 'planche_hold_seconds',
+    label: 'Planche Hold',
+    unit: 'seconds',
+  },
+  {
+    key: 'human_flag_hold_seconds',
+    label: 'Human Flag Hold',
+    unit: 'seconds',
+  },
+];
+
+const WEIGHT_MOVEMENTS = [
+  { key: 'bench_press_1rm', label: 'Bench Press' },
+  { key: 'back_squat_1rm', label: 'Back Squat' },
+  { key: 'deadlift_1rm', label: 'Deadlift' },
+  { key: 'overhead_press_1rm', label: 'Overhead Press' },
+  { key: 'barbell_row_1rm', label: 'Barbell Row' },
+  { key: 'front_squat_1rm', label: 'Front Squat' },
+  { key: 'romanian_deadlift_1rm', label: 'Romanian Deadlift' },
+  { key: 'push_press_1rm', label: 'Push Press' },
+  { key: 'power_clean_1rm', label: 'Power Clean' },
+  { key: 'hip_thrust_1rm', label: 'Hip Thrust' },
+];
+
+const WEIGHTED_CALI_MOVEMENTS = [
+  { key: 'weighted_pull_up_lbs', label: 'Weighted Pull-Up' },
+  { key: 'weighted_dip_lbs', label: 'Weighted Dip' },
+  { key: 'weighted_push_up_lbs', label: 'Weighted Push-Up' },
+  { key: 'weighted_squat_lbs', label: 'Weighted Squat' },
+];
+
+const ALL_BASELINE_MOVEMENTS = [
+  ...CALISTHENICS_MOVEMENTS,
+  ...WEIGHT_MOVEMENTS,
+  ...WEIGHTED_CALI_MOVEMENTS,
+];
+
+function baselineHasCalisthenics(trainingType) {
+  if (!trainingType) return true;
+
+  return (
+    trainingType === 'calisthenics' ||
+    trainingType === 'weighted_calisthenics' ||
+    trainingType === 'hybrid'
+  );
+}
+
+function baselineHasWeights(trainingType) {
+  return (
+    trainingType === 'weights' ||
+    trainingType === 'hybrid'
+  );
+}
+
+function baselineHasWeightedCali(trainingType) {
+  return (
+    trainingType === 'weighted_calisthenics' ||
+    trainingType === 'hybrid'
+  );
+}
 
 function MovementInput({
   label,
@@ -122,21 +227,22 @@ function MovementInput({
   onChange,
 }) {
   return (
-    <div>
-      <label className="text-xs font-medium text-muted-foreground">
+    <div className="bg-card border border-border rounded-2xl p-3">
+      <p className="text-xs text-muted-foreground mb-1">
         {label}
-      </label>
+      </p>
 
-      <div className="relative mt-1">
+      <div className="flex items-center gap-2">
         <Input
+          type="number"
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="—"
-          className="h-10 pr-12"
+          placeholder="0"
+          className="h-9 text-sm"
         />
 
         {unit && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground flex-shrink-0">
             {unit}
           </span>
         )}
@@ -145,41 +251,11 @@ function MovementInput({
   );
 }
 
-// ─── Baseline Section ──────────────────────────────────
-
-const CALISTHENICS_MOVEMENTS = [
-  { key: 'pull_up', label: 'Pull Up', unit: 'reps' },
-  { key: 'push_up', label: 'Push Up', unit: 'reps' },
-  { key: 'dip', label: 'Dip', unit: 'reps' },
-  { key: 'muscle_up', label: 'Muscle Up', unit: 'reps' },
-  { key: 'handstand_push_up', label: 'Handstand Push Up', unit: 'reps' },
-  { key: 'pistol_squat', label: 'Pistol Squat', unit: 'reps' },
-];
-
-const WEIGHT_MOVEMENTS = [
-  { key: 'bench_press', label: 'Bench Press' },
-  { key: 'squat', label: 'Squat' },
-  { key: 'deadlift', label: 'Deadlift' },
-  { key: 'overhead_press', label: 'Overhead Press' },
-  { key: 'barbell_row', label: 'Barbell Row' },
-];
-
-const WEIGHTED_CALI_MOVEMENTS = [
-  { key: 'weighted_pull_up', label: 'Weighted Pull Up' },
-  { key: 'weighted_dip', label: 'Weighted Dip' },
-  { key: 'weighted_push_up', label: 'Weighted Push Up' },
-];
-
-const ALL_BASELINE_MOVEMENTS = [
-  ...CALISTHENICS_MOVEMENTS,
-  ...WEIGHT_MOVEMENTS.map((m) => ({ ...m, unit: 'lb' })),
-  ...WEIGHTED_CALI_MOVEMENTS.map((m) => ({ ...m, unit: 'lb' })),
-];
-
-// ─── Baseline ──────────────────────────────────────────
-
-function BaselineSection() {
+function MovementBaseline({ trainingType }) {
+  const queryClient = useQueryClient();
   const { settings } = useAppSettings();
+
+  const today = new Date().toISOString().split('T')[0];
 
   const [values, setValues] = useState({});
   const [customEntries, setCustomEntries] = useState([]);
@@ -187,116 +263,88 @@ function BaselineSection() {
   const [newCustomVal, setNewCustomVal] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [user, setUser] = useState(null);
-  const [baselines, setBaselines] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    supabaseApi.auth
-      .me()
-      .then((u) => {
-        if (mounted) setUser(u);
-      })
-      .catch(() => {});
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!user?.email) return;
-
-    supabaseApi.entities.MovementBaseline
-      .filter(
-        {
-          created_by: user.email,
-        },
-        '-recorded_date',
-        1
-      )
-      .then((rows) => {
-        setBaselines(rows || []);
-
-        const row = rows?.[0];
-
-        if (!row) return;
-
-        const next = {};
-
-        ALL_BASELINE_MOVEMENTS.forEach((movement) => {
-          if (row[movement.key] !== undefined && row[movement.key] !== null) {
-            next[movement.key] = row[movement.key];
-          }
-        });
-
-        setValues(next);
-        setCustomEntries(row.custom_entries || []);
-      })
-      .catch(() => {});
-  }, [user?.email]);
-
   const showCalisthenics =
-    !settings?.training_type ||
-    settings.training_type === 'calisthenics' ||
-    settings.training_type === 'weighted_calisthenics' ||
-    settings.training_type === 'hybrid';
+    baselineHasCalisthenics(trainingType);
 
   const showWeights =
-    !settings?.training_type ||
-    settings.training_type === 'weights' ||
-    settings.training_type === 'hybrid';
+    baselineHasWeights(trainingType);
 
   const showWeightedCali =
-    !settings?.training_type ||
-    settings.training_type === 'weighted_calisthenics' ||
-    settings.training_type === 'hybrid';
+    baselineHasWeightedCali(trainingType);
 
-  const weightUnit = settings?.weight_unit || 'lb';
+  const weightUnit =
+    settings?.unit === 'metric' ? 'kg' : 'lbs';
+
+  const { data: baselines = [] } = useQuery({
+    queryKey: ['baselines'],
+    queryFn: () =>
+      supabaseApi.entities.MovementBaseline.list(
+        '-recorded_date',
+        1
+      ),
+  });
+
+  useEffect(() => {
+    if (!baselines[0]) return;
+
+    const b = baselines[0];
+    const v = {};
+
+    ALL_BASELINE_MOVEMENTS.forEach((movement) => {
+      if (b[movement.key] != null) {
+        v[movement.key] = b[movement.key];
+      }
+    });
+
+    setValues(v);
+
+    if (b.custom_entries) {
+      setCustomEntries(b.custom_entries);
+    }
+  }, [baselines]);
 
   const saveBaseline = async () => {
-    if (!user?.email) return;
-
     setSaving(true);
 
     try {
-      const today = new Date().toISOString().split('T')[0];
-
       const data = {
         recorded_date: today,
         custom_entries: customEntries,
       };
 
-      ALL_BASELINE_MOVEMENTS.forEach((m) => {
-        if (values[m.key]) {
-          data[m.key] = parseFloat(values[m.key]);
+      ALL_BASELINE_MOVEMENTS.forEach((movement) => {
+        if (values[movement.key]) {
+          data[movement.key] =
+            parseFloat(values[movement.key]);
         }
       });
 
-      if (baselines[0]?.recorded_date === today) {
+      if (
+        baselines[0]?.recorded_date === today
+      ) {
         await supabaseApi.entities.MovementBaseline.update(
           baselines[0].id,
           data
         );
       } else {
-        await supabaseApi.entities.MovementBaseline.create(data);
+        await supabaseApi.entities.MovementBaseline.create(
+          data
+        );
       }
 
-      toast.success(
-        'Baseline saved! Kael will use it to program smarter.'
-      );
+      queryClient.invalidateQueries({
+        queryKey: ['baselines'],
+      });
 
-      setBaselines((prev) => [
-        {
-          ...(prev[0] || {}),
-          ...data,
-          recorded_date: today,
-        },
-      ]);
-    } catch (err) {
-      console.error(err);
-      toast.error('Could not save your baseline.');
+      toast.success(
+        'Baseline saved! Kael will use this to adjust your workouts.'
+      );
+    } catch (error) {
+      console.error(error);
+
+      toast.error(
+        'Could not save your baseline. Please try again.'
+      );
     } finally {
       setSaving(false);
     }
@@ -321,8 +369,10 @@ function BaselineSection() {
     <div className="space-y-4 pb-4">
       <div className="bg-muted/40 rounded-2xl p-4 border border-border">
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Log your current maxes here. This doesn't affect your live workout.
-          It's just so Kael knows where you're at and can program smarter.
+          Log your current maxes here. This{' '}
+          <strong>doesn't affect your live workout</strong>{' '}
+          — it's just so Kael knows where you're at and can
+          program smarter.
         </p>
       </div>
 
@@ -340,10 +390,10 @@ function BaselineSection() {
                   label={label}
                   unit={unit}
                   value={values[key]}
-                  onChange={(v) =>
+                  onChange={(value) =>
                     setValues((prev) => ({
                       ...prev,
-                      [key]: v,
+                      [key]: value,
                     }))
                   }
                 />
@@ -366,10 +416,10 @@ function BaselineSection() {
                 label={label}
                 unit={weightUnit}
                 value={values[key]}
-                onChange={(v) =>
+                onChange={(value) =>
                   setValues((prev) => ({
                     ...prev,
-                    [key]: v,
+                    [key]: value,
                   }))
                 }
               />
@@ -385,39 +435,47 @@ function BaselineSection() {
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
-            {WEIGHTED_CALI_MOVEMENTS.map(({ key, label }) => (
-              <MovementInput
-                key={key}
-                label={label}
-                unit={weightUnit}
-                value={values[key]}
-                onChange={(v) =>
-                  setValues((prev) => ({
-                    ...prev,
-                    [key]: v,
-                  }))
-                }
-              />
-            ))}
+            {WEIGHTED_CALI_MOVEMENTS.map(
+              ({ key, label }) => (
+                <MovementInput
+                  key={key}
+                  label={label}
+                  unit={weightUnit}
+                  value={values[key]}
+                  onChange={(value) =>
+                    setValues((prev) => ({
+                      ...prev,
+                      [key]: value,
+                    }))
+                  }
+                />
+              )
+            )}
           </div>
         </div>
       )}
 
       <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-semibold">Custom Movement</p>
+        <p className="text-sm font-semibold">
+          Custom Movement
+        </p>
 
         <div className="flex gap-2">
           <Input
             placeholder="e.g. Typewriter Pull Up"
             value={newCustomName}
-            onChange={(e) => setNewCustomName(e.target.value)}
+            onChange={(e) =>
+              setNewCustomName(e.target.value)
+            }
             className="h-9 text-sm flex-1"
           />
 
           <Input
             placeholder="e.g. 3 reps"
             value={newCustomVal}
-            onChange={(e) => setNewCustomVal(e.target.value)}
+            onChange={(e) =>
+              setNewCustomVal(e.target.value)
+            }
             className="h-9 text-sm w-28"
           />
 
@@ -430,22 +488,25 @@ function BaselineSection() {
           </Button>
         </div>
 
-        {customEntries.map((c, i) => (
+        {customEntries.map((entry, index) => (
           <div
-            key={i}
+            key={index}
             className="flex items-center justify-between text-sm"
           >
-            <span>{c.name}</span>
+            <span>{entry.name}</span>
 
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">
-                {c.value}
+                {entry.value}
               </span>
 
               <button
                 onClick={() =>
                   setCustomEntries((prev) =>
-                    prev.filter((_, j) => j !== i)
+                    prev.filter(
+                      (_, itemIndex) =>
+                        itemIndex !== index
+                    )
                   )
                 }
                 className="text-destructive hover:text-destructive/80"
@@ -468,12 +529,14 @@ function BaselineSection() {
   );
 }
 
-// ─── Post Workout Checkin ──────────────────────────────
+// ─────────────────────────────────────────────────────
+// Post Workout Check-In
+// ─────────────────────────────────────────────────────
 
 function PostWorkoutCheckin({
   log,
   onSave,
-  isElite,
+  canAdjust,
   program,
   onProgramUpdated,
 }) {
@@ -483,7 +546,7 @@ function PostWorkoutCheckin({
   const [done, setDone] = useState(false);
 
   const submit = async () => {
-    if (!checkin.trim()) return;
+    if (!checkin.trim() || loading) return;
 
     setLoading(true);
 
@@ -492,35 +555,39 @@ function PostWorkoutCheckin({
         log?.exercises_completed || []
       )
         .map(
-          (e) =>
-            `${e.name}: ${e.sets_completed} sets, ${e.reps_achieved} reps`
+          (exercise) =>
+            `${exercise.name}: ${exercise.sets_completed} sets, ${exercise.reps_achieved} reps`
         )
         .join('\n');
 
-      /**
-       * ELITE ONLY:
-       *
-       * Real-time/adaptive program adjustments belong here.
-       * The tracker itself is NOT gated.
-       */
-      if (isElite && program) {
-        const currentWeek = program.current_week || 1;
+      // ─────────────────────────────────────────────
+      // ELITE ONLY:
+      // Real-time/dynamic program adjustments.
+      // ─────────────────────────────────────────────
+
+      if (canAdjust && program) {
+        const currentWeek =
+          program.current_week || 1;
 
         const nextMicrocycle =
           program.microcycles?.find(
-            (m) => m.week_number === currentWeek + 1
+            (microcycle) =>
+              microcycle.week_number ===
+              currentWeek + 1
           ) || null;
 
         const trainingType =
-          program?.training_type || 'calisthenics';
+          program?.training_type ||
+          'calisthenics';
 
         const typeLabel =
           {
             calisthenics: 'calisthenics',
-            weighted_calisthenics: 'weighted calisthenics',
+            weighted_calisthenics:
+              'weighted calisthenics',
             weights: 'weight training',
             hybrid: 'hybrid training',
-          }[trainingType] || 'fitness';
+          }[trainingType] || 'calisthenics';
 
         const elitePrompt = `
 You are Kael, an elite ${typeLabel} coach.
@@ -541,7 +608,8 @@ ${
   nextMicrocycle
     ? JSON.stringify(
         nextMicrocycle.days?.find(
-          (d) => d.day_name === log?.day_name
+          (day) =>
+            day.day_name === log?.day_name
         ) ||
           nextMicrocycle.days?.[0],
         null,
@@ -550,14 +618,15 @@ ${
     : 'No next week programmed yet.'
 }
 
-Based on the athlete's feedback and their actual performance:
+Based on the athlete's feedback AND their actual reps/sets completed today:
 
 1. Give a 1-2 sentence direct human response.
 2. If performance was strong, recommend specific progressions.
-3. If performance was poor, painful, or fatigued, recommend appropriate deloads.
-4. Return the adjusted exercises for next week's same day.
+3. If performance was poor or they felt pain/fatigue, recommend specific deloads.
+4. Return the adjusted exercises array for next week's same day.
 
 Respond in JSON:
+
 {
   "coach_response": "...",
   "adjustments_summary": "...",
@@ -573,36 +642,57 @@ Respond in JSON:
 }
 `;
 
-        const result = await supabaseApi.ai.invoke({
-          type: 'live_workout',
-          prompt: elitePrompt,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              coach_response: { type: 'string' },
-              adjustments_summary: { type: 'string' },
-              adjusted_exercises: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    sets: { type: 'number' },
-                    reps: { type: 'string' },
-                    rest_seconds: { type: 'number' },
-                    notes: { type: 'string' },
+        const result =
+          await supabaseApi.ai.invoke({
+            type: 'live_workout',
+            prompt: elitePrompt,
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                coach_response: {
+                  type: 'string',
+                },
+                adjustments_summary: {
+                  type: 'string',
+                },
+                adjusted_exercises: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: {
+                        type: 'string',
+                      },
+                      sets: {
+                        type: 'number',
+                      },
+                      reps: {
+                        type: 'string',
+                      },
+                      rest_seconds: {
+                        type: 'number',
+                      },
+                      notes: {
+                        type: 'string',
+                      },
+                    },
                   },
                 },
               },
             },
-          },
-        });
+          });
 
-        const note = `${result.coach_response}\n\n📋 Next workout adjusted: ${result.adjustments_summary}`;
+        const note =
+          `${result.coach_response}\n\n` +
+          `📋 Next workout adjusted: ` +
+          `${result.adjustments_summary}`;
 
         setAiNote(note);
 
-        await onSave(checkin, note);
+        await onSave(
+          checkin,
+          note
+        );
 
         if (
           nextMicrocycle &&
@@ -610,65 +700,79 @@ Respond in JSON:
           onProgramUpdated
         ) {
           const updatedMicrocycles =
-            program.microcycles.map((mc) => {
-              if (mc.week_number !== currentWeek + 1) {
-                return mc;
-              }
-
-              const updatedDays = mc.days.map((d) => {
-                if (d.day_name === log?.day_name) {
-                  return {
-                    ...d,
-                    exercises: result.adjusted_exercises,
-                  };
+            program.microcycles.map(
+              (microcycle) => {
+                if (
+                  microcycle.week_number !==
+                  currentWeek + 1
+                ) {
+                  return microcycle;
                 }
 
-                return d;
-              });
+                const updatedDays =
+                  microcycle.days.map((day) => {
+                    if (
+                      day.day_name ===
+                      log?.day_name
+                    ) {
+                      return {
+                        ...day,
+                        exercises:
+                          result.adjusted_exercises,
+                      };
+                    }
 
-              return {
-                ...mc,
-                days: updatedDays,
-              };
-            });
+                    return day;
+                  });
+
+                return {
+                  ...microcycle,
+                  days: updatedDays,
+                };
+              }
+            );
 
           await supabaseApi.entities.WorkoutProgram.update(
             program.id,
             {
-              microcycles: updatedMicrocycles,
+              microcycles:
+                updatedMicrocycles,
             }
           );
 
           onProgramUpdated();
         }
       } else {
-        /**
-         * FREE / NON-ELITE:
-         *
-         * Free users can still complete workouts and receive
-         * the normal post-workout coaching response.
-         *
-         * What Free users DO NOT receive is automatic
-         * program modification.
-         */
+        // ─────────────────────────────────────────
+        // FREE:
+        // Tracker + workout logging + Kael check-in.
+        //
+        // NO program mutation happens here.
+        // ─────────────────────────────────────────
+
         const trainingType =
-          program?.training_type || 'calisthenics';
+          program?.training_type ||
+          'calisthenics';
 
         const typeLabel =
           {
             calisthenics: 'calisthenics',
-            weighted_calisthenics: 'weighted calisthenics',
+            weighted_calisthenics:
+              'weighted calisthenics',
             weights: 'weight training',
             hybrid: 'hybrid training',
-          }[trainingType] || 'fitness';
+          }[trainingType] || 'calisthenics';
 
         const prompt = `
 You are Kael, a real-talk ${typeLabel} coach.
 
 Based on this post-workout check-in, give a SHORT
-2-3 sentence human response.
+2-3 sentence human response and a concrete note
+on what the athlete should consider next time.
 
-Do not modify the user's program.
+Do NOT modify the program.
+
+Sound like a real coach, not a bot.
 
 Check-in:
 "${checkin}"
@@ -676,35 +780,39 @@ Check-in:
 Workout:
 ${log?.day_name || 'unknown'}
 
-EXERCISES:
+EXERCISES COMPLETED:
 ${exerciseSummary}
 
 Respond with:
 1. One empathetic/direct sentence.
-2. One specific coaching observation for the athlete's next session.
-
-Do not return program modification JSON.
+2. One specific suggestion for next time.
 `;
 
-        const result = await supabaseApi.ai.invoke({
-          type: 'live_workout',
-          prompt,
-        });
+        const result =
+          await supabaseApi.ai.invoke({
+            type: 'live_workout',
+            prompt,
+          });
 
         setAiNote(result);
 
-        await onSave(checkin, result);
+        await onSave(
+          checkin,
+          result
+        );
       }
 
-      setLoading(false);
       setDone(true);
     } catch (error) {
-      console.error('Post-workout check-in failed:', error);
-
-      toast.error(
-        'Could not get Kael’s post-workout response. Your workout was still saved.'
+      console.error(
+        'Post-workout check-in error:',
+        error
       );
 
+      toast.error(
+        'Kael could not respond right now. Your workout was still saved.'
+      );
+    } finally {
       setLoading(false);
     }
   };
@@ -716,7 +824,7 @@ Do not return program modification JSON.
           Kael heard you
         </p>
 
-        <p className="text-sm">
+        <p className="text-sm whitespace-pre-wrap">
           {aiNote}
         </p>
       </Card>
@@ -727,20 +835,24 @@ Do not return program modification JSON.
     <Card className="p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Sparkles className="w-4 h-4 text-primary" />
+
         <p className="font-heading font-bold text-sm">
           Post-Workout Check-in
         </p>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        How did it go? Any pain, anything that felt too easy or too hard,
-        energy levels — just tell Kael in your own words.
+        How did it go? Any pain, anything that felt too
+        easy or too hard, energy levels — just tell Kael
+        in your own words.
       </p>
 
       <Textarea
         value={checkin}
-        onChange={(e) => setCheckin(e.target.value)}
-        placeholder='e.g. "Shoulder felt a bit tight on the dips. Pull-ups felt strong today, could probably do more reps."'
+        onChange={(e) =>
+          setCheckin(e.target.value)
+        }
+        placeholder='e.g. "Shoulder felt a bit tight on the dips. Pull-ups felt strong today, could probably do more reps. Pretty gassed by the end."'
         className="min-h-[100px] text-sm resize-none"
       />
 
@@ -762,7 +874,9 @@ Do not return program modification JSON.
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────
 
 export default function LiveWorkout() {
   const navigate = useNavigate();
@@ -770,51 +884,63 @@ export default function LiveWorkout() {
 
   const {
     seconds,
-    running,
     setRunning,
     fmt,
   } = useTimer();
 
   const [user, setUser] = useState(null);
+
   const [dayIndex, setDayIndex] = useState(0);
   const [exIndex, setExIndex] = useState(0);
   const [setIndex, setSetIndex] = useState(0);
+
   const [resting, setResting] = useState(false);
-  const [completedSets, setCompletedSets] = useState({});
-  const [repsAchieved, setRepsAchieved] = useState({});
+  const [completedSets, setCompletedSets] =
+    useState({});
+  const [repsAchieved, setRepsAchieved] =
+    useState({});
+
   const [started, setStarted] = useState(false);
-  const [workoutDone, setWorkoutDone] = useState(false);
+  const [workoutDone, setWorkoutDone] =
+    useState(false);
+
   const [savedLog, setSavedLog] = useState(null);
 
   useEffect(() => {
-    supabaseApi.auth.me()
-      .then(setUser)
-      .catch(() => {});
+    supabaseApi.auth.me().then(setUser).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!workoutDone) return;
 
-    window.history.pushState({ workoutDone }, '');
+    window.history.pushState(
+      { workoutDone: true },
+      ''
+    );
 
-    const handler = () => navigate('/program');
+    const handler = () => {
+      navigate('/program');
+    };
 
-    window.addEventListener('popstate', handler);
+    window.addEventListener(
+      'popstate',
+      handler
+    );
 
     return () =>
-      window.removeEventListener('popstate', handler);
+      window.removeEventListener(
+        'popstate',
+        handler
+      );
   }, [workoutDone, navigate]);
 
   const {
     data: programs = [],
-    isLoading: programsLoading,
   } = useQuery({
     queryKey: ['programs'],
     queryFn: () =>
       supabaseApi.entities.WorkoutProgram.filter(
-        {
-          status: 'active',
-        },
+        { status: 'active' },
         '-created_date',
         1
       ),
@@ -829,7 +955,7 @@ export default function LiveWorkout() {
         queryKey: ['logs'],
       });
 
-      const prev =
+      const previous =
         queryClient.getQueryData(['logs']);
 
       const optimistic = {
@@ -845,20 +971,18 @@ export default function LiveWorkout() {
         ]
       );
 
-      return { prev };
+      return {
+        previous,
+      };
     },
 
-    onError: (_err, _data, ctx) => {
-      if (ctx?.prev) {
+    onError: (_error, _data, context) => {
+      if (context?.previous) {
         queryClient.setQueryData(
           ['logs'],
-          ctx.prev
+          context.previous
         );
       }
-
-      toast.error(
-        'Workout could not be saved. Please try again.'
-      );
     },
 
     onSuccess: (log) => {
@@ -870,51 +994,54 @@ export default function LiveWorkout() {
     },
   });
 
-  const updateLogMutation = useMutation({
-    mutationFn: ({ id, data }) =>
-      supabaseApi.entities.WorkoutLog.update(
-        id,
-        data
-      ),
+  const updateLogMutation =
+    useMutation({
+      mutationFn: ({ id, data }) =>
+        supabaseApi.entities.WorkoutLog.update(
+          id,
+          data
+        ),
 
-    onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries({
-        queryKey: ['logs'],
-      });
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({
+          queryKey: ['logs'],
+        });
 
-      const prev =
-        queryClient.getQueryData(['logs']);
+        const previous =
+          queryClient.getQueryData(['logs']);
 
-      queryClient.setQueryData(
-        ['logs'],
-        (old) =>
-          (old || []).map((l) =>
-            l.id === id
-              ? {
-                  ...l,
-                  ...data,
-                }
-              : l
-          )
-      );
-
-      return { prev };
-    },
-
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) {
         queryClient.setQueryData(
           ['logs'],
-          ctx.prev
+          (old) =>
+            (old || []).map((log) =>
+              log.id === id
+                ? {
+                    ...log,
+                    ...data,
+                  }
+                : log
+            )
         );
-      }
-    },
 
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ['logs'],
-      }),
-  });
+        return {
+          previous,
+        };
+      },
+
+      onError: (_error, _vars, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(
+            ['logs'],
+            context.previous
+          );
+        }
+      },
+
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: ['logs'],
+        }),
+    });
 
   const program = programs[0];
 
@@ -923,7 +1050,9 @@ export default function LiveWorkout() {
 
   const microcycle =
     program?.microcycles?.find(
-      (m) => m.week_number === currentWeekNum
+      (micro) =>
+        micro.week_number ===
+        currentWeekNum
     ) ||
     program?.microcycles?.[0];
 
@@ -945,85 +1074,116 @@ export default function LiveWorkout() {
   const restSecs =
     exercise?.rest_seconds || 60;
 
-  /**
-   * IMPORTANT:
-   *
-   * The tracker is FREE.
-   *
-   * We do NOT use canAccess() here.
-   * We do NOT return an Elite upgrade screen.
-   *
-   * Elite status is only used for AI-based program
-   * adjustments after the workout.
-   */
-  const isElite =
-    user?.subscription_plan === 'elite';
+  // ─────────────────────────────────────────────
+  // Complete a set
+  // ─────────────────────────────────────────────
 
   const markSet = () => {
-    const key = `${exIndex}-${setIndex}`;
+    const key =
+      `${exIndex}-${setIndex}`;
 
-    setCompletedSets((prev) => ({
-      ...prev,
-      [key]: true,
-    }));
+    setCompletedSets(
+      (previous) => ({
+        ...previous,
+        [key]: true,
+      })
+    );
 
-    if (setIndex + 1 < totalSets) {
+    if (
+      setIndex + 1 <
+      totalSets
+    ) {
       setResting(true);
-    } else {
-      if (exIndex + 1 < exercises.length) {
-        setExIndex((i) => i + 1);
-        setSetIndex(0);
-
-        toast.success(
-          'Next exercise! 🔥'
-        );
-      } else {
-        finishWorkout();
-      }
+      return;
     }
+
+    if (
+      exIndex + 1 <
+      exercises.length
+    ) {
+      setExIndex(
+        (index) => index + 1
+      );
+
+      setSetIndex(0);
+      setResting(false);
+
+      toast.success(
+        'Next exercise! 🔥'
+      );
+
+      return;
+    }
+
+    finishWorkout();
   };
 
   const afterRest = () => {
     setResting(false);
-    setSetIndex((s) => s + 1);
+    setSetIndex(
+      (set) => set + 1
+    );
   };
+
+  // ─────────────────────────────────────────────
+  // Finish workout
+  // ─────────────────────────────────────────────
 
   const finishWorkout = () => {
     setRunning(false);
     setWorkoutDone(true);
 
     const exercisesCompleted =
-      exercises.map((ex, ei) => ({
-        name: ex.name,
+      exercises.map(
+        (exercise, exerciseIndex) => ({
+          name: exercise.name,
 
-        sets_completed:
-          Array.from({
-            length: ex.sets || 1,
-          }).filter(
-            (_, si) =>
-              completedSets[
-                `${ei}-${si}`
-              ]
-          ).length,
+          sets_completed:
+            Array.from({
+              length:
+                exercise.sets || 1,
+            }).filter(
+              (_, setNumber) =>
+                completedSets[
+                  `${exerciseIndex}-${setNumber}`
+                ]
+            ).length,
 
-        reps_achieved:
-          repsAchieved[ei] ||
-          ex.reps,
+          reps_achieved:
+            repsAchieved[
+              exerciseIndex
+            ] ||
+            exercise.reps,
 
-        notes: '',
-      }));
+          notes: '',
+        })
+      );
 
     logMutation.mutate({
-      program_id: program?.id,
-      date: new Date()
-        .toISOString()
-        .split('T')[0],
-      week_number: currentWeekNum,
-      day_name: day?.day_name,
+      program_id:
+        program?.id,
+
+      date:
+        new Date()
+          .toISOString()
+          .split('T')[0],
+
+      week_number:
+        currentWeekNum,
+
+      day_name:
+        day?.day_name,
+
       exercises_completed:
         exercisesCompleted,
+
       duration_minutes:
-        Math.round(seconds / 60),
+        Math.max(
+          1,
+          Math.round(
+            seconds / 60
+          )
+        ),
     });
 
     toast.success(
@@ -1031,15 +1191,28 @@ export default function LiveWorkout() {
     );
   };
 
-  if (programsLoading || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // ─────────────────────────────────────────────
+  // IMPORTANT ACCESS CONTROL
+  //
+  // The LIVE TRACKER itself is FREE.
+  //
+  // This flag is ONLY used for Elite's
+  // real-time/dynamic program adjustment.
+  // ─────────────────────────────────────────────
 
-  if (!program || days.length === 0) {
+  const canAdjust =
+    canAccess(
+      user?.subscription_plan || 'free',
+      'live_workout_adjustments'
+    );
+
+  // Do NOT put a canAccess('live_workout')
+  // check around this page.
+
+  if (
+    !program ||
+    days.length === 0
+  ) {
     return (
       <div className="px-5 pt-12 pb-24 text-center">
         <Dumbbell className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-30" />
@@ -1114,18 +1287,19 @@ export default function LiveWorkout() {
           </TabsTrigger>
         </TabsList>
 
+        {/* WORKOUT TAB */}
         <TabsContent
           value="workout"
           className="flex-1 px-5 py-4 space-y-4 overflow-y-auto safe-bottom"
         >
           {/* Day selector */}
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {days.map((d, i) => (
+            {days.map((workoutDay, index) => (
               <button
-                key={i}
+                key={index}
                 onClick={() => {
                   if (!started) {
-                    setDayIndex(i);
+                    setDayIndex(index);
                     setExIndex(0);
                     setSetIndex(0);
                     setResting(false);
@@ -1133,13 +1307,12 @@ export default function LiveWorkout() {
                 }}
                 className={cn(
                   'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex-shrink-0',
-
-                  i === dayIndex
+                  index === dayIndex
                     ? 'bg-primary text-primary-foreground border-primary'
                     : 'bg-card border-border text-muted-foreground'
                 )}
               >
-                {d.day_name}
+                {workoutDay.day_name}
               </button>
             ))}
           </div>
@@ -1162,7 +1335,7 @@ export default function LiveWorkout() {
               {savedLog && (
                 <PostWorkoutCheckin
                   log={savedLog}
-                  isElite={isElite}
+                  canAdjust={canAdjust}
                   program={program}
                   onProgramUpdated={() =>
                     queryClient.invalidateQueries({
@@ -1184,194 +1357,319 @@ export default function LiveWorkout() {
                         },
                       }
                     );
-                  }}
+                  }
                 />
               )}
             </div>
           )}
 
-          {/* Start card */}
-          {!started && !workoutDone && (
-            <Card className="p-6 text-center">
-              <Dumbbell className="w-10 h-10 mx-auto mb-3 text-primary" />
+          {/* Start */}
+          {!started &&
+            !workoutDone && (
+              <Card className="p-6 text-center">
+                <Dumbbell className="w-10 h-10 mx-auto mb-3 text-primary" />
 
-              <h2 className="font-heading font-bold text-lg mb-1">
-                {day?.day_name}
-              </h2>
+                <h2 className="font-heading font-bold text-lg mb-1">
+                  {day?.day_name}
+                </h2>
 
-              <p className="text-sm text-muted-foreground mb-1">
-                {day?.workout_type}
-              </p>
-
-              <p className="text-xs text-muted-foreground mb-2">
-                {exercises.length} exercises
-              </p>
-
-              {exercises
-                .slice(0, 3)
-                .map((ex, i) => (
-                  <p
-                    key={i}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {ex.name} — {ex.sets}×
-                    {ex.reps}
-                  </p>
-                ))}
-
-              {exercises.length > 3 && (
-                <p className="text-xs text-muted-foreground">
-                  +{exercises.length - 3}{' '}
-                  more
+                <p className="text-sm text-muted-foreground mb-1">
+                  {day?.workout_type}
                 </p>
-              )}
 
-              <Button
-                className="w-full h-12 font-heading font-semibold mt-5"
-                onClick={() => {
-                  setStarted(true);
-                  setRunning(true);
-                }}
-              >
-                Start Workout
-              </Button>
-            </Card>
-          )}
+                <p className="text-xs text-muted-foreground mb-2">
+                  {exercises.length}{' '}
+                  exercises
+                </p>
+
+                {exercises
+                  .slice(0, 3)
+                  .map(
+                    (ex, index) => (
+                      <p
+                        key={index}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {ex.name} —{' '}
+                        {ex.sets}×
+                        {ex.reps}
+                      </p>
+                    )
+                  )}
+
+                {exercises.length >
+                  3 && (
+                  <p className="text-xs text-muted-foreground">
+                    +
+                    {exercises.length -
+                      3}{' '}
+                    more
+                  </p>
+                )}
+
+                <Button
+                  className="w-full h-12 font-heading font-semibold mt-5"
+                  onClick={() => {
+                    setStarted(true);
+                    setRunning(true);
+                  }}
+                >
+                  Start Workout
+                </Button>
+              </Card>
+            )}
 
           {/* Active workout */}
           {started &&
             !workoutDone &&
-            !resting &&
-            exercise && (
-              <Card className="p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      Exercise {exIndex + 1} of{' '}
-                      {exercises.length}
-                    </p>
+            exercise &&
+            !resting && (
+              <Card className="p-5 border-2 border-primary/30">
+                <div className="flex items-center justify-between mb-1">
+                  <Badge className="bg-primary/15 text-primary border-0 text-xs">
+                    Exercise {exIndex + 1} of{' '}
+                    {exercises.length}
+                  </Badge>
 
-                    <h2 className="font-heading font-bold text-xl mt-1">
-                      {exercise.name}
-                    </h2>
-
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {exercise.sets} sets ×{' '}
-                      {exercise.reps}
-                    </p>
-                  </div>
-
-                  <Badge variant="outline">
-                    Set {setIndex + 1}/
+                  <Badge className="bg-muted text-muted-foreground border-0 text-xs">
+                    Set {setIndex + 1} of{' '}
                     {totalSets}
                   </Badge>
                 </div>
 
+                <h2 className="font-heading font-bold text-xl mt-2 mb-1">
+                  {exercise.name}
+                </h2>
+
+                <p className="text-sm text-muted-foreground mb-1">
+                  Target: {exercise.reps}{' '}
+                  reps · {restSecs}s rest
+                </p>
+
                 {exercise.notes && (
-                  <div className="mt-4 p-3 rounded-xl bg-muted/40">
-                    <p className="text-xs text-muted-foreground">
-                      {exercise.notes}
-                    </p>
+                  <p className="text-xs text-muted-foreground italic mb-3">
+                    "{exercise.notes}"
+                  </p>
+                )}
+
+                {exercise.activation_cue && (
+                  <div className="flex items-start gap-2 mb-3 p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                    <Zap className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+
+                    <div>
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
+                        Activation Cue
+                      </p>
+
+                      <p className="text-xs text-foreground leading-relaxed">
+                        {exercise.activation_cue}
+                      </p>
+                    </div>
                   </div>
                 )}
 
-                <div className="mt-5 space-y-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Reps achieved
-                    </label>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                    Actual reps:
+                  </span>
 
-                    <Input
-                      type="number"
-                      min="0"
-                      value={
-                        repsAchieved[exIndex] ||
-                        ''
-                      }
-                      onChange={(e) =>
-                        setRepsAchieved(
-                          (prev) => ({
-                            ...prev,
-                            [exIndex]:
-                              e.target.value,
-                          })
-                        )
-                      }
-                      placeholder={
-                        String(exercise.reps)
-                      }
-                      className="mt-1 h-11"
-                    />
-                  </div>
-
-                  <Button
-                    className="w-full h-12 font-heading font-semibold"
-                    onClick={markSet}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Complete Set
-                  </Button>
+                  <Input
+                    type="number"
+                    placeholder={
+                      exercise.reps
+                    }
+                    className="h-9 text-sm w-24"
+                    value={
+                      repsAchieved[
+                        exIndex
+                      ] || ''
+                    }
+                    onChange={(e) =>
+                      setRepsAchieved(
+                        (prev) => ({
+                          ...prev,
+                          [exIndex]:
+                            e.target
+                              .value,
+                        })
+                      )
+                    }
+                  />
                 </div>
 
-                <div className="mt-5">
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-                    Sets
-                  </p>
+                <div className="flex gap-2 mb-5">
+                  {Array.from({
+                    length: totalSets,
+                  }).map(
+                    (_, setNumber) => {
+                      const key =
+                        `${exIndex}-${setNumber}`;
 
-                  <div className="flex gap-2">
-                    {Array.from({
-                      length: totalSets,
-                    }).map((_, i) => {
-                      const complete =
-                        completedSets[
-                          `${exIndex}-${i}`
+                      const done =
+                        !!completedSets[
+                          key
                         ];
+
+                      const current =
+                        setNumber ===
+                        setIndex;
 
                       return (
                         <div
-                          key={i}
+                          key={setNumber}
                           className={cn(
-                            'w-9 h-9 rounded-full flex items-center justify-center border',
-
-                            complete
-                              ? 'bg-accent/15 border-accent text-accent'
-                              : i === setIndex
-                              ? 'bg-primary/10 border-primary text-primary'
-                              : 'bg-muted border-border text-muted-foreground'
+                            'w-9 h-9 rounded-xl flex items-center justify-center border-2 text-xs font-bold transition-all',
+                            done
+                              ? 'bg-accent border-accent text-accent-foreground'
+                              : current
+                              ? 'border-primary text-primary'
+                              : 'border-border text-muted-foreground'
                           )}
                         >
-                          {complete ? (
+                          {done ? (
                             <CheckCircle2 className="w-4 h-4" />
                           ) : (
-                            <Circle className="w-4 h-4" />
+                            setNumber + 1
                           )}
                         </div>
                       );
-                    })}
-                  </div>
+                    }
+                  )}
                 </div>
+
+                <Button
+                  className="w-full h-12 font-heading font-semibold text-base"
+                  onClick={markSet}
+                >
+                  <CheckCircle2 className="w-5 h-5 mr-2" />
+                  Complete Set {setIndex + 1}
+                </Button>
               </Card>
             )}
 
-          {/* Rest timer */}
+          {/* Rest */}
           {started &&
             !workoutDone &&
             resting && (
-              <RestTimer
-                seconds={restSecs}
-                onDone={afterRest}
-              />
+              <Card className="p-5">
+                <RestTimer
+                  seconds={restSecs}
+                  onDone={afterRest}
+                />
+              </Card>
+            )}
+
+          {/* Exercise list */}
+          {started &&
+            !workoutDone && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                  All Exercises
+                </p>
+
+                {exercises.map(
+                  (ex, index) => {
+                    const allDone =
+                      Array.from({
+                        length:
+                          ex.sets || 1,
+                      }).every(
+                        (_, setNumber) =>
+                          completedSets[
+                            `${index}-${setNumber}`
+                          ]
+                      );
+
+                    return (
+                      <div
+                        key={index}
+                        className={cn(
+                          'flex items-center gap-3 p-3 rounded-xl border transition-all',
+                          index === exIndex
+                            ? 'border-primary bg-primary/5'
+                            : allDone
+                            ? 'border-accent/30 bg-accent/5'
+                            : 'border-border bg-card'
+                        )}
+                      >
+                        {allDone ? (
+                          <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />
+                        ) : index ===
+                          exIndex ? (
+                          <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 animate-pulse ml-1" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">
+                            {ex.name}
+                          </p>
+
+                          <p className="text-xs text-muted-foreground">
+                            {ex.sets}×
+                            {ex.reps}
+                          </p>
+
+                          {ex.activation_cue && (
+                            <p className="text-[10px] text-primary/70 truncate mt-0.5">
+                              {ex.activation_cue}
+                            </p>
+                          )}
+                        </div>
+
+                        {index ===
+                          exIndex &&
+                          !allDone && (
+                            <SkipForward
+                              className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground"
+                              onClick={() => {
+                                setExIndex(
+                                  index + 1 <
+                                    exercises.length
+                                    ? index + 1
+                                    : index
+                                );
+
+                                setSetIndex(0);
+                                setResting(false);
+                              }}
+                            />
+                          )}
+                      </div>
+                    );
+                  }
+                )}
+
+                <Button
+                  variant="outline"
+                  className="w-full mt-2"
+                  onClick={
+                    finishWorkout
+                  }
+                >
+                  Finish Workout Early
+                </Button>
+              </div>
             )}
         </TabsContent>
 
+        {/* BASELINE TAB */}
         <TabsContent
           value="baseline"
           className="flex-1 px-5 py-4 overflow-y-auto safe-bottom"
         >
-          <BaselineSection />
+          <h2 className="font-heading font-bold text-lg mb-1">
+            My Current Maxes
+          </h2>
+
+          <MovementBaseline
+            trainingType={
+              program?.training_type
+            }
+          />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
-```
