@@ -33,7 +33,6 @@
     --chart-4: 35 92% 60%;
     --chart-5: 0 72% 55%;
     --radius: 0.75rem;
-
     --sidebar-background: 220 18% 7%;
     --sidebar-foreground: 210 20% 95%;
     --sidebar-primary: 210 100% 56%;
@@ -70,7 +69,6 @@
     --chart-4: 35 92% 60%;
     --chart-5: 0 72% 55%;
     --radius: 0.75rem;
-
     --sidebar-background: 220 18% 7%;
     --sidebar-foreground: 210 20% 95%;
     --sidebar-primary: 210 100% 56%;
@@ -79,24 +77,6 @@
     --sidebar-accent-foreground: 210 20% 85%;
     --sidebar-border: 220 15% 15%;
     --sidebar-ring: 210 100% 56%;
-  }
-
-  * {
-    @apply border-border outline-ring/50;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
-  }
-
-  body {
-    @apply bg-background text-foreground;
-    overscroll-behavior: none;
-  }
-
-  button,
-  a,
-  svg {
-    user-select: none;
-    -webkit-user-select: none;
   }
 }
 
@@ -123,17 +103,18 @@
     --ring: 210 100% 56%;
     --chart-1: 210 100% 56%;
     --chart-2: 160 84% 45%;
-    --chart-3: 280 70% 55%;
-    --chart-4: 35 92% 55%;
-    --chart-5: 0 72% 50%;
+    --chart-3: 280 70% 60%;
+    --chart-4: 35 92% 60%;
+    --chart-5: 0 72% 55%;
+    --radius: 0.75rem;
     --sidebar-background: 220 18% 7%;
-    --sidebar-foreground: 210 20% 8%;
-    --sidebar-primary: 210 100% 50%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 210 100% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 15% 92%;
-    --sidebar-accent-foreground: 220 20% 20%;
-    --sidebar-border: 220 15% 86%;
-    --sidebar-ring: 210 100% 50%;
+    --sidebar-accent: 220 15% 13%;
+    --sidebar-accent-foreground: 210 20% 20%;
+    --sidebar-border: 220 15% 15%;
+    --sidebar-ring: 210 100% 56%;
   }
 }
 
@@ -209,6 +190,34 @@
   --sidebar-ring: 210 100% 50%;
 }
 
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    overscroll-behavior: none;
+    margin: 0;
+    font-family: var(--font-body);
+  }
+
+  button,
+  a,
+  svg {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
 .safe-top {
   padding-top: max(3rem, env(safe-area-inset-top));
 }
@@ -225,25 +234,5 @@
 
 .pb-safe {
   padding-bottom: max(6rem, calc(env(safe-area-inset-bottom) + 5rem));
-}
-
-html,
-body,
-#root {
-  min-height: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-html {
-  background: #05070b;
-  scroll-behavior: smooth;
-}
-
-body {
-  min-width: 320px;
-  background: #05070b;
-  color: #ffffff;
-  overflow-x: hidden;
 }
 ```
