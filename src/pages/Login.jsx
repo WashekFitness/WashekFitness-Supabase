@@ -1,4 +1,3 @@
-```jsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -18,62 +17,78 @@ export default function Login() {
 
   const submit = async (e) => {
     e.preventDefault();
+
     setLoading(true);
 
     try {
-      if (mode === 'signup') {
-        const signupEmail = email.trim();
+      const cleanEmail = email.trim();
+      const cleanFirstName = firstName.trim();
 
+      if (mode === 'signup') {
         const { data, error } = await supabase.auth.signUp({
-          email: signupEmail,
+          email: cleanEmail,
           password,
           options: {
             data: {
-              first_name: firstName.trim(),
+              first_name: cleanFirstName,
             },
           },
         });
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
-        if (data.session) {
-          toast.success('Account created! Welcome to Washek Fitness.');
-          navigate('/');
-        } else {
+        // Supabase normally returns a user with an email confirmation
+        // required when email confirmation is enabled.
+        if (data.user && !data.session) {
           toast.success(
-            `Account created! We sent a verification email to ${signupEmail}.`
+            `Account created! We sent a verification email to ${cleanEmail}. Please confirm your email before signing in.`
           );
 
           setMode('login');
           setPassword('');
-
-          alert(
-            `Your Washek Fitness account has been created.\n\n` +
-            `We sent a verification email to:\n${signupEmail}\n\n` +
-            `Please check your email and click the verification link before signing in.`
-          );
+          return;
         }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
 
-        if (error) throw error;
-
-        toast.success('Signed in!');
+        // If email confirmation is disabled, Supabase may immediately
+        // create an authenticated session.
+        toast.success('Account created successfully!');
         navigate('/');
+        return;
       }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Welcome back!');
+      navigate('/');
     } catch (error) {
-      toast.error(error?.message || 'Authentication failed.');
+      console.error('Authentication error:', error);
+
+      toast.error(
+        error?.message || 'Authentication failed. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const toggleMode = () => {
+    setMode(mode === 'login' ? 'signup' : 'login');
+    setPassword('');
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-md">
+
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto mb-4">
             <Zap className="w-7 h-7 text-primary" />
@@ -98,6 +113,7 @@ export default function Login() {
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               required
+              disabled={loading}
             />
           )}
 
@@ -107,6 +123,7 @@ export default function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            disabled={loading}
           />
 
           <Input
@@ -116,6 +133,7 @@ export default function Login() {
             onChange={(e) => setPassword(e.target.value)}
             minLength={6}
             required
+            disabled={loading}
           />
 
           <Button
@@ -133,9 +151,8 @@ export default function Login() {
           <button
             type="button"
             className="w-full text-sm text-muted-foreground hover:text-foreground"
-            onClick={() =>
-              setMode(mode === 'login' ? 'signup' : 'login')
-            }
+            onClick={toggleMode}
+            disabled={loading}
           >
             {mode === 'login'
               ? 'Need an account? Create one'
@@ -146,4 +163,3 @@ export default function Login() {
     </div>
   );
 }
-```
