@@ -16,228 +16,148 @@ export default function Login() {
   const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const resetForm = () => {
-    setEmail('');
-    setPassword('');
-    setFirstName('');
-    setLastName('');
-  };
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-  const handleSignup = async () => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanFirstName = firstName.trim();
-    const cleanLastName = lastName.trim();
+    if (loading) return;
 
-    if (!cleanFirstName) {
-      throw new Error('Please enter your first name.');
-    }
+    setLoading(true);
 
-    if (!cleanEmail) {
-      throw new Error('Please enter your email address.');
-    }
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanFirstName = firstName.trim();
+      const cleanLastName = lastName.trim();
 
-    if (password.length < 6) {
-      throw new Error(
-        'Your password must be at least 6 characters.'
-      );
-    }
+      if (!cleanEmail) {
+        throw new Error('Please enter your email address.');
+      }
 
-    const {
-      data,
-      error,
-    } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password,
-      options: {
-        data: {
-          first_name: cleanFirstName,
-          last_name: cleanLastName,
-          full_name: [cleanFirstName, cleanLastName]
-            .filter(Boolean)
-            .join(' '),
-        },
-      },
-    });
+      if (!password) {
+        throw new Error('Please enter a password.');
+      }
 
-    if (error) {
-      throw error;
-    }
+      if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters.');
+      }
 
-    if (!data?.user) {
-      throw new Error(
-        'Supabase did not return a user after signup.'
-      );
-    }
+      /*
+       * ============================
+       * CREATE ACCOUNT
+       * ============================
+       */
+      if (mode === 'signup') {
+        if (!cleanFirstName) {
+          throw new Error('Please enter your first name.');
+        }
 
-    /*
-     * If email confirmation is disabled, Supabase gives us
-     * a session immediately.
-     *
-     * If email confirmation is enabled, session will be null
-     * until the user confirms their email.
-     */
-    if (data.session) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert(
-          {
-            id: data.user.id,
-            first_name: cleanFirstName,
-            last_name: cleanLastName,
-            full_name: [cleanFirstName, cleanLastName]
-              .filter(Boolean)
-              .join(' '),
-            role: 'user',
-            onboarded: false,
+        const fullName = [
+          cleanFirstName,
+          cleanLastName,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        const {
+          data,
+          error,
+        } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              first_name: cleanFirstName,
+              last_name: cleanLastName,
+              full_name: fullName,
+            },
           },
-          {
-            onConflict: 'id',
-          }
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data?.user) {
+          throw new Error(
+            'Supabase did not return a user.'
+          );
+        }
+
+        /*
+         * Email confirmation MUST be disabled in Supabase
+         * for the signup flow you want.
+         */
+        if (!data.session) {
+          throw new Error(
+            'Account was created, but Supabase did not create a session. Make sure "Confirm email" is OFF in Authentication → Providers → Email.'
+          );
+        }
+
+        toast.success('Account created.');
+
+        /*
+         * The database trigger creates the profile
+         * automatically.
+         *
+         * The user is already signed in here.
+         */
+        navigate('/onboarding', {
+          replace: true,
+        });
+
+        return;
+      }
+
+      /*
+       * ============================
+       * SIGN IN
+       * ============================
+       */
+
+      const {
+        data,
+        error,
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.session || !data?.user) {
+        throw new Error(
+          'Supabase did not return an active session.'
         );
+      }
+
+      toast.success('Welcome back.');
+
+      /*
+       * Check whether onboarding has already
+       * been completed.
+       */
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from('profiles')
+        .select('onboarded')
+        .eq('id', data.user.id)
+        .maybeSingle();
 
       if (profileError) {
         throw profileError;
       }
 
-      toast.success(
-        'Account created successfully.'
-      );
-
-      resetForm();
-
-      navigate('/onboarding', {
-        replace: true,
-      });
-
-      return;
-    }
-
-    /*
-     * No session means email confirmation is probably enabled.
-     */
-    toast.success(
-      'Account created. Check your email to confirm your account.'
-    );
-
-    setMode('login');
-    setPassword('');
-  };
-
-  const handleLogin = async () => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail) {
-      throw new Error(
-        'Please enter your email address.'
-      );
-    }
-
-    if (!password) {
-      throw new Error(
-        'Please enter your password.'
-      );
-    }
-
-    const {
-      data,
-      error,
-    } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data?.session || !data?.user) {
-      throw new Error(
-        'Login succeeded but no active session was returned.'
-      );
-    }
-
-    /*
-     * Make sure the profile exists.
-     *
-     * This also protects accounts that were created
-     * before the new signup flow was installed.
-     */
-    const { data: existingProfile, error: profileReadError } =
-      await supabase
-        .from('profiles')
-        .select('id, onboarded')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-    if (profileReadError) {
-      throw profileReadError;
-    }
-
-    if (!existingProfile) {
-      const metadata = data.user.user_metadata || {};
-
-      const fallbackFirstName =
-        metadata.first_name || '';
-
-      const fallbackLastName =
-        metadata.last_name || '';
-
-      const { error: profileCreateError } =
-        await supabase
-          .from('profiles')
-          .insert({
-            id: data.user.id,
-            first_name: fallbackFirstName,
-            last_name: fallbackLastName,
-            full_name:
-              metadata.full_name ||
-              [fallbackFirstName, fallbackLastName]
-                .filter(Boolean)
-                .join(' '),
-            role: 'user',
-            onboarded: false,
-          });
-
-      if (profileCreateError) {
-        throw profileCreateError;
-      }
-
-      toast.success('Welcome to Washek Fitness.');
-
-      navigate('/onboarding', {
-        replace: true,
-      });
-
-      return;
-    }
-
-    toast.success('Welcome back.');
-
-    if (existingProfile.onboarded) {
-      navigate('/', {
-        replace: true,
-      });
-    } else {
-      navigate('/onboarding', {
-        replace: true,
-      });
-    }
-  };
-
-  const submit = async (event) => {
-    event.preventDefault();
-
-    if (loading) {
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      if (mode === 'signup') {
-        await handleSignup();
+      if (!profile || !profile.onboarded) {
+        navigate('/onboarding', {
+          replace: true,
+        });
       } else {
-        await handleLogin();
+        navigate('/', {
+          replace: true,
+        });
       }
     } catch (error) {
       console.error(
@@ -254,7 +174,7 @@ export default function Login() {
     }
   };
 
-  const toggleMode = () => {
+  const switchMode = () => {
     setMode((current) =>
       current === 'login'
         ? 'signup'
@@ -283,9 +203,10 @@ export default function Login() {
         </div>
 
         <form
-          onSubmit={submit}
+          onSubmit={handleSubmit}
           className="space-y-4 bg-card border border-border rounded-3xl p-6"
         >
+
           {mode === 'signup' && (
             <>
               <Input
@@ -318,11 +239,7 @@ export default function Login() {
             onChange={(event) =>
               setEmail(event.target.value)
             }
-            autoComplete={
-              mode === 'signup'
-                ? 'email'
-                : 'username'
-            }
+            autoComplete="email"
             required
           />
 
@@ -357,15 +274,15 @@ export default function Login() {
           <button
             type="button"
             className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
-            onClick={toggleMode}
+            onClick={switchMode}
             disabled={loading}
           >
             {mode === 'login'
               ? 'Need an account? Create one'
               : 'Already have an account? Sign in'}
           </button>
-        </form>
 
+        </form>
       </div>
     </div>
   );
