@@ -1,35 +1,95 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Zap, ArrowLeft, Mail, Send } from 'lucide-react';
+import {
+  Zap,
+  ArrowLeft,
+  Mail,
+  Send,
+} from 'lucide-react';
+
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { supabaseApi } from '@/lib/supabaseApi';
 
+const CONTACT_EMAIL = 'washekfitness@gmail.com';
+
 export default function Contact() {
   const { toast } = useToast();
-  const [form, setForm] = useState({ name: '', email: '', message: '' });
+
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    message: '',
+  });
+
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const updateField = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const message = form.message.trim();
+
+    if (!name || !email || !message) {
+      toast({
+        title: 'Please complete the form',
+        description:
+          'Name, email, and message are required.',
+        variant: 'destructive',
+      });
+
+      return;
+    }
+
     setSubmitting(true);
+
     try {
-      await supabaseApi.email.send({
-        to: 'washekfitness@gmail.com',
-        subject: `New message from ${form.name}`,
-        body: `Name: ${form.name}\nEmail: ${form.email}\n\nMessage:\n${form.message}`,
+      const result = await supabaseApi.email.send({
+        name,
+        email,
+        message,
       });
-      setForm({ name: '', email: '', message: '' });
-      toast({
-        title: 'Message sent',
-        description: 'Thanks for reaching out — Adrian will get back to you soon.',
+
+      setForm({
+        name: '',
+        email: '',
+        message: '',
       });
-    } catch (err) {
+
+      if (result?.queued) {
+        toast({
+          title: 'Message received',
+          description:
+            'Your message was saved successfully. Email notifications still need to be configured.',
+        });
+      } else {
+        toast({
+          title: 'Message sent',
+          description:
+            'Thanks for reaching out — Adrian will get back to you soon.',
+        });
+      }
+    } catch (error) {
+      console.error(
+        '[CONTACT] Failed to send message:',
+        error
+      );
+
       toast({
-        title: 'Something went wrong',
-        description: 'Please try emailing washekfitness@gmail.com directly.',
+        title: 'Message could not be sent',
+        description:
+          error?.message ||
+          `Please try emailing ${CONTACT_EMAIL} directly.`,
         variant: 'destructive',
       });
     } finally {
@@ -38,78 +98,136 @@ export default function Contact() {
   };
 
   return (
-    <div className="px-5 pb-4 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-6 pt-2">
-        <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="w-5 h-5" />
+    <div className="mx-auto max-w-2xl px-5 pb-4">
+      <div className="mb-6 flex items-center gap-3 pt-2">
+        <Link
+          to="/"
+          className="text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Link>
+
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center">
-            <Zap className="w-4 h-4 text-primary" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/15">
+            <Zap className="h-4 w-4 text-primary" />
           </div>
-          <span className="font-heading font-bold text-sm">Washek Fitness</span>
+
+          <span className="font-heading text-sm font-bold">
+            Washek Fitness
+          </span>
         </div>
       </div>
 
-      <h1 className="font-heading text-3xl font-bold tracking-tight mb-3">Contact Us</h1>
-      <p className="text-muted-foreground mb-8">
-        Questions, feedback, or partnership ideas? We'd love to hear from you.
+      <h1 className="mb-3 font-heading text-3xl font-bold tracking-tight">
+        Contact Us
+      </h1>
+
+      <p className="mb-8 text-muted-foreground">
+        Questions, feedback, or partnership ideas?
+        We'd love to hear from you.
       </p>
 
       <div className="space-y-6">
-        {/* Contact method */}
         <a
-          href="mailto:washekfitness@gmail.com"
-          className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+          href={`mailto:${CONTACT_EMAIL}`}
+          className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40"
         >
-          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
-            <Mail className="w-5 h-5 text-primary" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
+            <Mail className="h-5 w-5 text-primary" />
           </div>
+
           <div>
-            <p className="font-semibold text-sm">Email</p>
-            <p className="text-xs text-muted-foreground">washekfitness@gmail.com</p>
+            <p className="text-sm font-semibold">
+              Email
+            </p>
+
+            <p className="text-xs text-muted-foreground">
+              {CONTACT_EMAIL}
+            </p>
           </div>
         </a>
 
-        {/* Contact form */}
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border bg-card p-5">
-          <h2 className="font-heading font-semibold text-lg">Send a Message</h2>
-          <div className="grid sm:grid-cols-2 gap-3">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 rounded-xl border border-border bg-card p-5"
+        >
+          <h2 className="font-heading text-lg font-semibold">
+            Send a Message
+          </h2>
+
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Name</label>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Name
+              </label>
+
               <Input
                 required
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(event) =>
+                  updateField(
+                    'name',
+                    event.target.value
+                  )
+                }
                 placeholder="Your name"
+                disabled={submitting}
               />
             </div>
+
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Email</label>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Email
+              </label>
+
               <Input
                 required
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(event) =>
+                  updateField(
+                    'email',
+                    event.target.value
+                  )
+                }
                 placeholder="you@example.com"
+                disabled={submitting}
               />
             </div>
           </div>
+
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Message</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Message
+            </label>
+
             <Textarea
               required
               value={form.message}
-              onChange={(e) => setForm({ ...form, message: e.target.value })}
+              onChange={(event) =>
+                updateField(
+                  'message',
+                  event.target.value
+                )
+              }
               placeholder="How can we help?"
               className="min-h-[120px] resize-none"
+              disabled={submitting}
             />
           </div>
-          <Button type="submit" disabled={submitting} className="w-full h-11">
+
+          <Button
+            type="submit"
+            disabled={submitting}
+            className="h-11 w-full"
+          >
             {submitting ? (
-              <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
             ) : (
-              <>Send Message <Send className="ml-2 w-4 h-4" /></>
+              <>
+                Send Message
+                <Send className="ml-2 h-4 w-4" />
+              </>
             )}
           </Button>
         </form>
