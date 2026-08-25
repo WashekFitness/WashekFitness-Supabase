@@ -3,9 +3,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* =========================================================
-   WASHEK FITNESS — GLOBAL STYLES
-   ========================================================= */
+/* Washek Fitness global styles */
 
 :root {
   font-family:
@@ -24,6 +22,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  background: #05070b;
+  scroll-behavior: smooth;
+}
+
 html,
 body,
 #root {
@@ -32,12 +35,9 @@ body,
   padding: 0;
 }
 
-html {
-  background: #05070b;
-}
-
 body {
   min-width: 320px;
+  overflow-x: hidden;
   background: #05070b;
   color: #ffffff;
 }
@@ -61,31 +61,21 @@ button:disabled {
   cursor: not-allowed;
 }
 
-img,
-svg {
-  max-width: 100%;
-}
-
 a {
   color: inherit;
   text-decoration: none;
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+img,
+svg {
+  max-width: 100%;
 }
 
-/* Better mobile tap behavior */
-button,
-a,
-input,
-textarea,
-select {
-  -webkit-tap-highlight-color: transparent;
+::selection {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -104,20 +94,8 @@ select {
   background: #36445d;
 }
 
-/* Firefox */
 * {
   scrollbar-width: thin;
   scrollbar-color: #263043 #080b12;
-}
-
-/* Selection */
-::selection {
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-}
-
-/* Prevent accidental horizontal overflow */
-body {
-  overflow-x: hidden;
 }
 ```
