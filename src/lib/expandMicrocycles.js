@@ -1,398 +1,399 @@
 /**
- * Expands a program that only has 3 anchor microcycles (weeks 1, 5, 9)
- * into a full 12-week program by interpolating the missing weeks.
+ * Safely normalizes workout-program microcycle data.
  *
- * Periodization logic:
- * Meso 1 (wks 1-4): Foundation
- *   Wk1 = anchor (as-is)
- *   Wk2 = +10% volume (add 1 set to main lifts)function safeParse(value, fallback) {
-  if (value == null) return fallback;
+ * The AI generator can return arrays, objects, JSON strings, null values,
+ * or slightly different field shapes. This file converts all of those
+ * possibilities into one predictable structure for the UI.
+ */
 
-  if (typeof value !== 'string') {
+function safeParse(value, fallback = null) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "string") {
     return value;
   }
 
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return fallback;
+  }
+
   try {
-    return JSON.parse(value);
+    return JSON.parse(trimmed);
   } catch {
     return fallback;
   }
 }
 
-function deepClone(obj) {
-  try {
-    return JSON.parse(JSON.stringify(obj));
-  } catch {
-    return obj;
+function asArray(value) {
+  const parsed = safeParse(value, []);
+
+  if (Array.isArray(parsed)) {
+    return parsed;
   }
+
+  if (parsed && typeof parsed === "object") {
+    // Sometimes APIs return { items: [...] }
+    if (Array.isArray(parsed.items)) {
+      return parsed.items;
+    }
+
+    if (Array.isArray(parsed.data)) {
+      return parsed.data;
+    }
+
+    if (Array.isArray(parsed.microcycles)) {
+      return parsed.microcycles;
+    }
+
+    // A single object can represent one item.
+    return [parsed];
+  }
+
+  return [];
 }
 
-function asString(value, fallback = '') {
-  if (typeof value === 'string') return value;
-  if (value == null) return fallback;
+function asObject(value) {
+  const parsed = safeParse(value, {});
 
-  try {
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  return {};
+}
+
+function safeNumber(value, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function safeString(value, fallback = "") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
-  } catch {
-    return fallback;
-  }
-}
-
-function asNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function normalizeExercise(exercise) {
-  const ex = exercise && typeof exercise === 'object'
-    ? exercise
-    : {};
-
-  return {
-    ...ex,
-    name: asString(ex.name, 'Exercise'),
-    sets: Math.max(1, Math.round(asNumber(ex.sets, 3))),
-    reps: asString(ex.reps, '8-10'),
-    rest_seconds: Math.max(0, Math.round(asNumber(ex.rest_seconds, 90))),
-    notes: asString(ex.notes, ''),
-    activation_cue: asString(ex.activation_cue, ''),
-  };
-}
-
-function normalizeDay(day, index) {
-  const source = day && typeof day === 'object'
-    ? day
-    : {};
-
-  const exercises = Array.isArray(source.exercises)
-    ? source.exercises.map(normalizeExercise)
-    : [];
-
-  return {
-    ...source,
-    day_name: asString(source.day_name, `Day ${index + 1}`),
-    workout_type: asString(source.workout_type, exercises.length ? 'Training' : 'Rest'),
-    exercises,
-  };
-}
-
-function normalizeMicrocycle(micro, index) {
-  const source = micro && typeof micro === 'object'
-    ? micro
-    : {};
-
-  const days = Array.isArray(source.days)
-    ? source.days.map(normalizeDay)
-    : [];
-
-  return {
-    ...source,
-    week_number: Math.max(
-      1,
-      Math.round(asNumber(source.week_number, index + 1))
-    ),
-    mesocycle_index: Math.max(
-      0,
-      Math.round(asNumber(source.mesocycle_index, Math.floor(index / 4)))
-    ),
-    week_type: asString(source.week_type, ''),
-    days,
-  };
-}
-
-function normalizeMeso(meso, index) {
-  const source = meso && typeof meso === 'object'
-    ? meso
-    : {};
-
-  return {
-    ...source,
-    name: asString(source.name, `Training Phase ${index + 1}`),
-    focus: asString(source.focus, ''),
-    weeks: Math.max(1, Math.round(asNumber(source.weeks, 4))),
-    intensity: asString(source.intensity, 'Moderate'),
-    week_start: Math.max(
-      1,
-      Math.round(asNumber(source.week_start, index * 4 + 1))
-    ),
-    week_end: Math.max(
-      1,
-      Math.round(asNumber(source.week_end, index * 4 + 4))
-    ),
-  };
-}
-
-function normalizeProgram(program) {
-  const parsed = safeParse(program, null);
-
-  if (!parsed || typeof parsed !== 'object') {
-    return null;
   }
 
-  const microcyclesValue = safeParse(parsed.microcycles, []);
-  const mesocyclesValue = safeParse(parsed.mesocycles, []);
+  return fallback;
+}
 
-  const microcycles = Array.isArray(microcyclesValue)
-    ? microcyclesValue
-        .map(normalizeMicrocycle)
-        .sort((a, b) => a.week_number - b.week_number)
-    : [];
-
-  const mesocycles = Array.isArray(mesocyclesValue)
-    ? mesocyclesValue.map(normalizeMeso)
-    : [];
-
-  const macrocycle = safeParse(parsed.macrocycle, {});
+function normalizeExercise(exercise, exerciseIndex = 0) {
+  const source = asObject(exercise);
 
   return {
-    ...parsed,
+    id:
+      source.id ??
+      source.exercise_id ??
+      `exercise-${exerciseIndex}`,
 
-    program_name: asString(
-      parsed.program_name,
-      'Your Training Program'
+    name:
+      safeString(
+        source.name ??
+          source.exercise_name ??
+          source.title ??
+          source.exercise,
+        "Exercise"
+      ),
+
+    sets: safeNumber(
+      source.sets ??
+        source.set_count ??
+        source.number_of_sets,
+      0
     ),
 
-    duration_weeks: Math.max(
-      1,
-      Math.round(
-        asNumber(
-          parsed.duration_weeks,
-          microcycles.length || 12
-        )
-      )
+    reps: safeString(
+      source.reps ??
+        source.rep_range ??
+        source.repetitions,
+      ""
     ),
 
-    fitness_level: asString(
-      parsed.fitness_level,
-      'Intermediate'
+    rest_seconds: safeNumber(
+      source.rest_seconds ??
+        source.rest ??
+        source.rest_time,
+      0
     ),
 
-    current_week: Math.max(
-      1,
-      Math.round(asNumber(parsed.current_week, 1))
+    notes: safeString(
+      source.notes ??
+        source.description ??
+        source.instructions,
+      ""
     ),
 
-    macrocycle:
-      macrocycle && typeof macrocycle === 'object'
-        ? macrocycle
-        : {},
+    activation_cue: safeString(
+      source.activation_cue ??
+        source.activation ??
+        source.cue,
+      ""
+    ),
 
-    mesocycles,
+    tempo: safeString(source.tempo, ""),
 
-    microcycles,
+    weight: safeString(
+      source.weight ??
+        source.load,
+      ""
+    ),
+
+    rpe: safeString(source.rpe, ""),
+
+    rir: safeString(source.rir, "")
   };
 }
 
-function adjustSets(days, multiplier) {
-  return (Array.isArray(days) ? days : []).map((day, index) => ({
-    ...normalizeDay(day, index),
+function normalizeDay(day, dayIndex = 0) {
+  const source = asObject(day);
 
-    exercises: (Array.isArray(day?.exercises) ? day.exercises : [])
-      .map(normalizeExercise)
-      .map((ex) => ({
-        ...ex,
-        sets: Math.max(
-          1,
-          Math.round((Number(ex.sets) || 3) * multiplier)
-        ),
-      })),
-  }));
-}
-
-function makeWeek(
-  anchorMicro,
-  weekNumber,
-  mesocycleIndex,
-  weekType,
-  setsMultiplier
-) {
-  const cloned = deepClone(anchorMicro) || {};
+  const exercises = asArray(
+    source.exercises ??
+      source.workout ??
+      source.exercise_list
+  ).map((exercise, index) =>
+    normalizeExercise(exercise, index)
+  );
 
   return {
-    ...normalizeMicrocycle(cloned, weekNumber - 1),
+    id:
+      source.id ??
+      `day-${dayIndex}`,
 
-    week_number: weekNumber,
-    mesocycle_index: mesocycleIndex,
-    week_type: weekType,
+    day_index: dayIndex,
 
-    days: adjustSets(
-      cloned.days || [],
-      setsMultiplier
+    day_name:
+      safeString(
+        source.day_name ??
+          source.name ??
+          source.day ??
+          source.title,
+        `Day ${dayIndex + 1}`
+      ),
+
+    workout_type:
+      safeString(
+        source.workout_type ??
+          source.type ??
+          source.focus,
+        "Training"
+      ),
+
+    description:
+      safeString(
+        source.description ??
+          source.overview ??
+          source.notes,
+        ""
+      ),
+
+    duration_minutes: safeNumber(
+      source.duration_minutes ??
+        source.duration ??
+        source.estimated_duration,
+      0
     ),
+
+    exercises
+  };
+}
+
+function normalizeMicrocycle(microcycle, index = 0) {
+  const source = asObject(microcycle);
+
+  const days = asArray(
+    source.days ??
+      source.workout_days ??
+      source.sessions
+  ).map((day, dayIndex) =>
+    normalizeDay(day, dayIndex)
+  );
+
+  return {
+    id:
+      source.id ??
+      `week-${index + 1}`,
+
+    week_number:
+      safeNumber(
+        source.week_number ??
+          source.week ??
+          source.weekNumber,
+        index + 1
+      ),
+
+    mesocycle_index: safeNumber(
+      source.mesocycle_index ??
+        source.mesocycleIndex,
+      0
+    ),
+
+    week_type:
+      safeString(
+        source.week_type ??
+          source.type ??
+          source.phase,
+        "Training"
+      ),
+
+    focus:
+      safeString(
+        source.focus ??
+          source.overview ??
+          source.description,
+        ""
+      ),
+
+    days
   };
 }
 
 /**
- * Normalizes a generated workout program and, when the AI only returned
- * three anchor weeks, expands those anchors into a complete 12-week plan.
+ * Returns a normalized array of microcycles.
  *
- * This function is deliberately defensive because AI-generated JSON can
- * occasionally contain missing fields, strings instead of arrays, or null
- * values. The Program page should never go completely blank because one
- * generated field is malformed.
+ * Supports:
+ *   expandMicrocycles(program)
+ *   expandMicrocycles(program.microcycles)
  */
-export function expandMicrocycles(program) {
-  const normalized = normalizeProgram(program);
+export function expandMicrocycles(input) {
+  try {
+    let raw = input;
 
-  if (!normalized) {
-    return null;
+    if (
+      input &&
+      typeof input === "object" &&
+      !Array.isArray(input) &&
+      (
+        "microcycles" in input ||
+        "weeks" in input ||
+        "workout_weeks" in input
+      )
+    ) {
+      raw =
+        input.microcycles ??
+        input.weeks ??
+        input.workout_weeks;
+    }
+
+    return asArray(raw).map((microcycle, index) =>
+      normalizeMicrocycle(microcycle, index)
+    );
+  } catch (error) {
+    console.error(
+      "expandMicrocycles failed:",
+      error
+    );
+
+    return [];
   }
+}
 
-  const microcycles = normalized.microcycles;
+export function normalizeWorkoutProgram(program) {
+  try {
+    const source = asObject(program);
 
-  if (!Array.isArray(microcycles) || microcycles.length === 0) {
-    return normalized;
-  }
+    const microcycles = expandMicrocycles(
+      source.microcycles
+    );
 
-  /*
-   * If the program already contains a substantial/full set of weeks,
-   * preserve the AI-generated weeks rather than overwriting them.
-   */
-  const weekNumbers = microcycles
-    .map((micro) => Number(micro.week_number))
-    .filter(Number.isFinite);
+    const mesocycles = asArray(
+      source.mesocycles
+    );
 
-  const uniqueWeeks = new Set(weekNumbers);
+    const macrocycle = asObject(
+      source.macrocycle
+    );
 
-  if (uniqueWeeks.size >= 10) {
     return {
-      ...normalized,
-      microcycles: microcycles.map((micro, index) =>
-        normalizeMicrocycle(micro, index)
+      ...source,
+
+      program_name:
+        safeString(
+          source.program_name ??
+            source.name ??
+            source.title,
+          "My Workout Program"
+        ),
+
+      duration_weeks: safeNumber(
+        source.duration_weeks ??
+          source.duration ??
+          microcycles.length,
+        microcycles.length || 1
       ),
+
+      current_week: safeNumber(
+        source.current_week,
+        1
+      ),
+
+      status:
+        safeString(
+          source.status,
+          "active"
+        ),
+
+      training_type:
+        safeString(
+          source.training_type,
+          ""
+        ),
+
+      fitness_level:
+        safeString(
+          source.fitness_level,
+          ""
+        ),
+
+      goal:
+        safeString(
+          source.goal,
+          ""
+        ),
+
+      macrocycle,
+
+      mesocycles,
+
+      microcycles
+    };
+  } catch (error) {
+    console.error(
+      "normalizeWorkoutProgram failed:",
+      error
+    );
+
+    return {
+      program_name: "My Workout Program",
+      duration_weeks: 1,
+      current_week: 1,
+      status: "active",
+      training_type: "",
+      fitness_level: "",
+      goal: "",
+      macrocycle: {},
+      mesocycles: [],
+      microcycles: []
     };
   }
-
-  /*
-   * The fallback expansion only makes sense when there are at least
-   * three anchor weeks.
-   */
-  const sorted = [...microcycles]
-    .sort((a, b) => a.week_number - b.week_number);
-
-  if (sorted.length < 3) {
-    return normalized;
-  }
-
-  const anchor1 = sorted[0];
-  const anchor2 = sorted[1];
-  const anchor3 = sorted[2];
-
-  if (!anchor1 || !anchor2 || !anchor3) {
-    return normalized;
-  }
-
-  const expanded = [
-    // MESOCYCLE 1 — Foundation
-    makeWeek(anchor1, 1, 0, 'Foundation', 1.0),
-    makeWeek(anchor1, 2, 0, 'Accumulation', 1.1),
-    makeWeek(anchor1, 3, 0, 'Accumulation', 1.2),
-    makeWeek(anchor1, 4, 0, 'Deload', 0.6),
-
-    // MESOCYCLE 2 — Intensification
-    makeWeek(anchor2, 5, 1, 'Intensification', 1.0),
-    makeWeek(anchor2, 6, 1, 'Intensification', 1.1),
-    makeWeek(anchor2, 7, 1, 'Intensification', 1.2),
-    makeWeek(anchor2, 8, 1, 'Deload', 0.6),
-
-    // MESOCYCLE 3 — Peak
-    makeWeek(anchor3, 9, 2, 'Peak', 1.0),
-    makeWeek(anchor3, 10, 2, 'Peak', 1.1),
-    makeWeek(anchor3, 11, 2, 'Taper', 0.8),
-    makeWeek(anchor3, 12, 2, 'Deload', 0.5),
-  ];
-
-  return {
-    ...normalized,
-    duration_weeks: Math.max(
-      normalized.duration_weeks || 0,
-      12
-    ),
-    microcycles: expanded,
-  };
-}
- *   Wk3 = +10% volume again, slightly harder reps
- *   Wk4 = DELOAD (reduce sets by ~40%, add "Deload" label)
- *
- * Meso 2 (wks 5-8): Intensification
- *   Wk5 = anchor (as-is)
- *   Wk6 = +10% volume
- *   Wk7 = +10% volume, peak of meso
- *   Wk8 = DELOAD
- *
- * Meso 3 (wks 9-12): Peak
- *   Wk9 = anchor (as-is)
- *   Wk10 = +10% volume / max effort
- *   Wk11 = Taper (reduce volume ~20%)
- *   Wk12 = FULL DELOAD
- */
-
-function deepClone(obj) {
-  return JSON.parse(JSON.stringify(obj));
 }
 
-function adjustSets(days, multiplier) {
-  return days.map(day => ({
-    ...day,
-    exercises: (day.exercises || []).map(ex => ({
-      ...ex,
-      sets: Math.max(1, Math.round((ex.sets || 3) * multiplier)),
-    })),
-  }));
-}
-
-function tagDay(days, workoutTypes) {
-  // If days already have workout_type, keep them. Otherwise assign defaults.
-  return days.map((day, i) => ({
-    ...day,
-    workout_type: day.workout_type || workoutTypes[i % workoutTypes.length],
-  }));
-}
-
-function makeWeek(anchorMicro, weekNumber, mesocycleIndex, weekType, setsMultiplier) {
-  const cloned = deepClone(anchorMicro);
-  cloned.week_number = weekNumber;
-  cloned.mesocycle_index = mesocycleIndex;
-  cloned.week_type = weekType;
-  cloned.days = adjustSets(cloned.days || [], setsMultiplier);
-  return cloned;
-}
-
-export function expandMicrocycles(program) {
-  const microcycles = program?.microcycles;
-  if (!microcycles || microcycles.length === 0) return program;
-
-  // Already has all 12 weeks — nothing to do
-  const weekNumbers = microcycles.map(m => m.week_number);
-  if (weekNumbers.length >= 10) return program;
-
-  // Find the 3 anchor weeks (typically 1, 5, 9)
-  const sorted = [...microcycles].sort((a, b) => a.week_number - b.week_number);
-  const anchor1 = sorted[0];  // Meso 1 anchor
-  const anchor2 = sorted[1];  // Meso 2 anchor
-  const anchor3 = sorted[2];  // Meso 3 anchor
-
-  if (!anchor1 || !anchor2 || !anchor3) return program;
-
-  const expanded = [
-    // MESO 1 — Foundation (weeks 1-4)
-    makeWeek(anchor1, 1, 0, 'Foundation',     1.0),
-    makeWeek(anchor1, 2, 0, 'Accumulation',   1.1),
-    makeWeek(anchor1, 3, 0, 'Accumulation',   1.2),
-    makeWeek(anchor1, 4, 0, 'Deload',         0.6),
-
-    // MESO 2 — Intensification (weeks 5-8)
-    makeWeek(anchor2, 5, 1, 'Intensification', 1.0),
-    makeWeek(anchor2, 6, 1, 'Intensification', 1.1),
-    makeWeek(anchor2, 7, 1, 'Intensification', 1.2),
-    makeWeek(anchor2, 8, 1, 'Deload',          0.6),
-
-    // MESO 3 — Peak (weeks 9-12)
-    makeWeek(anchor3, 9,  2, 'Peak',   1.0),
-    makeWeek(anchor3, 10, 2, 'Peak',   1.1),
-    makeWeek(anchor3, 11, 2, 'Taper',  0.8),
-    makeWeek(anchor3, 12, 2, 'Deload', 0.5),
-  ];
-
-  return { ...program, microcycles: expanded };
-}
+export default expandMicrocycles;
