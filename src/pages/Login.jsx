@@ -13,67 +13,241 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const resetForm = () => {
+    setEmail('');
+    setPassword('');
+    setFirstName('');
+    setLastName('');
+  };
+
+  const handleSignup = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+
+    if (!cleanFirstName) {
+      throw new Error('Please enter your first name.');
+    }
+
+    if (!cleanEmail) {
+      throw new Error('Please enter your email address.');
+    }
+
+    if (password.length < 6) {
+      throw new Error(
+        'Your password must be at least 6 characters.'
+      );
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        data: {
+          first_name: cleanFirstName,
+          last_name: cleanLastName,
+          full_name: [cleanFirstName, cleanLastName]
+            .filter(Boolean)
+            .join(' '),
+        },
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data?.user) {
+      throw new Error(
+        'Supabase did not return a user after signup.'
+      );
+    }
+
+    /*
+     * If email confirmation is disabled, Supabase gives us
+     * a session immediately.
+     *
+     * If email confirmation is enabled, session will be null
+     * until the user confirms their email.
+     */
+    if (data.session) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: data.user.id,
+            first_name: cleanFirstName,
+            last_name: cleanLastName,
+            full_name: [cleanFirstName, cleanLastName]
+              .filter(Boolean)
+              .join(' '),
+            role: 'user',
+            onboarded: false,
+          },
+          {
+            onConflict: 'id',
+          }
+        );
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      toast.success(
+        'Account created successfully.'
+      );
+
+      resetForm();
+
+      navigate('/onboarding', {
+        replace: true,
+      });
+
+      return;
+    }
+
+    /*
+     * No session means email confirmation is probably enabled.
+     */
+    toast.success(
+      'Account created. Check your email to confirm your account.'
+    );
+
+    setMode('login');
+    setPassword('');
+  };
+
+  const handleLogin = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      throw new Error(
+        'Please enter your email address.'
+      );
+    }
+
+    if (!password) {
+      throw new Error(
+        'Please enter your password.'
+      );
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data?.session || !data?.user) {
+      throw new Error(
+        'Login succeeded but no active session was returned.'
+      );
+    }
+
+    /*
+     * Make sure the profile exists.
+     *
+     * This also protects accounts that were created
+     * before the new signup flow was installed.
+     */
+    const { data: existingProfile, error: profileReadError } =
+      await supabase
+        .from('profiles')
+        .select('id, onboarded')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+    if (profileReadError) {
+      throw profileReadError;
+    }
+
+    if (!existingProfile) {
+      const metadata = data.user.user_metadata || {};
+
+      const fallbackFirstName =
+        metadata.first_name || '';
+
+      const fallbackLastName =
+        metadata.last_name || '';
+
+      const { error: profileCreateError } =
+        await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            first_name: fallbackFirstName,
+            last_name: fallbackLastName,
+            full_name:
+              metadata.full_name ||
+              [fallbackFirstName, fallbackLastName]
+                .filter(Boolean)
+                .join(' '),
+            role: 'user',
+            onboarded: false,
+          });
+
+      if (profileCreateError) {
+        throw profileCreateError;
+      }
+
+      toast.success('Welcome to Washek Fitness.');
+
+      navigate('/onboarding', {
+        replace: true,
+      });
+
+      return;
+    }
+
+    toast.success('Welcome back.');
+
+    if (existingProfile.onboarded) {
+      navigate('/', {
+        replace: true,
+      });
+    } else {
+      navigate('/onboarding', {
+        replace: true,
+      });
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+
+    if (loading) {
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const cleanEmail = email.trim();
-      const cleanFirstName = firstName.trim();
-
       if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: {
-              first_name: cleanFirstName,
-            },
-          },
-        });
-
-        if (error) {
-          throw error;
-        }
-
-        // Supabase normally returns a user with an email confirmation
-        // required when email confirmation is enabled.
-        if (data.user && !data.session) {
-          toast.success(
-            `Account created! We sent a verification email to ${cleanEmail}. Please confirm your email before signing in.`
-          );
-
-          setMode('login');
-          setPassword('');
-          return;
-        }
-
-        // If email confirmation is disabled, Supabase may immediately
-        // create an authenticated session.
-        toast.success('Account created successfully!');
-        navigate('/');
-        return;
+        await handleSignup();
+      } else {
+        await handleLogin();
       }
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      toast.success('Welcome back!');
-      navigate('/');
     } catch (error) {
-      console.error('Authentication error:', error);
+      console.error(
+        '[AUTH] Authentication error:',
+        error
+      );
 
       toast.error(
-        error?.message || 'Authentication failed. Please try again.'
+        error?.message ||
+          'Authentication failed.'
       );
     } finally {
       setLoading(false);
@@ -81,7 +255,12 @@ export default function Login() {
   };
 
   const toggleMode = () => {
-    setMode(mode === 'login' ? 'signup' : 'login');
+    setMode((current) =>
+      current === 'login'
+        ? 'signup'
+        : 'login'
+    );
+
     setPassword('');
   };
 
@@ -108,32 +287,59 @@ export default function Login() {
           className="space-y-4 bg-card border border-border rounded-3xl p-6"
         >
           {mode === 'signup' && (
-            <Input
-              placeholder="First name"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              required
-              disabled={loading}
-            />
+            <>
+              <Input
+                type="text"
+                placeholder="First name"
+                value={firstName}
+                onChange={(event) =>
+                  setFirstName(event.target.value)
+                }
+                autoComplete="given-name"
+                required
+              />
+
+              <Input
+                type="text"
+                placeholder="Last name"
+                value={lastName}
+                onChange={(event) =>
+                  setLastName(event.target.value)
+                }
+                autoComplete="family-name"
+              />
+            </>
           )}
 
           <Input
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(event) =>
+              setEmail(event.target.value)
+            }
+            autoComplete={
+              mode === 'signup'
+                ? 'email'
+                : 'username'
+            }
             required
-            disabled={loading}
           />
 
           <Input
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) =>
+              setPassword(event.target.value)
+            }
+            autoComplete={
+              mode === 'signup'
+                ? 'new-password'
+                : 'current-password'
+            }
             minLength={6}
             required
-            disabled={loading}
           />
 
           <Button
@@ -150,7 +356,7 @@ export default function Login() {
 
           <button
             type="button"
-            className="w-full text-sm text-muted-foreground hover:text-foreground"
+            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
             onClick={toggleMode}
             disabled={loading}
           >
@@ -159,6 +365,7 @@ export default function Login() {
               : 'Already have an account? Sign in'}
           </button>
         </form>
+
       </div>
     </div>
   );
