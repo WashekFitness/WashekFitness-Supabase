@@ -1,10 +1,12 @@
 ```jsx
+import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { Toaster } from '@/components/ui/sonner';
+import { Toaster } from 'sonner';
+
 import { AuthProvider } from '@/contexts/AuthContext';
 import AppRoutes from '@/AppRoutes';
 
-export default function App() {
+function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -14,4 +16,6 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+export default App;
 ```
