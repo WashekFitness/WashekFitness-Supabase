@@ -1,4 +1,4 @@
-```css
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
@@ -233,4 +233,3 @@
 .pb-safe {
   padding-bottom: max(6rem, calc(env(safe-area-inset-bottom) + 5rem));
 }
-```
