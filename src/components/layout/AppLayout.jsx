@@ -1,4 +1,4 @@
-```jsx
+
 import { Outlet, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -41,4 +41,3 @@ function AppLayout() {
 }
 
 export default AppLayout;
-```
