@@ -286,38 +286,127 @@ const handleGenerate = async () => {
       required: ['microcycles'],
     };
 
-    // Generate phases concurrently. The old implementation generated them one
-    // after another, which made onboarding unnecessarily slow and increased the
-    // chance of hitting the Edge Function wall-clock limit.
-    const completed = new Array(mesocycles.length).fill(false);
+    // Generate one week at a time instead of asking a free OpenRouter model
+    // to produce an entire four-week phase in one response. This keeps each
+    // structured response small enough to finish before the model hits its
+    // output/reasoning limit.
+    const totalWeeks = mesocycles.reduce((total, meso, index) => {
+      const weekStart = Number(meso?.week_start) || (index * 4 + 1);
+      const weekEnd = Number(meso?.week_end) || (index * 4 + 4);
+      return total + Math.max(0, weekEnd - weekStart + 1);
+    }, 0);
 
-    const results = await Promise.all(
-      mesocycles.map(async (meso, index) => {
-        const phaseName = meso?.name || `Training phase ${index + 1}`;
-        setLoadingPhase(`Building ${phaseName}…`);
+    let completedWeeks = 0;
+    const allMicrocycles = [];
+
+    for (let mesoIndex = 0; mesoIndex < mesocycles.length; mesoIndex++) {
+      const meso = mesocycles[mesoIndex];
+      const phaseName = meso?.name || `Training phase ${mesoIndex + 1}`;
+      const weekStart = Number(meso?.week_start) || (mesoIndex * 4 + 1);
+      const weekEnd = Number(meso?.week_end) || (mesoIndex * 4 + 4);
+
+      for (let weekNumber = weekStart; weekNumber <= weekEnd; weekNumber++) {
+        setLoadingPhase(`Building Week ${weekNumber} — ${phaseName}…`);
+
+        // buildMicrocyclePrompt contains the complete training methodology.
+        // The explicit weekly instruction below narrows the response to one
+        // week so free models do not spend their entire output budget trying
+        // to generate all 12 weeks.
+        const weeklyPrompt = `${buildMicrocyclePrompt(
+          trainingType,
+          promptData,
+          mesoIndex,
+          meso
+        )}
+
+=== CRITICAL OUTPUT LIMIT ===
+
+Generate ONLY WEEK ${weekNumber}.
+
+Do NOT generate a complete 12-week program.
+Do NOT generate the other weeks in this mesocycle.
+Do NOT generate any week before or after WEEK ${weekNumber}.
+
+This is MESOCYCLE ${mesoIndex + 1}: ${phaseName}.
+Mesocycle focus: ${meso?.focus || 'Progressive training'}
+Mesocycle intensity: ${meso?.intensity || 'moderate'}
+
+The response must contain exactly ONE microcycle for WEEK ${weekNumber}.
+It must include all training days and exercises required by the methodology above.
+Keep every exercise detailed, but do not add unnecessary prose.
+
+Return ONLY valid JSON in exactly this shape:
+{
+  "microcycles": [
+    {
+      "week_number": ${weekNumber},
+      "mesocycle_index": ${mesoIndex},
+      "week_type": "string",
+      "days": [
+        {
+          "day_name": "string",
+          "workout_type": "string",
+          "exercises": [
+            {
+              "name": "string",
+              "sets": 3,
+              "reps": "8-10",
+              "rest_seconds": 90,
+              "notes": "string",
+              "activation_cue": "string"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
 
         const parsed = await supabaseApi.ai.invoke({
           type: 'microcycle',
-          prompt: buildMicrocyclePrompt(trainingType, promptData, index, meso),
+          prompt: weeklyPrompt,
           schema: microcycleSchema,
         });
 
-        const generated = Array.isArray(parsed?.microcycles) ? parsed.microcycles : [];
+        const generated = Array.isArray(parsed?.microcycles)
+          ? parsed.microcycles
+          : [];
+
         if (!generated.length) {
-          throw new Error(`AI returned no workouts for ${phaseName}.`);
+          throw new Error(`AI returned no workout for Week ${weekNumber}.`);
         }
 
-        completed[index] = true;
-        const count = completed.filter(Boolean).length;
-        setProgress(30 + (count / mesocycles.length) * 55);
-        setLoadingPhase(`${phaseName} complete (${count}/${mesocycles.length}).`);
+        const week = generated.find(
+          (microcycle) =>
+            Number(microcycle?.week_number) === Number(weekNumber)
+        ) || generated[0];
 
-        return generated;
-      }),
-    );
+        if (!week || typeof week !== 'object') {
+          throw new Error(`AI returned an invalid workout for Week ${weekNumber}.`);
+        }
 
-    const allMicrocycles = results.flat();
-    if (!allMicrocycles.length) throw new Error('No workouts were generated.');
+        // Keep the program metadata deterministic even if the model changes
+        // these two values in its response.
+        week.week_number = weekNumber;
+        week.mesocycle_index = mesoIndex;
+
+        allMicrocycles.push(week);
+        completedWeeks += 1;
+
+        const generationProgress = totalWeeks > 0
+          ? 30 + (completedWeeks / totalWeeks) * 55
+          : 85;
+
+        setProgress(generationProgress);
+        setLoadingPhase(
+          `Week ${weekNumber} complete (${completedWeeks}/${totalWeeks}).`
+        );
+      }
+    }
+
+    if (!allMicrocycles.length) {
+      throw new Error('No workouts were generated.');
+    }
 
     setProgress(90);
     setLoadingPhase('Saving your personalized program…');
