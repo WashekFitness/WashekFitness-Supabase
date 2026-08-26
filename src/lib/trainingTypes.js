@@ -1,5 +1,6 @@
 // ============================================================
-// WASHEK FITNESS — TRAINING TYPES & AI PROGRAMMING PROMPTS
+// WASHEK FITNESS — TRAINING TYPES & AI PROGRAMMING
+// WEEK-BY-WEEK GENERATION
 // ============================================================
 
 // ------------------------------------------------------------
@@ -11,7 +12,7 @@ export const TRAINING_TYPES = [
     value: "calisthenics",
     label: "Calisthenics",
     iconName: "PersonStanding",
-    desc: "Bodyweight training focused on mastering skills like muscle-ups, handstands, planches, and levers. Progressive overload through harder variations, not added weight.",
+    desc: "Bodyweight training focused on mastering skills like muscle-ups, handstands, planches, and levers. Progressive overload through harder variations, improved leverage, reps, and quality rather than relying primarily on external weight.",
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
@@ -21,7 +22,7 @@ export const TRAINING_TYPES = [
     value: "weighted_calisthenics",
     label: "Weighted Calisthenics",
     iconName: "Dumbbell",
-    desc: "Bodyweight movements with added weight to build raw strength while progressing toward advanced calisthenics skills.",
+    desc: "Bodyweight movements with added resistance to develop maximum strength while progressing advanced calisthenics skills.",
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
@@ -31,7 +32,7 @@ export const TRAINING_TYPES = [
     value: "weights",
     label: "Weight Training",
     iconName: "Trophy",
-    desc: "Traditional gym training with free weights, cables, and machines. Build muscle, strength, and aesthetics through progressive overload.",
+    desc: "Traditional resistance training using free weights, cables, and machines to build strength, muscle, performance, and aesthetics.",
     hasSkills: false,
     hasLevel: false,
     hasTimeframe: false,
@@ -41,7 +42,7 @@ export const TRAINING_TYPES = [
     value: "hybrid",
     label: "Hybrid Training",
     iconName: "Layers",
-    desc: "A combination of calisthenics skill work and weight training designed to maximize strength, muscle growth, and skill development.",
+    desc: "A combination of calisthenics skill work and weight training designed to maximize strength, muscle growth, athleticism, and skill development.",
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
@@ -50,7 +51,7 @@ export const TRAINING_TYPES = [
 ];
 
 // ------------------------------------------------------------
-// GOALS
+// CALISTHENICS GOALS
 // ------------------------------------------------------------
 
 export const CALISTHENICS_GOALS = [
@@ -90,6 +91,10 @@ export const CALISTHENICS_GOALS = [
     iconName: "PersonStanding",
   },
 ];
+
+// ------------------------------------------------------------
+// WEIGHT TRAINING GOALS
+// ------------------------------------------------------------
 
 export const WEIGHT_GOALS = [
   {
@@ -156,9 +161,9 @@ function buildAthleteProfile(data = {}) {
 
   return [
     `GENDER: ${gender || "unspecified"}`,
-    `LEVEL: ${level || "unspecified"}`,
+    `TRAINING LEVEL: ${level || "unspecified"}`,
     `AGE: ${age || "unspecified"}`,
-    `WEIGHT: ${weight}`,
+    `BODYWEIGHT: ${weight}`,
     `HEIGHT: ${height}`,
   ].join("\n");
 }
@@ -174,7 +179,7 @@ MALE TRAINING CONSIDERATIONS:
 - Use balanced push and pull programming.
 - Prioritize scapular stability and strict technique.
 - Allow adequate recovery for high-intensity work.
-- Do not assume the athlete requires excessive training volume.
+- Do not assume excessive volume is required.
 `;
   }
 
@@ -183,9 +188,8 @@ MALE TRAINING CONSIDERATIONS:
 FEMALE TRAINING CONSIDERATIONS:
 - Use appropriate strength and hypertrophy volume.
 - Prioritize posterior chain, core stability, and movement quality.
-- Use controlled eccentrics where appropriate.
 - Do not reduce training difficulty simply because the athlete is female.
-- Adjust volume and intensity according to actual performance and recovery.
+- Adjust volume and intensity based on actual performance and recovery.
 `;
   }
 
@@ -198,7 +202,7 @@ GENERAL TRAINING CONSIDERATIONS:
 }
 
 // ------------------------------------------------------------
-// BUILD GENERAL ATHLETE CONTEXT
+// ATHLETE CONTEXT
 // ------------------------------------------------------------
 
 function buildContext(data = {}) {
@@ -222,7 +226,7 @@ function buildContext(data = {}) {
 
   if (fitnessGoals && fitnessGoals.length > 0) {
     sections.push(
-      `FITNESS GOALS:\n${fitnessGoals.join(", ")}`
+      `PRIMARY FITNESS GOALS:\n${fitnessGoals.join(", ")}`
     );
   }
 
@@ -237,7 +241,7 @@ function buildContext(data = {}) {
   }
 
   if (timeframe) {
-    sections.push(`TIMEFRAME:\n${timeframe}`);
+    sections.push(`GOAL TIMEFRAME:\n${timeframe}`);
   }
 
   if (equipment) {
@@ -255,12 +259,147 @@ function buildContext(data = {}) {
   return sections.join("\n\n");
 }
 
-// ------------------------------------------------------------
+// ============================================================
+// CORE PROGRAMMING RULES
+// ============================================================
+
+const REP_AND_HOLD_RULES = `
+============================================================
+REP, HOLD, AND REST RULES — HARD CONSTRAINTS
+============================================================
+
+These rules are mandatory.
+
+Do NOT ignore them.
+
+------------------------------------------------------------
+REPETITIONS
+------------------------------------------------------------
+
+RAW STRENGTH:
+- Use approximately 3–8 reps per set.
+- Prefer 3–6 reps for very heavy/high-intensity strength work.
+- 6–8 reps may be used for moderate strength work.
+- Do not turn a raw-strength exercise into a 10–15+ rep endurance set.
+
+HYPERTROPHY / MUSCLE GROWTH:
+- Use approximately 8–12 reps per set.
+- Most hypertrophy exercises should live in the 8–12 range.
+- Do not default to extremely high repetitions unless endurance is the actual goal.
+
+ENDURANCE / MUSCULAR ENDURANCE:
+- Use approximately 10–15 reps per set.
+- Use controlled technique.
+- Do not confuse endurance training with maximal strength work.
+
+POWER / EXPLOSIVE WORK:
+- Usually use approximately 3–6 high-quality reps.
+- Prioritize speed and technical quality.
+- Stop the set if explosive intent drops substantially.
+
+SKILL WORK:
+- Repetitions should be based on technical quality.
+- For dynamic skills, generally stay in a range that allows clean execution.
+- Do not turn technical skill practice into sloppy fatigue work.
+
+ISOMETRIC HOLDS:
+- Never prescribe excessively long 20–30+ second holds as a default.
+- VOLUME / TECHNIQUE HOLDS:
+  Maximum 10–15 seconds.
+  Preferred range: 8–15 seconds.
+- INTENSITY / STRENGTH HOLDS:
+  Maximum 4–6 seconds.
+  Preferred range: 4–6 seconds.
+- If a hold is extremely difficult, favor shorter high-quality holds.
+- Do not use 20, 25, 30, 40, or 60 second holds for normal strength/skill programming.
+
+Examples:
+
+Front lever strength:
+3–5 sets x 4–6 seconds
+
+Front lever volume:
+3–4 sets x 8–12 seconds
+
+Planche strength:
+3–5 sets x 4–6 seconds
+
+Handstand technical practice:
+multiple high-quality holds generally 5–15 seconds depending on ability
+
+L-sit:
+strength/intensity = 4–6 seconds
+volume/technique = 8–15 seconds
+
+------------------------------------------------------------
+REST PERIODS
+------------------------------------------------------------
+
+MINIMUM REST:
+Every meaningful resistance, strength, hypertrophy, skill, or hard calisthenics set must have at least 2 MINUTES of rest.
+
+Never prescribe:
+- 30 seconds
+- 45 seconds
+- 60 seconds
+- 75 seconds
+- 90 seconds
+
+for normal working sets.
+
+DEFAULT REST:
+- Moderate work: 2–3 minutes
+- Hypertrophy work: 2–3 minutes
+- Strength work: 3–4 minutes
+- Heavy compound work: 3–4 minutes
+- Very difficult calisthenics skills: 3–4 minutes
+- Near-maximal sets: up to 4 minutes
+- High-quality explosive work: 2–4 minutes
+
+If an exercise is technically demanding or strength-limited, prefer MORE rest rather than less.
+
+The goal is to allow the athlete to perform the next set with high-quality output.
+
+Do not shorten rest merely to make a workout feel harder.
+
+------------------------------------------------------------
+REST JSON RULE
+------------------------------------------------------------
+
+The rest_seconds field must always be:
+
+- >= 120
+- normally 120–180 for moderate work
+- normally 180–240 for difficult strength work
+
+Examples:
+
+Moderate hypertrophy:
+rest_seconds: 150
+
+Heavy strength:
+rest_seconds: 240
+
+Difficult muscle-up progression:
+rest_seconds: 180
+
+Front lever strength:
+rest_seconds: 180
+
+Very hard weighted pull-up:
+rest_seconds: 240
+
+Never output rest_seconds below 120.
+`;
+
+// ============================================================
 // HUNTER STEIN METHOD
-// ------------------------------------------------------------
+// ============================================================
 
 const HUNTER_STEIN_METHOD = `
+============================================================
 HUNTER STEIN ACTIVATION METHOD
+============================================================
 
 Apply these principles to every exercise whenever appropriate.
 
@@ -268,16 +407,18 @@ Apply these principles to every exercise whenever appropriate.
 Engage the target muscle before initiating the movement.
 
 2. EXPLOSIVE CONCENTRIC INTENT
-Move the resistance with maximum safe intent during the lifting, pushing, or pulling phase.
+Move the resistance with maximum safe intent during the lifting,
+pushing, pulling, or rising phase.
 
 3. CONTROLLED ECCENTRIC
 Use approximately a 2–3 second eccentric whenever appropriate.
 
 4. FULL-BODY TENSION
-Brace the core and create appropriate shoulder, scapular, and lower-body tension.
+Brace the core and create appropriate shoulder, scapular,
+and lower-body tension.
 
 5. MIND-MUSCLE CONNECTION
-The athlete should actively feel the intended target muscles working.
+The athlete should actively feel the intended target muscles.
 
 6. PERFECT FORM
 If technique significantly breaks down, the set should end.
@@ -285,8 +426,8 @@ If technique significantly breaks down, the set should end.
 EVERY EXERCISE MUST HAVE AN activation_cue.
 
 Activation cues must be:
-- movement-specific
 - short
+- movement-specific
 - actionable
 - biomechanically useful
 
@@ -308,14 +449,17 @@ Front lever:
 "Depress the scapulae, brace the core and pull the bar toward the hips."
 `;
 
-// ------------------------------------------------------------
-// WEIGHT TRAINING METHOD
-// ------------------------------------------------------------
+// ============================================================
+// WEIGHT TRAINING
+// ============================================================
 
 const WEIGHTS_METHOD = `
+============================================================
 WEIGHT TRAINING APPLICATION
+============================================================
 
 For loaded movements:
+
 - Pre-activate the target muscle.
 - Use maximum safe concentric intent.
 - Control the eccentric.
@@ -324,25 +468,54 @@ For loaded movements:
 - Use appropriate range of motion.
 - Stop the set when technique meaningfully deteriorates.
 
-Every exercise must have an activation_cue explaining the specific setup and tension strategy.
+REP GUIDANCE:
+
+Strength:
+3–8 reps
+
+Hypertrophy:
+8–12 reps
+
+Endurance:
+10–15 reps
+
+REST:
+
+Strength:
+180–240 seconds
+
+Hypertrophy:
+120–180 seconds
+
+Endurance:
+120–150 seconds
+
+Never use less than 120 seconds.
+
+Every exercise must have an activation_cue.
 `;
 
-// ------------------------------------------------------------
+// ============================================================
 // LEG TRAINING
-// ------------------------------------------------------------
+// ============================================================
 
 const LEG_TRAINING_MANDATE = `
+============================================================
 LEG TRAINING — MANDATORY UNLESS EXPLICITLY EXCLUDED
+============================================================
 
-Unless the athlete explicitly states they do not want leg training, every program must train the lower body.
+Unless the athlete explicitly states they do not want leg training,
+every program must train the lower body.
 
 Across each week, target:
+
 - quadriceps
 - hamstrings
 - glutes
 - calves
 
 CALISTHENICS OPTIONS:
+
 - pistol squats
 - shrimp squats
 - Bulgarian split squats
@@ -358,7 +531,8 @@ CALISTHENICS OPTIONS:
 - calf raises
 - wall sits
 
-WEIGHTED CALISTHENICS OPTIONS:
+WEIGHTED CALISTHENICS:
+
 - weighted squats
 - weighted pistol squats
 - weighted lunges
@@ -367,7 +541,8 @@ WEIGHTED CALISTHENICS OPTIONS:
 - weighted Nordic curls
 - weighted glute bridges
 
-WEIGHT TRAINING OPTIONS:
+WEIGHT TRAINING:
+
 - back squats
 - front squats
 - Romanian deadlifts
@@ -381,104 +556,232 @@ WEIGHT TRAINING OPTIONS:
 - standing calf raises
 - seated calf raises
 
-If the athlete explicitly excludes leg training, respect that restriction.
+If the athlete explicitly excludes leg training,
+respect that restriction.
 `;
 
-// ------------------------------------------------------------
-// RECOVERY RULES
-// ------------------------------------------------------------
+// ============================================================
+// RECOVERY
+// ============================================================
 
 const RECOVERY_RULES = `
+============================================================
 RECOVERY AND SAFETY
+============================================================
 
 - Do not program every set to failure.
-- Generally leave approximately 1–3 reps in reserve on strength and hypertrophy work.
-- Skill work should prioritize quality over fatigue.
+- Generally leave approximately 1–3 reps in reserve.
+- Skill work prioritizes quality over fatigue.
 - Avoid unnecessary consecutive high-CNS days.
 - Include appropriate rest days.
 - Do not aggressively increase weekly volume.
-- If previous performance indicates poor recovery, reduce training stress.
+- If performance indicates poor recovery, reduce training stress.
 - If pain is reported, do not progress the painful movement.
-- Never tell the athlete to simply push through significant pain.
+- Never tell an athlete to push through significant pain.
+
+REST IS NOT A PENALTY.
+
+Longer rest is appropriate when the goal requires high output.
+
+Do not reduce rest simply to increase fatigue.
 `;
 
-// ------------------------------------------------------------
+// ============================================================
 // PERIODIZATION
-// ------------------------------------------------------------
+// ============================================================
 
 const PERIODIZATION_RULES = `
+============================================================
 12-WEEK PERIODIZATION
+============================================================
 
 WEEKS 1–4: FOUNDATION
-- Establish technique.
-- Establish sustainable volume.
-- Build work capacity.
-- Identify appropriate exercise difficulty.
-- Week 4 is a deload.
+
+Goals:
+- establish technique
+- establish sustainable volume
+- build work capacity
+- identify appropriate exercise difficulty
+- establish baseline performance
+
+Week 4:
+DELOAD
 
 WEEKS 5–8: INTENSIFICATION
-- Increase difficulty appropriately.
-- Progress resistance, reps, sets, leverage, skill complexity, or density when justified.
-- Keep technique high.
-- Week 8 is a deload.
+
+Goals:
+- progressively increase strength
+- increase movement difficulty
+- increase resistance when justified
+- progress skill complexity
+- improve performance
+
+Week 8:
+DELOAD
 
 WEEKS 9–12: PEAK AND MASTERY
-- Move toward the athlete's primary goal.
-- Prioritize high-value movements and skills.
-- Use appropriate intensity.
-- Week 12 is a deload and consolidation week.
+
+Goals:
+- move toward the athlete's primary goal
+- prioritize high-value movements
+- maximize quality
+- develop advanced skills where appropriate
+- consolidate performance
+
+Week 12:
+DELOAD / CONSOLIDATION
 
 Progression must be earned from performance.
-Do not automatically increase everything every week.
+
+Do not automatically increase:
+- weight
+- reps
+- sets
+- hold duration
+
+all at the same time.
 `;
 
-// ------------------------------------------------------------
+// ============================================================
 // TRAINING TYPE RULES
-// ------------------------------------------------------------
+// ============================================================
 
 const TRAINING_TYPE_RULES = {
   calisthenics: `
-CALISTHENICS RULES
+============================================================
+CALISTHENICS
+============================================================
 
 - Prioritize bodyweight movements and skill progressions.
-- Use regressions and progressions appropriate to current ability.
 - Skill work should generally occur early in the session.
-- Use harder leverage, increased range of motion, additional reps, longer holds, or reduced assistance as progression tools.
-- Do not randomly add weights unless specifically appropriate.
+- Use harder leverage, increased ROM, additional reps,
+  longer appropriate holds, or reduced assistance as progression tools.
+- Strength-oriented calisthenics should generally use 3–8 reps.
+- Hypertrophy-oriented calisthenics should generally use 8–12 reps.
+- Endurance-oriented calisthenics should generally use 10–15 reps.
+- Strength holds: 4–6 seconds maximum.
+- Volume holds: 10–15 seconds maximum.
+- Rest at least 2 minutes between working sets.
 `,
 
   weighted_calisthenics: `
-WEIGHTED CALISTHENICS RULES
+============================================================
+WEIGHTED CALISTHENICS
+============================================================
 
 - Combine bodyweight skill work with intelligently loaded movements.
-- Use external load for movements such as pull-ups, dips, push-ups, squats, and lunges when appropriate.
-- Skill work should generally occur before heavily fatiguing loaded work.
+- Use external load for pull-ups, dips, push-ups, squats,
+  lunges, and other movements when appropriate.
+- Perform high-skill work before heavily fatiguing loaded work.
 - Progress load conservatively.
-- Preserve clean bodyweight technique.
+
+REP TARGETS:
+
+Strength:
+3–8 reps
+
+Hypertrophy:
+8–12 reps
+
+Endurance:
+10–15 reps
+
+HOLD TARGETS:
+
+Strength:
+4–6 seconds maximum
+
+Volume:
+10–15 seconds maximum
+
+REST:
+
+Minimum:
+120 seconds
+
+Hard strength work:
+180–240 seconds
 `,
 
   weights: `
-WEIGHT TRAINING RULES
+============================================================
+WEIGHT TRAINING
+============================================================
 
-- Prioritize barbells, dumbbells, cables, machines, and equipment actually available.
-- Focus on hypertrophy, strength, aesthetics, or endurance according to the athlete's goals.
-- Use appropriate compound and isolation movements.
-- Do not add advanced calisthenics skill work unless specifically requested.
+- Prioritize barbells, dumbbells, cables, machines,
+  and equipment actually available.
+- Focus on the athlete's actual goal.
+- Use compound and isolation movements intelligently.
+
+REP TARGETS:
+
+Strength:
+3–8 reps
+
+Hypertrophy:
+8–12 reps
+
+Endurance:
+10–15 reps
+
+REST:
+
+Minimum:
+120 seconds
+
+Strength:
+180–240 seconds
+
+Hypertrophy:
+120–180 seconds
+
+Endurance:
+120–150 seconds
 `,
 
   hybrid: `
-HYBRID TRAINING RULES
+============================================================
+HYBRID TRAINING
+============================================================
 
 - Combine calisthenics and weight training intelligently.
-- Perform high-skill calisthenics work before fatiguing weight work when skill quality matters.
-- Use weights to strengthen muscles and movement patterns supporting calisthenics goals.
-- Avoid excessive duplication between modalities.
+- Perform high-skill calisthenics work before fatiguing weight work.
+- Use weights to strengthen muscles and movement patterns
+  supporting calisthenics goals.
+- Avoid excessive duplication.
+
+REP TARGETS:
+
+Strength:
+3–8 reps
+
+Hypertrophy:
+8–12 reps
+
+Endurance:
+10–15 reps
+
+HOLD TARGETS:
+
+Strength:
+4–6 seconds maximum
+
+Volume:
+10–15 seconds maximum
+
+REST:
+
+Minimum:
+120 seconds
+
+Hard work:
+180–240 seconds
 `,
 };
 
-// ------------------------------------------------------------
+// ============================================================
 // PHASE INFORMATION
-// ------------------------------------------------------------
+// ============================================================
 
 export function getPhaseForWeek(weekNumber) {
   const week = Math.max(
@@ -543,9 +846,9 @@ export function getPhaseForWeek(weekNumber) {
   };
 }
 
-// ------------------------------------------------------------
-// ORIGINAL FULL PROGRAM PROMPT
-// ------------------------------------------------------------
+// ============================================================
+// FULL PROGRAM PROMPT
+// ============================================================
 
 export function buildProgramPrompt(trainingType, data = {}) {
   const typeRules =
@@ -553,7 +856,7 @@ export function buildProgramPrompt(trainingType, data = {}) {
     TRAINING_TYPE_RULES.calisthenics;
 
   return `
-You are an elite personal trainer and program designer creating a personalized 12-week training program.
+You are an elite personal trainer and program designer.
 
 ${buildContext(data)}
 
@@ -570,33 +873,36 @@ ${
     : ""
 }
 
+${REP_AND_HOLD_RULES}
+
 ${LEG_TRAINING_MANDATE}
 
 ${RECOVERY_RULES}
 
 ${PERIODIZATION_RULES}
 
-PROGRAMMING PRINCIPLES
+PROGRAMMING PRINCIPLES:
 
 1. The athlete's goals are the highest priority.
-2. The program must be realistic for the athlete's available equipment and schedule.
-3. Never use equipment the athlete does not have.
-4. Do not randomly change exercises every week.
-5. Progress difficulty intelligently.
-6. Skill work should be performed while the athlete is relatively fresh.
-7. Balance push, pull, legs, core, and conditioning according to the athlete's goals.
-8. Do not overload the same joints or movement patterns unnecessarily.
+2. Use the appropriate rep range for the actual training objective.
+3. Never prescribe arbitrary high repetitions for strength work.
+4. Never prescribe excessively long isometric holds.
+5. Never prescribe less than 2 minutes rest for working sets.
+6. Hard strength work can receive up to 4 minutes rest.
+7. Use progression based on actual performance.
+8. Use equipment the athlete actually has.
 9. Every exercise requires an activation_cue.
-10. Do not prescribe unnecessary failure training.
-11. Always respect stated limitations and requirements.
+10. Maintain exercise consistency long enough to measure progression.
+11. Balance push, pull, legs, core, and conditioning appropriately.
+12. Respect all stated limitations.
 
-The preferred production architecture is now WEEK-BY-WEEK generation using buildWeekPrompt().
+The preferred production architecture is WEEK-BY-WEEK generation using buildWeekPrompt().
 `;
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // PREVIOUS WEEK COMPACTION
-// ------------------------------------------------------------
+// ============================================================
 
 function compactPreviousWeek(previousWeek) {
   if (!previousWeek) {
@@ -623,9 +929,9 @@ function compactPreviousWeek(previousWeek) {
   };
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // PERFORMANCE LOG COMPACTION
-// ------------------------------------------------------------
+// ============================================================
 
 function compactPerformanceLogs(performanceLogs = []) {
   if (!Array.isArray(performanceLogs)) {
@@ -668,7 +974,9 @@ function compactPerformanceLogs(performanceLogs = []) {
         exercise.load ??
         null,
 
-      notes: exercise.notes || "",
+      notes:
+        exercise.notes ||
+        "",
     })),
 
     post_workout_checkin:
@@ -679,9 +987,9 @@ function compactPerformanceLogs(performanceLogs = []) {
   }));
 }
 
-// ------------------------------------------------------------
-// WEEK-BY-WEEK AI PROMPT
-// ------------------------------------------------------------
+// ============================================================
+// WEEK-BY-WEEK PROMPT
+// ============================================================
 
 export function buildWeekPrompt(
   trainingType,
@@ -717,9 +1025,13 @@ export function buildWeekPrompt(
       : "No completed workout logs are available. Establish this week from the athlete profile and current programming position.";
 
   return `
+============================================================
+WASHEK FITNESS — WEEKLY PROGRAM GENERATOR
+============================================================
+
 You are an elite personal trainer generating ONE WEEK of a personalized 12-week training program.
 
-CRITICAL INSTRUCTION:
+CRITICAL:
 
 GENERATE ONLY WEEK ${week}.
 
@@ -728,9 +1040,16 @@ DO NOT GENERATE THE ENTIRE 12-WEEK PROGRAM.
 DO NOT RETURN MULTIPLE WEEKS.
 DO NOT RETURN A MACROCYCLE.
 
+============================================================
+ATHLETE
+============================================================
+
 ${buildContext(data)}
 
-TRAINING TYPE:
+============================================================
+TRAINING TYPE
+============================================================
+
 ${trainingType}
 
 ${typeRules}
@@ -743,16 +1062,22 @@ ${
     : ""
 }
 
+${REP_AND_HOLD_RULES}
+
 ${LEG_TRAINING_MANDATE}
 
 ${RECOVERY_RULES}
 
 ${PERIODIZATION_RULES}
 
-CURRENT WEEK:
+============================================================
+CURRENT WEEK
+============================================================
+
+WEEK:
 ${week}
 
-CURRENT PHASE:
+PHASE:
 ${phase.name}
 
 WEEK WITHIN PHASE:
@@ -761,140 +1086,306 @@ ${phase.weekInPhase}/4
 WEEK TYPE:
 ${phase.weekType}
 
-CURRENT PHASE FOCUS:
+FOCUS:
 ${phase.focus}
 
-PREVIOUS WEEK'S PROGRAM:
+============================================================
+PREVIOUS WEEK'S PROGRAM
+============================================================
+
 ${previousWeekText}
 
-ACTUAL ATHLETE PERFORMANCE FROM THE PREVIOUS WEEK:
+============================================================
+ACTUAL ATHLETE PERFORMANCE
+============================================================
+
 ${performanceText}
 
-WEEKLY PROGRESSION LOGIC
+============================================================
+PROGRESSION ENGINE
+============================================================
 
-The athlete's previous-week performance is extremely important.
+You are NOT simply creating another generic workout.
 
-DO NOT simply copy the previous week.
+Use the previous week's actual performance.
 
-If the athlete:
+If the athlete completed the planned work comfortably,
+maintained technique, recovered well, and reported no pain:
 
-- completed the planned work comfortably
-- maintained good technique
-- had no concerning fatigue
-- did not report pain
+Make a SMALL measurable progression.
 
-then make a SMALL, measurable progression.
+Possible progression:
 
-Possible progressions include:
+- add 1 rep
+- add a small amount of weight
+- add a set when justified
+- use a harder bodyweight progression
+- reduce assistance
+- improve ROM
+- improve skill complexity
+- improve density only when appropriate
 
-- additional repetitions
-- slightly more load
-- additional set when justified
-- harder bodyweight variation
-- longer skill hold
-- reduced assistance
-- improved range of motion
-- slightly increased training density
-- improved exercise complexity
+Do NOT increase everything simultaneously.
 
-Do NOT increase multiple progression variables aggressively at the same time.
+If the athlete struggled:
 
-If the athlete:
+- maintain the movement
+- reduce difficulty
+- reduce volume
+- reduce load
+- use a regression
+- keep technique as the priority
 
-- missed reps
-- failed to complete planned sets
-- reported excessive fatigue
-- reported poor recovery
-- struggled technically
+If the athlete reports pain:
 
-then maintain or slightly reduce the difficulty.
+DO NOT progress the painful movement.
 
-If the athlete reports PAIN:
+Use an appropriate regression or substitute.
 
-- Do NOT progress the painful movement.
-- Regress or substitute the movement.
-- Respect the athlete's limitation.
-- Never tell the athlete to simply push through pain.
+============================================================
+REP SELECTION ENGINE
+============================================================
 
-If a movement is working well, keep it long enough to measure progression rather than constantly replacing it.
+You MUST determine the purpose of each exercise.
 
-GOAL PROGRESSION
+Every exercise should primarily fall into one of these categories:
 
-Every week must move the athlete closer to their onboarding goals.
+STRENGTH:
+3–8 reps
 
-For skill goals:
+HYPERTROPHY:
+8–12 reps
 
-- prioritize quality skill practice
-- use appropriate progressions
-- avoid excessive fatigue before skill work
+ENDURANCE:
+10–15 reps
 
-For strength goals:
+POWER:
+3–6 reps
 
-- prioritize high-value compound movements
-- use appropriate rest periods
-- progress load, reps, or leverage conservatively
+SKILL:
+Use technically appropriate repetitions or short holds.
 
-For muscle-growth goals:
+Do not randomly assign reps.
 
-- use sufficient weekly volume
-- include appropriate hypertrophy work
-- maintain progressive overload
+Examples:
 
-For endurance goals:
+Weighted pull-up for maximum strength:
+3–6 reps
 
-- include appropriate conditioning
-- manage fatigue appropriately
+Weighted dip for strength:
+4–8 reps
 
-For fat-loss and body-recomposition goals:
+Pull-up for hypertrophy:
+8–12 reps
 
-- preserve muscle through resistance training
-- use conditioning where appropriate
-- do not create unnecessarily extreme training volume
+Push-up for hypertrophy:
+8–12 reps
 
-LEG REQUIREMENT
+Bodyweight circuit for endurance:
+10–15 reps
 
-Unless the athlete explicitly excludes leg training, include meaningful lower-body work this week.
+Explosive jump:
+3–6 reps
 
-DELOAD RULE
+============================================================
+ISOMETRIC HOLD ENGINE
+============================================================
 
-Week 4, Week 8, and Week 12 are deload/consolidation weeks.
+This is a HARD RULE.
+
+NEVER prescribe default 20–30 second holds.
+
+STRENGTH / INTENSITY HOLD:
+
+4–6 seconds maximum.
+
+VOLUME / TECHNIQUE HOLD:
+
+10–15 seconds maximum.
+
+If the exercise is extremely difficult,
+prefer 4–6 second high-quality holds.
+
+Examples:
+
+Front lever strength:
+4–6 sec
+
+Planche strength:
+4–6 sec
+
+L-sit strength:
+4–6 sec
+
+Front lever volume:
+8–15 sec
+
+Handstand practice:
+5–15 sec
+
+Never prescribe:
+
+20 sec
+25 sec
+30 sec
+40 sec
+45 sec
+60 sec
+
+as a normal working hold.
+
+============================================================
+REST ENGINE
+============================================================
+
+REST IS A HARD CONSTRAINT.
+
+Minimum rest:
+120 seconds.
+
+Never output less than:
+
+120 seconds.
+
+Moderate work:
+120–180 sec
+
+Hypertrophy:
+120–180 sec
+
+Strength:
+180–240 sec
+
+Heavy compound strength:
+180–240 sec
+
+Very difficult calisthenics:
+180–240 sec
+
+Near-maximal work:
+up to 240 sec
+
+Explosive power:
+120–240 sec
+
+Use more rest when performance quality matters.
+
+Do not shorten rest merely to increase fatigue.
+
+The athlete should be sufficiently recovered to perform the next set with high quality.
+
+============================================================
+LEG TRAINING
+============================================================
+
+Unless explicitly excluded by the athlete,
+include meaningful lower-body training.
+
+Target:
+
+- quadriceps
+- hamstrings
+- glutes
+- calves
+
+============================================================
+DELOAD
+============================================================
+
+Week 4:
+Deload
+
+Week 8:
+Deload
+
+Week 12:
+Deload / consolidation
 
 During a deload:
 
-- reduce training stress
+- reduce total volume
+- reduce intensity when appropriate
 - maintain movement patterns
-- avoid unnecessary failure
 - preserve technique
-- reduce volume and/or intensity appropriately
+- avoid unnecessary failure
 
-Do not make the athlete completely inactive unless recovery requires it.
+Still obey the normal rep, hold, and rest rules.
 
-WEEK STRUCTURE
+============================================================
+WORKOUT STRUCTURE
+============================================================
 
 Create an appropriate number of training days based on:
 
 - athlete schedule
-- requirements
-- training type
 - goals
-- recovery needs
+- training type
+- experience
+- recovery
+- equipment
+- requirements
 
 Do not invent a schedule that contradicts the athlete's availability.
 
-Every training day must include:
+Every training day must contain:
 
-- day_name
-- workout_type
-- exercises
+day_name
+workout_type
+exercises
 
-Every exercise must include:
+Every exercise must contain:
 
-- name
-- sets
-- reps
-- rest_seconds
-- notes
-- activation_cue
+name
+sets
+reps
+rest_seconds
+notes
+activation_cue
+
+============================================================
+QUALITY CONTROL BEFORE OUTPUT
+============================================================
+
+Before returning the JSON, check EVERY exercise.
+
+CHECK 1:
+If reps are strength-oriented, are they approximately 3–8?
+
+CHECK 2:
+If reps are hypertrophy-oriented, are they approximately 8–12?
+
+CHECK 3:
+If reps are endurance-oriented, are they approximately 10–15?
+
+CHECK 4:
+If an exercise uses an isometric hold, is it:
+- 4–6 sec for intensity
+OR
+- 10–15 sec maximum for volume?
+
+CHECK 5:
+Is every rest period at least 120 seconds?
+
+CHECK 6:
+Are hard strength sets given approximately 180–240 seconds?
+
+CHECK 7:
+Are the exercises appropriate for the athlete's equipment?
+
+CHECK 8:
+Is the program actually progressing toward the athlete's goals?
+
+CHECK 9:
+Is lower-body training included unless explicitly excluded?
+
+CHECK 10:
+Does every exercise have an activation cue?
+
+Fix any violation before returning the JSON.
+
+============================================================
+OUTPUT
+============================================================
 
 OUTPUT ONLY VALID JSON.
 
@@ -914,7 +1405,7 @@ Use EXACTLY this structure:
             "name": "string",
             "sets": 0,
             "reps": "string",
-            "rest_seconds": 0,
+            "rest_seconds": 120,
             "notes": "string",
             "activation_cue": "string"
           }
@@ -928,15 +1419,17 @@ IMPORTANT:
 
 Return valid JSON only.
 
-Do not use markdown fences.
-Do not include commentary.
-Do not include explanations outside the JSON.
+No markdown fences.
+
+No commentary.
+
+No explanations outside the JSON.
 `;
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // KAEL AI COACH
-// ------------------------------------------------------------
+// ============================================================
 
 export function getKaelSystemPrompt(
   trainingType,
@@ -972,11 +1465,13 @@ You are Kael, an ${
     typeContext[trainingType] || "elite-level fitness coach"
   }${firstName ? `, and the athlete's name is ${firstName}` : ""}.
 
-You have trained world-class athletes across strength training, calisthenics, bodybuilding, and athletic performance.
+You have trained world-class athletes across strength training,
+calisthenics, bodybuilding, and athletic performance.
 
 ${typeDesc[trainingType] || ""}
 
-When the athlete asks about another training style, still provide useful expert advice.
+When the athlete asks about another training style,
+still provide useful expert advice.
 
 PERSONALITY:
 
@@ -984,37 +1479,43 @@ PERSONALITY:
 - Real
 - No BS
 - Friendly but not fluffy
-- Respectful
 - Honest
+- Respectful
 
 RESPONSE STYLE:
 
-Use approximately 2–4 sentences by default unless a structured breakdown is genuinely necessary.
+Use approximately 2–4 sentences by default unless a structured
+breakdown is genuinely necessary.
 
 Avoid generic filler.
 
 SAFETY:
 
-Never encourage an athlete to train through significant pain or injury.
+Never encourage an athlete to train through significant pain
+or injury.
 
-When pain is mentioned, recommend stopping or modifying the painful movement and seeking appropriate professional evaluation when warranted.
+When pain is mentioned, recommend stopping or modifying the
+painful movement and seeking appropriate professional
+evaluation when warranted.
 
 ${
   isElite
     ? `
 SECRET TIPS RULE
 
-Whenever the athlete asks HOW to do something, include at least one useful advanced technique when appropriate.
+Whenever the athlete asks HOW to do something,
+include at least one useful advanced technique when appropriate.
 
 Examples:
 
 - tension cues
-- breathing and bracing
+- breathing
+- bracing
 - positioning
 - timing
-- recovery strategies
-- progression strategies
-- biomechanical details
+- recovery
+- progression
+- biomechanics
 
 Label these with:
 
@@ -1031,9 +1532,9 @@ Only use the athlete's name occasionally when natural.
 `;
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // PROGRESS PHOTO ANALYSIS
-// ------------------------------------------------------------
+// ============================================================
 
 export function getProgressPhotoPrompt(
   trainingType,
@@ -1073,7 +1574,8 @@ You are Kael, ${
     coachTitle[trainingType] || "fitness"
   } coach.
 
-Review this physique photo and provide direct, genuine, personalized feedback.
+Review this physique photo and provide direct,
+genuine, personalized feedback.
 
 ${prevContext || ""}
 
