@@ -5,11 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Footer from '@/components/layout/Footer';
 import BrandLogo from '@/components/BrandLogo';
 
-export default function AppLayout() {
+function AppLayout() {
   const location = useLocation();
 
-  // The Kael experience uses its own dedicated layout and should not
-  // receive the standard site footer.
+  // The Kael experience uses its own dedicated layout
+  // and should not receive the standard site footer.
   const isKael = location.pathname.startsWith('/kael');
 
   return (
@@ -39,4 +39,6 @@ export default function AppLayout() {
     </div>
   );
 }
+
+export default AppLayout;
 ```
