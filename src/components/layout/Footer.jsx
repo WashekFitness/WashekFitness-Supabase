@@ -1,7 +1,7 @@
 ```jsx
 import { Link } from 'react-router-dom';
 
-export default function Footer() {
+export function Footer() {
   return (
     <footer className="mt-8 border-t border-border pt-6 pb-4">
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
