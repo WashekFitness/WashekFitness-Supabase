@@ -26,12 +26,11 @@ import { supabase } from '@/lib/supabase';
 import { supabaseApi } from '@/lib/supabaseApi';
 import { cn } from '@/lib/utils';
 import TrainingTypeSelect from '@/components/onboarding/TrainingTypeSelect';
-import {
-  CALISTHENICS_GOALS,
-  WEIGHT_GOALS,
-  buildMicrocyclePrompt,
-} from '@/lib/trainingTypes';
+import { CALISTHENICS_GOALS, WEIGHT_GOALS } from '@/lib/trainingTypes';
 import { toast } from 'sonner';
+
+const GENERATION_LOCK_KEY = 'washek_fitness_program_generation_lock';
+const GENERATION_LOCK_MS = 20 * 60 * 1000;
 
 const levels = [
   {
@@ -84,14 +83,13 @@ function SearchSelect({ value, onChange, options, placeholder }) {
   const [search, setSearch] = useState('');
 
   const filtered = options
-    .filter((o) =>
-      o.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter((o) => o.toLowerCase().includes(search.toLowerCase()))
     .slice(0, 200);
 
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => {
           setOpen((o) => !o);
           setSearch('');
@@ -100,16 +98,13 @@ function SearchSelect({ value, onChange, options, placeholder }) {
       >
         <span
           className={
-            value
-              ? 'text-foreground'
-              : 'text-muted-foreground'
+            value ? 'text-foreground' : 'text-muted-foreground'
           }
         >
           {value || placeholder}
         </span>
-        <span className="text-muted-foreground text-xs">
-          ▾
-        </span>
+
+        <span className="text-muted-foreground text-xs">▾</span>
       </button>
 
       {open && (
@@ -127,6 +122,7 @@ function SearchSelect({ value, onChange, options, placeholder }) {
           <div className="max-h-52 overflow-y-auto">
             {filtered.map((opt) => (
               <button
+                type="button"
                 key={opt}
                 onClick={() => {
                   onChange(opt);
@@ -159,9 +155,7 @@ function CountrySelect({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const selected = COUNTRIES.find(
-    (c) => c.code === value
-  );
+  const selected = COUNTRIES.find((c) => c.code === value);
 
   const filtered = COUNTRIES.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
@@ -170,6 +164,7 @@ function CountrySelect({ value, onChange }) {
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => {
           setOpen((o) => !o);
           setSearch('');
@@ -178,17 +173,13 @@ function CountrySelect({ value, onChange }) {
       >
         <span
           className={
-            selected
-              ? 'text-foreground'
-              : 'text-muted-foreground'
+            selected ? 'text-foreground' : 'text-muted-foreground'
           }
         >
           {selected?.name || 'Select your country…'}
         </span>
 
-        <span className="text-muted-foreground text-xs">
-          ▾
-        </span>
+        <span className="text-muted-foreground text-xs">▾</span>
       </button>
 
       {open && (
@@ -206,6 +197,7 @@ function CountrySelect({ value, onChange }) {
           <div className="max-h-52 overflow-y-auto">
             {filtered.map((c) => (
               <button
+                type="button"
                 key={c.code}
                 onClick={() => {
                   onChange(c.code);
@@ -234,33 +226,649 @@ function CountrySelect({ value, onChange }) {
   );
 }
 
+/*
+ * IMPORTANT:
+ *
+ * Program structure is now deterministic.
+ *
+ * We do NOT waste an OpenRouter request asking the AI to invent:
+ * - program_name
+ * - duration
+ * - macrocycle
+ * - mesocycles
+ *
+ * Those things are predictable and can be created locally.
+ *
+ * OpenRouter is reserved for the part that actually needs AI:
+ * the detailed workouts.
+ */
+function buildLocalProgramStructure(trainingType, firstName) {
+  const name = firstName?.trim() || 'Athlete';
+
+  const configs = {
+    calisthenics: {
+      programName: `${name}'s 12-Week Calisthenics Program`,
+      overview:
+        'A 12-week calisthenics progression using submax training, progressive skill development, tendon conditioning, strength development, and a structured peak and deload phase.',
+      phases: [
+        {
+          name: 'Foundation & Tendon Conditioning',
+          weeks: '1-4',
+          focus: 'Technique, submax volume, tendon preparation, movement quality',
+        },
+        {
+          name: 'Intensification & Skill Breakthrough',
+          weeks: '5-8',
+          focus: 'Harder progressions, increased volume, strength and skill development',
+        },
+        {
+          name: 'Peak & Skill Mastery',
+          weeks: '9-12',
+          focus: 'Advanced progressions, neural sharpening, taper and recovery',
+        },
+      ],
+      mesocycles: [
+        {
+          name: 'Foundation & Tendon Conditioning',
+          focus:
+            'Establish perfect technique, build safe submax volume, and condition connective tissue.',
+          weeks: 4,
+          intensity: 'low to moderate',
+          week_start: 1,
+          week_end: 4,
+        },
+        {
+          name: 'Intensification & Skill Breakthrough',
+          focus:
+            'Increase training stimulus and introduce harder skill progressions while maintaining submax rules.',
+          weeks: 4,
+          intensity: 'moderate to high',
+          week_start: 5,
+          week_end: 8,
+        },
+        {
+          name: 'Peak & Skill Mastery',
+          focus:
+            'Peak the athlete toward their target skills, taper intelligently, and finish with recovery.',
+          weeks: 4,
+          intensity: 'high with planned taper and deload',
+          week_start: 9,
+          week_end: 12,
+        },
+      ],
+    },
+
+    weighted_calisthenics: {
+      programName: `${name}'s 12-Week Weighted Calisthenics Program`,
+      overview:
+        'A 12-week weighted calisthenics progression combining skill practice, submax loaded strength, progressive overload, tendon conditioning, and planned deloads.',
+      phases: [
+        {
+          name: 'Foundation & Loaded Tendon Conditioning',
+          weeks: '1-4',
+          focus: 'Technique, baseline loading, submax volume, tendon preparation',
+        },
+        {
+          name: 'Strength Build & Skill Breakthrough',
+          weeks: '5-8',
+          focus: 'Progressive loading, harder skill progressions, strength development',
+        },
+        {
+          name: 'Peak & Skill Mastery',
+          weeks: '9-12',
+          focus: 'Peak strength and skills, taper, final recovery',
+        },
+      ],
+      mesocycles: [
+        {
+          name: 'Foundation & Loaded Tendon Conditioning',
+          focus:
+            'Establish safe loading and perfect movement mechanics before increasing intensity.',
+          weeks: 4,
+          intensity: 'low to moderate',
+          week_start: 1,
+          week_end: 4,
+        },
+        {
+          name: 'Strength Build & Skill Breakthrough',
+          focus:
+            'Progress weighted movements and harder calisthenics skills without sacrificing form.',
+          weeks: 4,
+          intensity: 'moderate to high',
+          week_start: 5,
+          week_end: 8,
+        },
+        {
+          name: 'Peak & Skill Mastery',
+          focus:
+            'Peak loaded strength and target skills, then taper and recover.',
+          weeks: 4,
+          intensity: 'high with planned taper and deload',
+          week_start: 9,
+          week_end: 12,
+        },
+      ],
+    },
+
+    weights: {
+      programName: `${name}'s 12-Week Weight Training Program`,
+      overview:
+        'A 12-week strength and hypertrophy program using progressive overload, submax training, planned deloads, and Hunter Stein activation principles.',
+      phases: [
+        {
+          name: 'Foundation & Hypertrophy Base',
+          weeks: '1-4',
+          focus: 'Technique, baseline loads, moderate volume, hypertrophy foundation',
+        },
+        {
+          name: 'Strength & Intensification',
+          weeks: '5-8',
+          focus: 'Progressive loading, strength development, controlled intensity',
+        },
+        {
+          name: 'Peak & Specialization',
+          weeks: '9-12',
+          focus: 'Peak performance, specialization, taper, and recovery',
+        },
+      ],
+      mesocycles: [
+        {
+          name: 'Foundation & Hypertrophy Base',
+          focus:
+            'Establish baseline loads, perfect technique, and build a sustainable hypertrophy base.',
+          weeks: 4,
+          intensity: 'moderate',
+          week_start: 1,
+          week_end: 4,
+        },
+        {
+          name: 'Strength & Intensification',
+          focus:
+            'Increase strength and loading while maintaining 2-3 reps in reserve.',
+          weeks: 4,
+          intensity: 'moderate to high',
+          week_start: 5,
+          week_end: 8,
+        },
+        {
+          name: 'Peak & Specialization',
+          focus:
+            'Emphasize priority goals, sharpen strength, taper volume, and recover.',
+          weeks: 4,
+          intensity: 'high with planned taper and deload',
+          week_start: 9,
+          week_end: 12,
+        },
+      ],
+    },
+
+    hybrid: {
+      programName: `${name}'s 12-Week Hybrid Program`,
+      overview:
+        'A 12-week hybrid program combining calisthenics skill work with weight training, using submax skill practice, progressive strength work, hypertrophy, and planned recovery.',
+      phases: [
+        {
+          name: 'Foundation & Dual Adaptation',
+          weeks: '1-4',
+          focus: 'Calisthenics technique, weight baselines, tendon conditioning',
+        },
+        {
+          name: 'Intensification & Skill Breakthrough',
+          weeks: '5-8',
+          focus: 'Harder skills, progressive loading, strength and hypertrophy',
+        },
+        {
+          name: 'Peak & Mastery',
+          weeks: '9-12',
+          focus: 'Advanced skills, peak strength, taper, and final recovery',
+        },
+      ],
+      mesocycles: [
+        {
+          name: 'Foundation & Dual Adaptation',
+          focus:
+            'Build the technical and physical foundation for both calisthenics and weight training.',
+          weeks: 4,
+          intensity: 'moderate',
+          week_start: 1,
+          week_end: 4,
+        },
+        {
+          name: 'Intensification & Skill Breakthrough',
+          focus:
+            'Increase strength and introduce harder calisthenics progressions while managing total fatigue.',
+          weeks: 4,
+          intensity: 'moderate to high',
+          week_start: 5,
+          week_end: 8,
+        },
+        {
+          name: 'Peak & Mastery',
+          focus:
+            'Peak target skills and strength, then taper and recover.',
+          weeks: 4,
+          intensity: 'high with planned taper and deload',
+          week_start: 9,
+          week_end: 12,
+        },
+      ],
+    },
+  };
+
+  return configs[trainingType] || configs.calisthenics;
+}
+
+/*
+ * This is intentionally much smaller than the old full 12-week prompt.
+ *
+ * The previous version repeatedly sent the entire training methodology
+ * into OpenRouter for every week. That multiplied the same large prompt
+ * across 12 calls.
+ *
+ * This version sends only the rules needed to generate the current
+ * two-week batch.
+ */
+function buildCompactWeeklyPrompt(
+  trainingType,
+  data,
+  mesocycleIndex,
+  mesocycle,
+  weekStart,
+  weekEnd
+) {
+  const athlete = [
+    `Training type: ${trainingType}`,
+    `Gender: ${data.gender || 'unspecified'}`,
+    `Level: ${data.level || 'intermediate'}`,
+    `Age: ${data.age || 'unspecified'}`,
+    `Weight: ${data.weightLbs || 'unspecified'} ${
+      data.unit === 'metric' ? 'kg' : 'lbs'
+    }`,
+    `Height: ${
+      data.unit === 'metric'
+        ? `${data.heightFt || '?'} cm`
+        : `${data.heightFt || '?'}'${data.heightIn || 0}"`
+    }`,
+    `Current skills: ${data.currentSkills || 'None specified'}`,
+    `Fitness goals: ${
+      data.fitnessGoals?.length
+        ? data.fitnessGoals.join(', ')
+        : 'General fitness'
+    }`,
+    `Weight goals: ${
+      data.weightGoals?.length
+        ? data.weightGoals.join(', ')
+        : 'None specified'
+    }`,
+    `Goal description: ${data.goalDescription || 'None specified'}`,
+    `Goal timeframe: ${data.timeframe || 'None specified'}`,
+    `Available equipment: ${data.equipment || 'None specified'}`,
+    `Requirements and limitations: ${
+      data.requirements || 'None specified'
+    }`,
+  ].join('\n');
+
+  const typeRules = {
+    calisthenics: `
+CALISTHENICS RULES:
+- Skill work comes first when the CNS is fresh.
+- Use bodyweight progressions unless the listed equipment permits another option.
+- Skills remain submax: approximately 40-60% of maximum hold/repetition capacity.
+- Strength work stays 2-3 reps away from failure.
+- Prioritize clean technique and progressive skill difficulty.
+`,
+
+    weighted_calisthenics: `
+WEIGHTED CALISTHENICS RULES:
+- Skill work comes first and remains unweighted/submax.
+- Weighted strength work stays 2-3 reps from failure.
+- Use only listed loading equipment.
+- Increase loading gradually.
+- Never grind a weighted repetition.
+`,
+
+    weights: `
+WEIGHT TRAINING RULES:
+- Use only exercises possible with the athlete's listed equipment.
+- Compound movements are primary.
+- Most working sets stay around 2-3 reps in reserve.
+- Use progressive overload without failure training.
+- Include appropriate hypertrophy/accessory work based on the athlete's goals.
+`,
+
+    hybrid: `
+HYBRID RULES:
+- Calisthenics skill work comes first.
+- Weight training follows skill work.
+- Use weights to support the athlete's calisthenics goals.
+- Manage total fatigue carefully.
+- Keep both skill development and muscle/strength development present.
+`,
+  };
+
+  const weekRules = {
+    0: `
+WEEKS 1-4 — FOUNDATION:
+Week 1: establish baseline and technique.
+Week 2: small volume/progression increase.
+Week 3: progress difficulty or load.
+Week 4: deload.
+`,
+    1: `
+WEEKS 5-8 — INTENSIFICATION:
+Week 5: return from deload with slightly harder work.
+Week 6: progressive volume/load increase.
+Week 7: strongest training week of the phase while staying submax.
+Week 8: deload.
+`,
+    2: `
+WEEKS 9-12 — PEAK:
+Week 9: advanced progression.
+Week 10: peak training stimulus while remaining submax.
+Week 11: taper volume while maintaining quality.
+Week 12: full deload and assessment.
+`,
+  };
+
+  return `
+You are generating a SMALL JSON BATCH inside an existing 12-week fitness program.
+
+IMPORTANT:
+- Generate ONLY weeks ${weekStart} through ${weekEnd}.
+- Do not generate any other weeks.
+- Do not generate the program structure.
+- Do not explain your answer.
+- Do not use markdown.
+- Return ONLY valid JSON.
+- The JSON must match the requested schema exactly.
+
+ATHLETE:
+${athlete}
+
+MESOCYCLE:
+Number: ${mesocycleIndex + 1}
+Name: ${mesocycle.name}
+Focus: ${mesocycle.focus || 'Progressive training'}
+Intensity: ${mesocycle.intensity || 'moderate'}
+
+${typeRules[trainingType] || typeRules.calisthenics}
+
+${weekRules[mesocycleIndex] || weekRules[0]}
+
+UNIVERSAL TRAINING RULES:
+- Respect every athlete requirement and limitation.
+- NEVER use equipment the athlete does not have.
+- Legs are mandatory unless the athlete explicitly says no legs, upper body only, or skip leg training.
+- When legs are included, cover quads, hamstrings, glutes, and calves across the week.
+- Push/pull balance should be maintained.
+- Never train a movement to technical failure.
+- Use controlled eccentrics.
+- Use explosive concentric intent where appropriate.
+- Every exercise needs a specific activation_cue.
+- Every exercise needs a useful coaching note.
+- Do not invent injuries or abilities.
+- Do not add equipment that was not listed.
+- Do not make the program unnecessarily long.
+- If the athlete says they have limited session time, keep the number of exercises appropriate for that time.
+- Prefer 4 exercises per training day for short sessions and never exceed 5 exercises per training day.
+- Use the athlete's requested number of training days when it is clearly stated.
+- If the requested number of training days is not stated, use 5 training days.
+- Do not count warm-ups or cooldowns as exercise entries.
+
+HUNTER STEIN ACTIVATION METHOD:
+- Pre-activate the target muscle before the movement.
+- Use maximum intent on the concentric phase.
+- Control the eccentric for approximately 2-3 seconds.
+- Maintain full-body tension.
+- Maintain mind-muscle connection.
+- Perfect form is mandatory.
+- If form breaks, the set ends.
+- activation_cue must be specific to the actual movement.
+
+OUTPUT REQUIREMENTS:
+Generate exactly the requested week numbers.
+Each week must contain:
+- week_number
+- mesocycle_index
+- week_type
+- days
+
+Each day must contain:
+- day_name
+- workout_type
+- exercises
+
+Each exercise must contain:
+- name
+- sets
+- reps
+- rest_seconds
+- notes
+- activation_cue
+
+The response must contain exactly this top-level shape:
+{
+  "microcycles": [...]
+}
+`.trim();
+}
+
+const MICROCycle_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    microcycles: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 2,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          week_number: {
+            type: 'integer',
+          },
+          mesocycle_index: {
+            type: 'integer',
+          },
+          week_type: {
+            type: 'string',
+          },
+          days: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 7,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                day_name: {
+                  type: 'string',
+                },
+                workout_type: {
+                  type: 'string',
+                },
+                exercises: {
+                  type: 'array',
+                  minItems: 1,
+                  maxItems: 5,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      name: {
+                        type: 'string',
+                      },
+                      sets: {
+                        type: 'integer',
+                      },
+                      reps: {
+                        type: 'string',
+                      },
+                      rest_seconds: {
+                        type: 'integer',
+                      },
+                      notes: {
+                        type: 'string',
+                      },
+                      activation_cue: {
+                        type: 'string',
+                      },
+                    },
+                    required: [
+                      'name',
+                      'sets',
+                      'reps',
+                      'rest_seconds',
+                      'notes',
+                      'activation_cue',
+                    ],
+                  },
+                },
+              },
+              required: [
+                'day_name',
+                'workout_type',
+                'exercises',
+              ],
+            },
+          },
+        },
+        required: [
+          'week_number',
+          'mesocycle_index',
+          'week_type',
+          'days',
+        ],
+      },
+    },
+  },
+  required: ['microcycles'],
+};
+
+function getGenerationLock() {
+  try {
+    const raw = window.localStorage.getItem(GENERATION_LOCK_KEY);
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed?.timestamp) {
+      window.localStorage.removeItem(GENERATION_LOCK_KEY);
+      return null;
+    }
+
+    if (Date.now() - parsed.timestamp > GENERATION_LOCK_MS) {
+      window.localStorage.removeItem(GENERATION_LOCK_KEY);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function acquireGenerationLock() {
+  const existing = getGenerationLock();
+
+  if (existing) {
+    return false;
+  }
+
+  const token = `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+
+  window.localStorage.setItem(
+    GENERATION_LOCK_KEY,
+    JSON.stringify({
+      token,
+      timestamp: Date.now(),
+    })
+  );
+
+  return token;
+}
+
+function releaseGenerationLock(token) {
+  try {
+    const current = getGenerationLock();
+
+    if (current?.token === token) {
+      window.localStorage.removeItem(GENERATION_LOCK_KEY);
+    }
+  } catch {
+    // Ignore localStorage cleanup errors.
+  }
+}
+
+function getGenerationErrorMessage(error) {
+  const raw =
+    error?.message ||
+    error?.details ||
+    error?.hint ||
+    error?.error_description ||
+    '';
+
+  const message = String(raw);
+
+  if (/402/i.test(message)) {
+    return 'AI generation was stopped because the current OpenRouter route requires paid usage. No more automatic retries were made.';
+  }
+
+  if (/429/i.test(message)) {
+    return 'AI generation was rate-limited. Please wait before trying again.';
+  }
+
+  if (/502/i.test(message)) {
+    return 'The AI provider returned an incomplete response. The program generator has stopped instead of repeatedly retrying and consuming more requests.';
+  }
+
+  if (/timeout|timed out/i.test(message)) {
+    return 'The AI provider took too long to finish this section. Please try again later.';
+  }
+
+  if (/no assistant content|no output/i.test(message)) {
+    return 'The AI provider stopped before returning the workout data. Please try again later.';
+  }
+
+  return message || 'Failed to generate your program. Please try again.';
+}
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const { updateSettings } = useAppSettings();
 
   const [step, setStep] = useState(0);
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [country, setCountry] = useState('');
   const [language, setLanguage] = useState('English');
   const [unit, setUnit] = useState('imperial');
+
   const [trainingType, setTrainingType] = useState('');
   const [level, setLevel] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [equipment, setEquipment] = useState('');
   const [requirements, setRequirements] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [loadingPhase, setLoadingPhase] = useState('');
 
   const progressTimer = useRef(null);
   const generationStartedRef = useRef(false);
+  const generationLockTokenRef = useRef(null);
 
   const [age, setAge] = useState('');
   const [weightLbs, setWeightLbs] = useState('');
   const [heightFt, setHeightFt] = useState('');
   const [heightIn, setHeightIn] = useState('');
+
   const [fitnessGoals, setFitnessGoals] = useState([]);
   const [currentSkills, setCurrentSkills] = useState('');
   const [gender, setGender] = useState('');
@@ -332,13 +940,20 @@ export default function Onboarding() {
   };
 
   const handleGenerate = async () => {
-    if (
-      loading ||
-      generationStartedRef.current
-    ) {
+    if (loading || generationStartedRef.current) {
       return;
     }
 
+    const lockToken = acquireGenerationLock();
+
+    if (!lockToken) {
+      toast.error(
+        'A program generation is already running. Please wait for it to finish before starting another one.'
+      );
+      return;
+    }
+
+    generationLockTokenRef.current = lockToken;
     generationStartedRef.current = true;
 
     setLoading(true);
@@ -370,75 +985,53 @@ export default function Onboarding() {
       }
 
       const parsedAge = Number.parseInt(age, 10);
-      const enteredWeight =
-        Number.parseFloat(weightLbs);
-      const parsedCm =
-        Number.parseFloat(heightFt);
+      const enteredWeight = Number.parseFloat(weightLbs);
+      const parsedCm = Number.parseFloat(heightFt);
 
-      const feet =
-        Number.parseInt(heightFt, 10) || 0;
+      const feet = Number.parseInt(heightFt, 10) || 0;
+      const inches = Number.parseInt(heightIn, 10) || 0;
 
-      const inches =
-        Number.parseInt(heightIn, 10) || 0;
+      const heightInches = feet * 12 + inches;
 
-      const heightInches =
-        feet * 12 + inches;
-
-      const weightStoredLbs =
-        Number.isFinite(enteredWeight)
-          ? unit === 'metric'
-            ? enteredWeight / 0.453592
-            : enteredWeight
-          : null;
+      const weightStoredLbs = Number.isFinite(
+        enteredWeight
+      )
+        ? unit === 'metric'
+          ? enteredWeight / 0.453592
+          : enteredWeight
+        : null;
 
       const profileData = {
         id: user.id,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         training_type: trainingType,
-        fitness_level:
-          level || 'intermediate',
-
+        fitness_level: level || 'intermediate',
         primary_goal:
           goalDescription.trim() ||
           weightGoals.join(', ') ||
           fitnessGoals.join(', '),
-
         goal_timeframe: timeframe.trim(),
-        available_equipment:
-          equipment.trim(),
-
-        training_requirements:
-          requirements.trim(),
-
+        available_equipment: equipment.trim(),
+        training_requirements: requirements.trim(),
         weight_goals: weightGoals,
         fitness_goals: fitnessGoals,
-
-        current_skills:
-          currentSkills.trim(),
-
+        current_skills: currentSkills.trim(),
         age: Number.isFinite(parsedAge)
           ? parsedAge
           : null,
-
         gender: gender || null,
-
-        weight_lbs:
-          weightStoredLbs,
-
+        weight_lbs: weightStoredLbs,
         height_inches:
-          unit === 'imperial' &&
-          heightInches > 0
+          unit === 'imperial' && heightInches > 0
             ? heightInches
             : null,
-
         height_cm:
           unit === 'metric' &&
           Number.isFinite(parsedCm) &&
           parsedCm > 0
             ? parsedCm
             : null,
-
         country,
         language,
         unit,
@@ -446,13 +1039,9 @@ export default function Onboarding() {
       };
 
       setProgress(10);
-      setLoadingPhase(
-        'Saving your profile…'
-      );
+      setLoadingPhase('Saving your profile…');
 
-      const {
-        error: profileError,
-      } = await supabase
+      const { error: profileError } = await supabase
         .from('profiles')
         .upsert(profileData, {
           onConflict: 'id',
@@ -479,448 +1068,380 @@ export default function Onboarding() {
         weightGoals,
       };
 
-      // ============================================================
-      // PROGRAM STRUCTURE
-      //
-      // IMPORTANT:
-      // The 12-week structure is created locally.
-      //
-      // We intentionally DO NOT call:
-      //
-      // supabaseApi.ai.invoke({
-      //   type: 'structure',
-      //   ...
-      // })
-      //
-      // here.
-      //
-      // This prevents the program from getting stuck at 18% while
-      // OpenRouter tries to reason through the entire macrocycle.
-      // ============================================================
-
+      /*
+       * ---------------------------------------------------------
+       * LOCAL PROGRAM STRUCTURE
+       * ---------------------------------------------------------
+       *
+       * This replaces the old AI "structure" request.
+       *
+       * That old request was the 18% -> 30% section.
+       * If it failed, the entire generation failed before
+       * any workouts were created.
+       *
+       * There is no reason to spend an AI request generating
+       * three four-week phases.
+       */
       setProgress(18);
       setLoadingPhase(
-        'Designing your program structure…'
+        'Designing your 12-week training structure…'
       );
 
-      const trainingTypeLabels = {
-        calisthenics: 'Calisthenics',
-        weighted_calisthenics:
-          'Weighted Calisthenics',
-        weights: 'Weight Training',
-        hybrid: 'Hybrid Training',
-      };
-
-      const trainingLabel =
-        trainingTypeLabels[trainingType] ||
-        'Personalized Training';
-
-      const goalText =
-        goalDescription.trim() ||
-        weightGoals.join(', ') ||
-        fitnessGoals.join(', ') ||
-        'general fitness';
-
-      const structure = {
-        program_name:
-          `${firstName.trim() || 'Athlete'}'s ${trainingLabel} Program`,
-
-        duration_weeks: 12,
-
-        macrocycle: {
-          overview:
-            `A 12-week ${trainingLabel.toLowerCase()} program built around ${goalText}. ` +
-            `The program progresses through foundation, intensification, and peak/mastery phases ` +
-            `while respecting the athlete's equipment, training experience, goals, and requirements.`,
-
-          phases: [
-            {
-              name:
-                'Foundation & Adaptation',
-              weeks: '1-4',
-              focus:
-                'Build technical consistency, establish training baselines, develop tendon and connective-tissue tolerance, and introduce progressive overload.',
-            },
-            {
-              name:
-                'Intensification & Progression',
-              weeks: '5-8',
-              focus:
-                'Increase training intensity and productive volume while progressing skills, strength, hypertrophy, and movement quality.',
-            },
-            {
-              name:
-                'Peak & Mastery',
-              weeks: '9-12',
-              focus:
-                'Peak the athlete toward their primary goals, consolidate advanced skills and strength, taper intelligently, and finish with recovery and assessment.',
-            },
-          ],
-        },
-
-        mesocycles: [
-          {
-            name:
-              'Foundation & Adaptation',
-
-            focus:
-              'Establish technique, submaximal training tolerance, movement quality, baseline strength, and progressive adaptation.',
-
-            weeks: 4,
-            intensity: 'moderate',
-
-            week_start: 1,
-            week_end: 4,
-          },
-
-          {
-            name:
-              'Intensification & Progression',
-
-            focus:
-              'Increase intensity and productive training volume while progressing the athlete toward harder movements and stronger performance.',
-
-            weeks: 4,
-            intensity: 'moderate-high',
-
-            week_start: 5,
-            week_end: 8,
-          },
-
-          {
-            name:
-              'Peak & Mastery',
-
-            focus:
-              'Peak important skills and strength qualities, specialize toward the athlete goals, taper volume appropriately, and finish with a full recovery week.',
-
-            weeks: 4,
-            intensity:
-              'high with planned taper/deload',
-
-            week_start: 9,
-            week_end: 12,
-          },
-        ],
-      };
-
-      // Structure is complete locally.
-      // No OpenRouter request has been made.
-      setProgress(30);
-
-      setLoadingPhase(
-        'Structure complete — starting your workouts…'
+      const structure = buildLocalProgramStructure(
+        trainingType,
+        firstName
       );
 
-      // ============================================================
-      // GENERATE EACH WEEK SEPARATELY
-      // ============================================================
+      const mesocycles = structure.mesocycles;
 
-      const microcycleSchema = {
-        type: 'object',
-
-        additionalProperties: false,
-
-        properties: {
-          microcycles: {
-            type: 'array',
-          },
-        },
-
-        required: ['microcycles'],
-      };
-
-      const mesocycles =
-        structure.mesocycles;
-
-      const totalWeeks =
-        mesocycles.reduce(
-          (total, meso) => {
-            const weekStart =
-              Number(meso?.week_start) ||
-              1;
-
-            const weekEnd =
-              Number(meso?.week_end) ||
-              4;
-
-            return (
-              total +
-              Math.max(
-                0,
-                weekEnd -
-                  weekStart +
-                  1
-              )
-            );
-          },
-          0
+      if (
+        !Array.isArray(mesocycles) ||
+        mesocycles.length !== 3
+      ) {
+        throw new Error(
+          'The local program structure could not be created.'
         );
+      }
 
-      let completedWeeks = 0;
+      setProgress(24);
+      setLoadingPhase(
+        'Structure ready — preparing workout generation…'
+      );
 
+      /*
+       * ---------------------------------------------------------
+       * GENERATE WORKOUTS TWO WEEKS AT A TIME
+       * ---------------------------------------------------------
+       *
+       * Old system:
+       *   1 structure request
+       *   12 separate week requests
+       *   = 13 OpenRouter requests
+       *
+       * New system:
+       *   structure is local
+       *   2 weeks per AI request
+       *   = 6 OpenRouter requests
+       *
+       * This dramatically reduces request count and repeated
+       * prompt tokens.
+       */
       const allMicrocycles = [];
 
+      const totalWeeks = 12;
+      let completedWeeks = 0;
+
       for (
-        let mesoIndex = 0;
-        mesoIndex <
-        mesocycles.length;
-        mesoIndex++
+        let batchStart = 1;
+        batchStart <= totalWeeks;
+        batchStart += 2
       ) {
-        const meso =
-          mesocycles[mesoIndex];
+        const batchEnd = Math.min(
+          batchStart + 1,
+          totalWeeks
+        );
+
+        const mesoIndex = Math.min(
+          2,
+          Math.floor((batchStart - 1) / 4)
+        );
+
+        const meso = mesocycles[mesoIndex];
 
         const phaseName =
           meso?.name ||
-          `Training phase ${
-            mesoIndex + 1
-          }`;
+          `Training phase ${mesoIndex + 1}`;
 
-        const weekStart =
-          Number(meso?.week_start) ||
-          mesoIndex * 4 + 1;
+        setLoadingPhase(
+          `Building Weeks ${batchStart}-${batchEnd} — ${phaseName}…`
+        );
 
-        const weekEnd =
-          Number(meso?.week_end) ||
-          mesoIndex * 4 + 4;
-
-        for (
-          let weekNumber =
-            weekStart;
-          weekNumber <= weekEnd;
-          weekNumber++
-        ) {
-          setLoadingPhase(
-            `Building Week ${weekNumber} — ${phaseName}…`
+        const weeklyPrompt =
+          buildCompactWeeklyPrompt(
+            trainingType,
+            promptData,
+            mesoIndex,
+            meso,
+            batchStart,
+            batchEnd
           );
 
-          const weeklyPrompt =
-            `${buildMicrocyclePrompt(
-              trainingType,
-              promptData,
-              mesoIndex,
-              meso
-            )}
-
-=== CRITICAL OUTPUT LIMIT ===
-
-You are generating ONLY WEEK ${weekNumber}.
-
-IGNORE any earlier instruction that says to generate a complete 12-week program.
-
-DO NOT generate multiple weeks.
-
-DO NOT generate weeks other than WEEK ${weekNumber}.
-
-Generate ONLY WEEK ${weekNumber}.
-
-This week belongs to MESOCYCLE ${mesoIndex + 1}: "${phaseName}".
-
-Mesocycle focus:
-${meso?.focus || 'Progressive training'}
-
-Mesocycle intensity:
-${meso?.intensity || 'moderate'}
-
-Week number:
-${weekNumber}
-
-The response must contain EXACTLY ONE microcycle.
-
-The microcycle must contain:
-
-- week_number: ${weekNumber}
-- mesocycle_index: ${mesoIndex}
-- week_type
-- days
-- every day must contain day_name
-- every day must contain workout_type
-- every day must contain exercises
-- every exercise must contain name
-- sets must be a number
-- reps must be a string
-- rest_seconds must be a number
-- notes must contain a useful coaching cue
-- activation_cue must contain a specific actionable Hunter Stein activation/form cue
-
-Respect ALL athlete requirements from the training methodology above.
-
-Respect:
-
-- training type
-- fitness level
-- goals
-- current skills
-- available equipment
-- available training time
-- injuries
-- limitations
-- training requirements
-- Anton's Submax method
-- progressive overload rules
-- periodization rules
-- leg-training requirements
-- Hunter Stein activation method
-
-Do not create exercises requiring equipment the athlete does not have.
-
-Do not explain your answer.
-
-Do not use markdown.
-
-Return ONLY valid JSON.
-
-Return exactly this structure:
-
-{
-  "microcycles": [
-    {
-      "week_number": ${weekNumber},
-      "mesocycle_index": ${mesoIndex},
-      "week_type": "string",
-      "days": [
-        {
-          "day_name": "string",
-          "workout_type": "string",
-          "exercises": [
-            {
-              "name": "string",
-              "sets": 3,
-              "reps": "8-10",
-              "rest_seconds": 90,
-              "notes": "string",
-              "activation_cue": "string"
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}`;
-
-          const parsed =
-            await supabaseApi.ai.invoke({
-              type: 'microcycle',
-              prompt: weeklyPrompt,
-              schema:
-                microcycleSchema,
-            });
-
-          const generated =
-            Array.isArray(
-              parsed?.microcycles
-            )
-              ? parsed.microcycles
-              : [];
-
-          if (!generated.length) {
-            throw new Error(
-              `AI returned no workout for Week ${weekNumber}.`
-            );
+        console.info(
+          '[ONBOARDING] GENERATING WEEK BATCH',
+          {
+            batchStart,
+            batchEnd,
+            mesoIndex,
+            phaseName,
           }
+        );
 
+        /*
+         * IMPORTANT:
+         * No automatic retry here.
+         *
+         * OpenRouter free-tier requests are limited and repeated
+         * failed attempts can burn the request allowance.
+         *
+         * If the provider fails, stop cleanly and tell the user
+         * exactly what happened.
+         */
+        const parsed =
+          await supabaseApi.ai.invoke({
+            type: 'microcycle',
+            prompt: weeklyPrompt,
+            schema: MICROCycle_SCHEMA,
+          });
+
+        const generated = Array.isArray(
+          parsed?.microcycles
+        )
+          ? parsed.microcycles
+          : [];
+
+        if (!generated.length) {
+          throw new Error(
+            `AI returned no workouts for Weeks ${batchStart}-${batchEnd}.`
+          );
+        }
+
+        for (
+          let weekNumber = batchStart;
+          weekNumber <= batchEnd;
+          weekNumber++
+        ) {
           const week =
             generated.find(
               (microcycle) =>
                 Number(
                   microcycle?.week_number
-                ) ===
-                Number(weekNumber)
-            ) ||
-            generated[0];
+                ) === Number(weekNumber)
+            ) || null;
 
-          if (
-            !week ||
-            typeof week !==
-              'object'
-          ) {
+          if (!week) {
             throw new Error(
-              `AI returned an invalid workout for Week ${weekNumber}.`
+              `AI did not return Week ${weekNumber}.`
             );
           }
 
-          // Keep these values deterministic.
-          week.week_number =
-            weekNumber;
+          if (
+            !week ||
+            typeof week !== 'object'
+          ) {
+            throw new Error(
+              `AI returned invalid data for Week ${weekNumber}.`
+            );
+          }
 
-          week.mesocycle_index =
-            mesoIndex;
+          /*
+           * Do not trust the AI to change these metadata fields.
+           * The application owns them.
+           */
+          week.week_number = weekNumber;
+          week.mesocycle_index = mesoIndex;
 
-          allMicrocycles.push(
-            week
-          );
+          if (!Array.isArray(week.days)) {
+            throw new Error(
+              `AI returned no training days for Week ${weekNumber}.`
+            );
+          }
 
+          for (const day of week.days) {
+            if (!Array.isArray(day?.exercises)) {
+              throw new Error(
+                `AI returned invalid exercises for Week ${weekNumber}.`
+              );
+            }
+
+            for (const exercise of day.exercises) {
+              if (
+                typeof exercise?.name !== 'string' ||
+                !exercise.name.trim()
+              ) {
+                throw new Error(
+                  `AI returned an invalid exercise in Week ${weekNumber}.`
+                );
+              }
+
+              if (
+                typeof exercise?.sets !== 'number'
+              ) {
+                exercise.sets = Number(
+                  exercise.sets
+                ) || 3;
+              }
+
+              if (
+                typeof exercise?.rest_seconds !==
+                'number'
+              ) {
+                exercise.rest_seconds =
+                  Number(
+                    exercise.rest_seconds
+                  ) || 90;
+              }
+
+              if (
+                typeof exercise?.reps !== 'string'
+              ) {
+                exercise.reps = String(
+                  exercise.reps ?? '8-10'
+                );
+              }
+
+              if (
+                typeof exercise?.notes !== 'string' ||
+                !exercise.notes.trim()
+              ) {
+                exercise.notes =
+                  'Stop before technical failure and maintain perfect form.';
+              }
+
+              if (
+                typeof exercise?.activation_cue !==
+                  'string' ||
+                !exercise.activation_cue.trim()
+              ) {
+                exercise.activation_cue =
+                  'Brace, activate the target muscles, and maintain perfect position throughout the movement.';
+              }
+            }
+          }
+
+          allMicrocycles.push(week);
           completedWeeks += 1;
-
-          const generationProgress =
-            totalWeeks > 0
-              ? 30 +
-                (completedWeeks /
-                  totalWeeks) *
-                  55
-              : 85;
-
-          setProgress(
-            generationProgress
-          );
-
-          setLoadingPhase(
-            `Week ${weekNumber} complete (${completedWeeks}/${totalWeeks}).`
-          );
         }
-      }
 
-      if (
-        !allMicrocycles.length
-      ) {
-        throw new Error(
-          'No workouts were generated.'
+        const generationProgress =
+          24 +
+          (completedWeeks / totalWeeks) * 64;
+
+        setProgress(
+          Math.min(generationProgress, 88)
+        );
+
+        setLoadingPhase(
+          `Weeks ${batchStart}-${batchEnd} complete (${completedWeeks}/${totalWeeks}).`
         );
       }
 
-      // ============================================================
-      // SAVE COMPLETE PROGRAM
-      // ============================================================
+      /*
+       * Make absolutely sure we have all 12 weeks before
+       * touching the database.
+       */
+      if (allMicrocycles.length !== 12) {
+        throw new Error(
+          `Only ${allMicrocycles.length} of 12 weeks were generated. The program was not saved because it is incomplete.`
+        );
+      }
+
+      /*
+       * Sort weeks deterministically.
+       */
+      allMicrocycles.sort(
+        (a, b) =>
+          Number(a.week_number) -
+          Number(b.week_number)
+      );
+
+      /*
+       * Verify every week exists exactly once.
+       */
+      const weekNumbers =
+        allMicrocycles.map((w) =>
+          Number(w.week_number)
+        );
+
+      const uniqueWeekNumbers =
+        new Set(weekNumbers);
+
+      if (
+        uniqueWeekNumbers.size !== 12 ||
+        !weekNumbers.every(
+          (week, index) =>
+            week === index + 1
+        )
+      ) {
+        throw new Error(
+          'The AI returned duplicate or missing weeks. The program was not saved.'
+        );
+      }
 
       setProgress(90);
-
       setLoadingPhase(
         'Saving your personalized program…'
       );
 
       const programPayload = {
         user_id: user.id,
-
-        program_name:
-          structure.program_name,
-
-        duration_weeks:
-          structure.duration_weeks,
-
-        macrocycle:
-          structure.macrocycle,
-
-        mesocycles:
-          structure.mesocycles,
-
-        microcycles:
-          allMicrocycles,
-
-        training_type:
-          trainingType,
-
+        program_name: structure.programName,
+        duration_weeks: 12,
+        macrocycle: {
+          overview: structure.overview,
+          phases: structure.phases,
+        },
+        mesocycles: structure.mesocycles,
+        microcycles: allMicrocycles,
+        training_type: trainingType,
         fitness_level:
           level || 'intermediate',
-
         goal:
           goalDescription.trim() ||
           weightGoals.join(', ') ||
           fitnessGoals.join(', '),
-
         current_week: 1,
-
         status: 'active',
       };
+
+      /*
+       * Before inserting, remove an accidental duplicate active
+       * program created by a previous successful attempt.
+       *
+       * We only look for this user's active program.
+       */
+      const {
+        data: existingPrograms,
+        error: existingProgramError,
+      } = await supabase
+        .from('workout_programs')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .limit(1);
+
+      if (existingProgramError) {
+        throw existingProgramError;
+      }
+
+      if (
+        Array.isArray(existingPrograms) &&
+        existingPrograms.length > 0
+      ) {
+        /*
+         * Do not silently create a second active program.
+         *
+         * If one already exists, the new program is still the
+         * one the user just generated, so archive the old active
+         * one before saving the new one.
+         */
+        const oldProgramId =
+          existingPrograms[0]?.id;
+
+        if (oldProgramId) {
+          const { error: archiveError } =
+            await supabase
+              .from('workout_programs')
+              .update({
+                status: 'archived',
+              })
+              .eq('id', oldProgramId)
+              .eq('user_id', user.id);
+
+          if (archiveError) {
+            throw archiveError;
+          }
+        }
+      }
 
       const {
         data: savedProgram,
@@ -942,7 +1463,6 @@ Return exactly this structure:
       }
 
       setProgress(96);
-
       setLoadingPhase(
         'Refreshing your app data…'
       );
@@ -950,7 +1470,6 @@ Return exactly this structure:
       await queryClientInstance.invalidateQueries();
 
       setProgress(100);
-
       setLoadingPhase(
         'Your personalized program is ready!'
       );
@@ -959,12 +1478,8 @@ Return exactly this structure:
         'Your personalized program is ready!'
       );
 
-      await new Promise(
-        (resolve) =>
-          window.setTimeout(
-            resolve,
-            700
-          )
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, 700)
       );
 
       navigate('/', {
@@ -977,37 +1492,33 @@ Return exactly this structure:
       );
 
       const message =
-        error?.message ||
-        error?.details ||
-        error?.hint ||
-        'Failed to generate your program. Please try again.';
+        getGenerationErrorMessage(error);
 
       toast.error(message);
 
       setProgress(0);
       setLoadingPhase('');
       setLoading(false);
-
-      generationStartedRef.current =
-        false;
+      generationStartedRef.current = false;
     } finally {
-      clearInterval(
-        progressTimer.current
+      clearInterval(progressTimer.current);
+
+      releaseGenerationLock(
+        generationLockTokenRef.current
       );
+
+      generationLockTokenRef.current = null;
     }
   };
 
-  // Step 3 continue condition
   const step3Valid = hasSkills
     ? level &&
       (!hasWeightGoals ||
         weightGoals.length > 0)
     : weightGoals.length > 0;
 
-  // Step 4 (generate) condition
   const step4Valid = hasSkills
-    ? goalDescription.trim()
-        .length >= 10 &&
+    ? goalDescription.trim().length >= 10 &&
       equipment.trim().length > 0
     : equipment.trim().length > 0;
 
@@ -1030,7 +1541,6 @@ Return exactly this structure:
       </div>
 
       <AnimatePresence mode="wait">
-        {/* STEP 0: Welcome */}
         {step === 0 && (
           <motion.div
             key="welcome"
@@ -1056,9 +1566,7 @@ Return exactly this structure:
             </h1>
 
             <p className="text-muted-foreground text-lg mb-8">
-              Your AI-powered training
-              coach. Let's build your
-              perfect program.
+              Your AI-powered training coach. Let's build your perfect program.
             </p>
 
             <div className="flex-1 flex flex-col justify-center gap-4">
@@ -1123,9 +1631,7 @@ Return exactly this structure:
 
                 <SearchSelect
                   value={language}
-                  onChange={
-                    setLanguage
-                  }
+                  onChange={setLanguage}
                   options={LANGUAGES}
                   placeholder="Select language…"
                 />
@@ -1140,14 +1646,11 @@ Return exactly this structure:
                   {[
                     {
                       value: 'metric',
-                      label:
-                        'Metric (kg, cm)',
+                      label: 'Metric (kg, cm)',
                     },
                     {
-                      value:
-                        'imperial',
-                      label:
-                        'Imperial (lbs, ft)',
+                      value: 'imperial',
+                      label: 'Imperial (lbs, ft)',
                     },
                   ].map(
                     ({
@@ -1155,6 +1658,7 @@ Return exactly this structure:
                       label,
                     }) => (
                       <button
+                        type="button"
                         key={v}
                         onClick={() =>
                           setUnit(v)
@@ -1191,7 +1695,6 @@ Return exactly this structure:
           </motion.div>
         )}
 
-        {/* STEP 1: Training Type */}
         {step === 1 && (
           <motion.div
             key="training-type"
@@ -1214,19 +1717,14 @@ Return exactly this structure:
             </h2>
 
             <p className="text-muted-foreground mb-6">
-              What type of training
-              are you here for,{' '}
-              {firstName ||
-                'Athlete'}
-              ?
+              What type of training are you here for,{' '}
+              {firstName || 'Athlete'}?
             </p>
 
             <div className="flex-1">
               <TrainingTypeSelect
                 value={trainingType}
-                onChange={
-                  setTrainingType
-                }
+                onChange={setTrainingType}
               />
             </div>
 
@@ -1257,7 +1755,6 @@ Return exactly this structure:
           </motion.div>
         )}
 
-        {/* STEP 2: Body Stats */}
         {step === 2 && (
           <motion.div
             key="bodystats"
@@ -1280,9 +1777,7 @@ Return exactly this structure:
             </h2>
 
             <p className="text-muted-foreground mb-6">
-              Your stats help us
-              personalize nutrition
-              goals and training load.
+              Your stats help us personalize nutrition goals and training load.
             </p>
 
             <div className="space-y-4 flex-1">
@@ -1292,27 +1787,27 @@ Return exactly this structure:
                 </p>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    'male',
-                    'female',
-                  ].map((g) => (
-                    <button
-                      key={g}
-                      onClick={() =>
-                        setGender(g)
-                      }
-                      className={cn(
-                        'h-12 rounded-2xl border-2 font-semibold text-sm capitalize transition-all',
-                        gender === g
-                          ? 'border-primary bg-primary/10 text-foreground'
-                          : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30'
-                      )}
-                    >
-                      {g === 'male'
-                        ? '♂ Male'
-                        : '♀ Female'}
-                    </button>
-                  ))}
+                  {['male', 'female'].map(
+                    (g) => (
+                      <button
+                        type="button"
+                        key={g}
+                        onClick={() =>
+                          setGender(g)
+                        }
+                        className={cn(
+                          'h-12 rounded-2xl border-2 font-semibold text-sm capitalize transition-all',
+                          gender === g
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30'
+                        )}
+                      >
+                        {g === 'male'
+                          ? '♂ Male'
+                          : '♀ Female'}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -1338,8 +1833,7 @@ Return exactly this structure:
                 <div>
                   <p className="text-xs text-muted-foreground mb-1 font-medium">
                     Weight (
-                    {unit ===
-                    'metric'
+                    {unit === 'metric'
                       ? 'kg'
                       : 'lbs'}
                     )
@@ -1348,14 +1842,11 @@ Return exactly this structure:
                   <Input
                     type="number"
                     placeholder={
-                      unit ===
-                      'metric'
+                      unit === 'metric'
                         ? 'e.g. 80'
                         : 'e.g. 175'
                     }
-                    value={
-                      weightLbs
-                    }
+                    value={weightLbs}
                     onChange={(e) =>
                       setWeightLbs(
                         e.target.value
@@ -1371,8 +1862,7 @@ Return exactly this structure:
                   Height
                 </p>
 
-                {unit ===
-                'metric' ? (
+                {unit === 'metric' ? (
                   <Input
                     type="number"
                     placeholder="Height in cm (e.g. 178)"
@@ -1416,9 +1906,7 @@ Return exactly this structure:
               {hasSkills && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">
-                    Your Goals
-                    (select all
-                    that apply)
+                    Your Goals (select all that apply)
                   </p>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -1436,9 +1924,8 @@ Return exactly this structure:
 
                         return (
                           <button
-                            key={
-                              value
-                            }
+                            type="button"
+                            key={value}
                             onClick={() =>
                               toggleGoal(
                                 value
@@ -1457,6 +1944,7 @@ Return exactly this structure:
                             )}
                           >
                             <GoalIcon className="w-4 h-4 flex-shrink-0" />
+
                             <span className="text-sm font-medium">
                               {label}
                             </span>
@@ -1487,8 +1975,7 @@ Return exactly this structure:
                 disabled={
                   !gender ||
                   (hasSkills &&
-                    fitnessGoals.length ===
-                      0)
+                    fitnessGoals.length === 0)
                 }
                 onClick={() =>
                   setStep(3)
@@ -1501,7 +1988,6 @@ Return exactly this structure:
           </motion.div>
         )}
 
-        {/* STEP 3: Level+Skills OR Weight Goals */}
         {step === 3 && (
           <motion.div
             key="step3"
@@ -1526,8 +2012,7 @@ Return exactly this structure:
                 </h2>
 
                 <p className="text-muted-foreground mb-6">
-                  Where are you in
-                  your journey,{' '}
+                  Where are you in your journey,{' '}
                   {firstName ||
                     'Athlete'}
                   ?
@@ -1542,10 +2027,9 @@ Return exactly this structure:
                       icon: Icon,
                       placeholder,
                     }) => (
-                      <div
-                        key={value}
-                      >
+                      <div key={value}>
                         <button
+                          type="button"
                           onClick={() =>
                             setLevel(
                               value
@@ -1553,8 +2037,7 @@ Return exactly this structure:
                           }
                           className={cn(
                             'w-full p-4 rounded-2xl border-2 text-left transition-all',
-                            level ===
-                              value
+                            level === value
                               ? 'border-primary bg-primary/10'
                               : 'border-border bg-card hover:border-muted-foreground/30'
                           )}
@@ -1595,8 +2078,7 @@ Return exactly this structure:
                                 e
                               ) =>
                                 setCurrentSkills(
-                                  e
-                                    .target
+                                  e.target
                                     .value
                                 )
                               }
@@ -1612,11 +2094,7 @@ Return exactly this structure:
                             />
 
                             <p className="text-xs text-muted-foreground mt-1 pl-1">
-                              What skills
-                              & moves
-                              can you
-                              currently
-                              do?
+                              What skills & moves can you currently do?
                             </p>
                           </div>
                         )}
@@ -1628,9 +2106,7 @@ Return exactly this structure:
                 {hasWeightGoals && (
                   <div className="mt-6">
                     <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">
-                      Weight Training
-                      Goals (select
-                      all that apply)
+                      Weight Training Goals (select all that apply)
                     </p>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1648,9 +2124,8 @@ Return exactly this structure:
 
                           return (
                             <button
-                              key={
-                                value
-                              }
+                              type="button"
+                              key={value}
                               onClick={() =>
                                 toggleWeightGoal(
                                   value
@@ -1690,9 +2165,7 @@ Return exactly this structure:
                 </h2>
 
                 <p className="text-muted-foreground mb-6">
-                  What do you want
-                  to achieve with
-                  weight training,{' '}
+                  What do you want to achieve with weight training,{' '}
                   {firstName ||
                     'Athlete'}
                   ?
@@ -1713,9 +2186,8 @@ Return exactly this structure:
 
                       return (
                         <button
-                          key={
-                            value
-                          }
+                          type="button"
+                          key={value}
                           onClick={() =>
                             toggleWeightGoal(
                               value
@@ -1761,9 +2233,7 @@ Return exactly this structure:
               <Button
                 size="lg"
                 className="flex-1 h-14 text-lg font-heading font-semibold"
-                disabled={
-                  !step3Valid
-                }
+                disabled={!step3Valid}
                 onClick={() =>
                   setStep(4)
                 }
@@ -1775,7 +2245,6 @@ Return exactly this structure:
           </motion.div>
         )}
 
-        {/* STEP 4: Goals/Timeframe/Equipment/Requirements */}
         {step === 4 && (
           <motion.div
             key="step4"
@@ -1819,9 +2288,7 @@ Return exactly this structure:
               {hasSkills && (
                 <>
                   <Textarea
-                    value={
-                      goalDescription
-                    }
+                    value={goalDescription}
                     onChange={(e) =>
                       setGoalDescription(
                         e.target.value
@@ -1833,14 +2300,11 @@ Return exactly this structure:
 
                   <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      ⏱ Timeframe for
-                      your goals
+                      ⏱ Timeframe for your goals
                     </p>
 
                     <Textarea
-                      value={
-                        timeframe
-                      }
+                      value={timeframe}
                       onChange={(e) =>
                         setTimeframe(
                           e.target.value
@@ -1873,8 +2337,7 @@ Return exactly this structure:
 
               <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  🏋️ Available
-                  equipment{' '}
+                  🏋️ Available equipment{' '}
                   <span className="text-destructive">
                     *
                   </span>
@@ -1896,23 +2359,17 @@ Return exactly this structure:
                 />
 
                 <p className="text-[10px] text-muted-foreground mt-1.5">
-                  List everything
-                  you have access
-                  to — this is
-                  required.
+                  List everything you have access to — this is required.
                 </p>
               </div>
 
               <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  📝 Requirements
-                  & Notes
+                  📝 Requirements & Notes
                 </p>
 
                 <Textarea
-                  value={
-                    requirements
-                  }
+                  value={requirements}
                   onChange={(e) =>
                     setRequirements(
                       e.target.value
@@ -1923,15 +2380,7 @@ Return exactly this structure:
                 />
 
                 <p className="text-[10px] text-muted-foreground mt-1.5">
-                  Time available,
-                  injuries,
-                  limitations,
-                  areas to
-                  focus on —
-                  anything that
-                  helps us make
-                  your program
-                  perfect.
+                  Time available, injuries, limitations, areas to focus on — anything that helps us make your program perfect.
                 </p>
               </div>
             </div>
@@ -1941,6 +2390,7 @@ Return exactly this structure:
                 variant="outline"
                 size="lg"
                 className="h-14"
+                disabled={loading}
                 onClick={() =>
                   setStep(3)
                 }
