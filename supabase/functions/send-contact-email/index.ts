@@ -1,337 +1,228 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
+```typescript
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-function json(
-  body: unknown,
-  status = 200
-) {
-  return new Response(
-    JSON.stringify(body),
-    {
-      status,
-      headers: {
-        ...corsHeaders,
-        'Content-Type':
-          'application/json',
-      },
-    }
-  );
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
+  });
 }
 
-function getSupabaseKey() {
-  const publishableKeysRaw =
-    Deno.env.get(
-      'SUPABASE_PUBLISHABLE_KEYS'
-    );
-
-  if (publishableKeysRaw) {
-    try {
-      const keys =
-        JSON.parse(publishableKeysRaw);
-
-      if (keys?.default) {
-        return keys.default;
-      }
-    } catch {
-      // Fall through to legacy anon key.
-    }
-  }
-
-  return (
-    Deno.env.get(
-      'SUPABASE_ANON_KEY'
-    ) || ''
-  );
-}
-
-function cleanString(
-  value: unknown
-) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  return value.trim();
-}
-
-function isValidEmail(
-  email: string
-) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    email
-  );
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
+      status: 200,
       headers: corsHeaders,
     });
   }
 
+  if (req.method !== 'POST') {
+    return json(
+      {
+        success: false,
+        error: 'Method not allowed.',
+      },
+      405
+    );
+  }
+
   try {
-    const authHeader =
-      req.headers.get(
-        'Authorization'
+    const resendApiKey =
+      Deno.env.get('RESEND_API_KEY');
+
+    if (!resendApiKey) {
+      console.error(
+        '[CONTACT EMAIL] RESEND_API_KEY is not configured.'
       );
 
-    if (!authHeader) {
       return json(
         {
           success: false,
           error:
-            'Missing authorization header.',
-        },
-        401
-      );
-    }
-
-    const supabaseUrl =
-      Deno.env.get(
-        'SUPABASE_URL'
-      );
-
-    const supabaseKey =
-      getSupabaseKey();
-
-    if (!supabaseUrl || !supabaseKey) {
-      return json(
-        {
-          success: false,
-          error:
-            'Supabase authentication is not configured.',
+            'Email service is not configured on the server.',
         },
         500
       );
     }
 
-    const supabase =
-      createClient(
-        supabaseUrl,
-        supabaseKey,
-        {
-          global: {
-            headers: {
-              Authorization:
-                authHeader,
-            },
-          },
-        }
-      );
+    const body = await req.json();
 
-    const {
-      data: authData,
-      error: authError,
-    } = await supabase.auth.getUser();
+    const name =
+      typeof body?.name === 'string'
+        ? body.name.trim()
+        : '';
 
-    if (
-      authError ||
-      !authData?.user
-    ) {
+    const email =
+      typeof body?.email === 'string'
+        ? body.email.trim()
+        : '';
+
+    const message =
+      typeof body?.message === 'string'
+        ? body.message.trim()
+        : '';
+
+    if (!name) {
       return json(
         {
           success: false,
-          error: 'Not authenticated.',
-        },
-        401
-      );
-    }
-
-    let body: Record<
-      string,
-      unknown
-    > = {};
-
-    try {
-      body = await req.json();
-    } catch {
-      return json(
-        {
-          success: false,
-          error:
-            'Invalid JSON request body.',
+          error: 'Your name is required.',
         },
         400
       );
     }
 
-    const name = cleanString(
-      body.name
-    );
-
-    const email = cleanString(
-      body.email
-    );
-
-    const message = cleanString(
-      body.message
-    );
-
-    if (!name || !email || !message) {
+    if (!email) {
       return json(
         {
           success: false,
-          error:
-            'Name, email, and message are required.',
+          error: 'Your email address is required.',
         },
         400
       );
     }
 
-    if (!isValidEmail(email)) {
+    if (!message) {
       return json(
         {
           success: false,
-          error:
-            'Please provide a valid email address.',
+          error: 'Your message is required.',
         },
         400
       );
     }
 
-    /*
-     * Save the contact message first.
-     *
-     * This means the message isn't lost even if Resend is temporarily
-     * unavailable or has not been configured yet.
-     */
-    const serviceRole =
-      Deno.env.get(
-        'SUPABASE_SERVICE_ROLE_KEY'
+    if (name.length > 200) {
+      return json(
+        {
+          success: false,
+          error: 'Name is too long.',
+        },
+        400
       );
-
-    if (serviceRole) {
-      const admin =
-        createClient(
-          supabaseUrl,
-          serviceRole
-        );
-
-      const {
-        error: insertError,
-      } = await admin
-        .from('contact_messages')
-        .insert({
-          user_id:
-            authData.user.id,
-          name,
-          email,
-          message,
-        });
-
-      if (insertError) {
-        console.error(
-          '[CONTACT] Could not save message:',
-          insertError
-        );
-      }
-    } else {
-      const {
-        error: insertError,
-      } = await supabase
-        .from('contact_messages')
-        .insert({
-          user_id:
-            authData.user.id,
-          name,
-          email,
-          message,
-        });
-
-      if (insertError) {
-        console.error(
-          '[CONTACT] Could not save message:',
-          insertError
-        );
-      }
     }
 
-    /*
-     * Email notification.
-     */
-    const resendKey =
-      Deno.env.get(
-        'RESEND_API_KEY'
+    if (email.length > 320) {
+      return json(
+        {
+          success: false,
+          error: 'Email address is too long.',
+        },
+        400
       );
+    }
 
-    const to =
-      Deno.env.get(
-        'CONTACT_TO_EMAIL'
-      ) ||
+    if (message.length > 10000) {
+      return json(
+        {
+          success: false,
+          error: 'Message is too long.',
+        },
+        400
+      );
+    }
+
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
+      return json(
+        {
+          success: false,
+          error: 'Please enter a valid email address.',
+        },
+        400
+      );
+    }
+
+    const destination =
+      Deno.env.get('CONTACT_EMAIL_TO') ||
       'washekfitness@gmail.com';
 
-    /*
-     * No Resend key is not a frontend failure.
-     * The message was successfully accepted and stored.
-     */
-    if (!resendKey) {
-      console.warn(
-        '[CONTACT] RESEND_API_KEY is not configured. Message was saved but no email was sent.'
-      );
-
-      return json({
-        success: true,
-        queued: true,
-        message:
-          'Message saved successfully. Email notifications are not configured yet.',
-      });
-    }
-
-    const from =
-      Deno.env.get(
-        'CONTACT_FROM_EMAIL'
-      ) ||
+    const fromAddress =
+      Deno.env.get('CONTACT_EMAIL_FROM') ||
       'Washek Fitness <onboarding@resend.dev>';
 
-    const resendResponse =
-      await fetch(
-        'https://api.resend.com/emails',
-        {
-          method: 'POST',
+    const safeName = escapeHtml(name);
+    const safeEmail = escapeHtml(email);
+    const safeMessage = escapeHtml(message).replace(
+      /\n/g,
+      '<br />'
+    );
 
-          headers: {
-            Authorization:
-              `Bearer ${resendKey}`,
-            'Content-Type':
-              'application/json',
-          },
+    const resendResponse = await fetch(
+      'https://api.resend.com/emails',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [destination],
+          reply_to: email,
+          subject: `New contact message from ${name}`,
+          text:
+            `New Washek Fitness contact message\n\n` +
+            `Name: ${name}\n` +
+            `Email: ${email}\n\n` +
+            `Message:\n${message}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+              <h2>New Washek Fitness Contact Message</h2>
 
-          body: JSON.stringify({
-            from,
+              <p>
+                <strong>Name:</strong>
+                ${safeName}
+              </p>
 
-            to: [to],
+              <p>
+                <strong>Email:</strong>
+                ${safeEmail}
+              </p>
 
-            reply_to: email,
+              <hr />
 
-            subject:
-              `New message from ${name}`,
+              <p>
+                <strong>Message:</strong>
+              </p>
 
-            text:
-              `Name: ${name}\n` +
-              `Email: ${email}\n\n` +
-              `Message:\n${message}`,
-          }),
-        }
-      );
+              <p>
+                ${safeMessage}
+              </p>
+            </div>
+          `,
+        }),
+      }
+    );
 
-    const resendResult =
-      await resendResponse
-        .json()
-        .catch(() => ({}));
+    const resendData =
+      await resendResponse.json().catch(() => ({}));
 
     if (!resendResponse.ok) {
       console.error(
-        '[CONTACT] Resend rejected email:',
+        '[CONTACT EMAIL] Resend error:',
         {
-          status:
-            resendResponse.status,
-          result:
-            resendResult,
+          status: resendResponse.status,
+          response: resendData,
         }
       );
 
@@ -339,22 +230,26 @@ Deno.serve(async (req) => {
         {
           success: false,
           error:
-            resendResult?.message ||
-            resendResult?.error ||
-            `Email provider rejected the message (${resendResponse.status}).`,
+            resendData?.message ||
+            resendData?.error?.message ||
+            'The email service rejected the message.',
         },
         502
       );
     }
 
+    console.log(
+      '[CONTACT EMAIL] Email sent successfully:',
+      resendData
+    );
+
     return json({
       success: true,
-      queued: false,
-      id: resendResult?.id || null,
+      id: resendData?.id || null,
     });
   } catch (error) {
     console.error(
-      '[CONTACT] Edge function error:',
+      '[CONTACT EMAIL] Unexpected error:',
       error
     );
 
@@ -364,9 +259,10 @@ Deno.serve(async (req) => {
         error:
           error instanceof Error
             ? error.message
-            : 'Unable to send message.',
+            : 'Unable to send email.',
       },
       500
     );
   }
 });
+```
