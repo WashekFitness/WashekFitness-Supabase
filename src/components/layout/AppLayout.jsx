@@ -1,10 +1,9 @@
-
 import { useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, Dumbbell, Camera, User, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Footer } from '@/components/layout/Footer';
+import Footer from '@/components/layout/Footer';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
@@ -40,6 +39,7 @@ function NavItem({ path, icon: Icon, label, isActive }) {
 export default function AppLayout() {
   const location = useLocation();
   const scrollRef = useRef(null);
+
   const isKael = location.pathname === '/kael';
 
   useEffect(() => {
