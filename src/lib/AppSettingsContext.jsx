@@ -1,4 +1,4 @@
-```jsx
+
 import { createContext, useContext, useState, useEffect } from 'react';
 
 const SETTINGS_KEY = 'washek_app_settings';
@@ -182,4 +182,3 @@ export function weightUnit(unit) {
 export function heightUnit(unit) {
   return unit === 'metric' ? 'cm' : 'ft / in';
 }
-```
