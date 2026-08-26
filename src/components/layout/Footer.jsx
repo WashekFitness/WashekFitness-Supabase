@@ -1,3 +1,4 @@
+```jsx
 import { Link } from 'react-router-dom';
 
 export default function Footer() {
@@ -16,17 +17,17 @@ export default function Footer() {
           </span>
         </div>
 
-        <nav className="flex items-center gap-5">
+        <nav className="flex items-center gap-2">
           <Link
             to="/about"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center justify-center min-h-10 px-4 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             About
           </Link>
 
           <Link
             to="/contact"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center justify-center min-h-10 px-4 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             Contact
           </Link>
@@ -35,3 +36,4 @@ export default function Footer() {
     </footer>
   );
 }
+```
