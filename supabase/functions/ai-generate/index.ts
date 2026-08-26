@@ -5,7 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const DEFAULT_MODEL = 'openrouter/auto';
+const DEFAULT_MODEL = 'openrouter/free';
 const ALLOWED_TYPES = new Set([
   'general',
   'structure',
@@ -161,10 +161,12 @@ Deno.serve(async (req) => {
     }
 
     // IMPORTANT: the browser cannot choose the model. Every AI request uses
-    // OpenRouter Auto Router, so OpenRouter decides which capable model/provider
-    // handles the request. A server-side override is intentionally not accepted
-    // from the client.
-    const model = Deno.env.get('OPENROUTER_MODEL') || DEFAULT_MODEL;
+    // the server-side free router. The browser cannot choose a paid model.
+    // A server-side override is intentionally not accepted from the client.
+    const configuredModel = Deno.env.get('OPENROUTER_MODEL') || DEFAULT_MODEL;
+    // Free-first safety: unless you explicitly change this server code later,
+    // the function will never silently spend OpenRouter credits.
+    const model = configuredModel === 'openrouter/free' ? configuredModel : DEFAULT_MODEL;
 
     const payload: Record<string, unknown> = {
       model,
@@ -174,7 +176,7 @@ Deno.serve(async (req) => {
       }],
       stream: false,
       temperature: 0.2,
-      max_tokens: 12000,
+      max_tokens: type === 'microcycle' ? 6500 : type === 'structure' ? 2500 : 5000,
     };
 
     if (schema) {
@@ -198,18 +200,7 @@ Deno.serve(async (req) => {
       ];
     }
 
-    // The current Auto Router accepts cost_tier; keep an optional server-side
-    // setting so you can control budget without changing frontend code.
-    const costTier = Deno.env.get('OPENROUTER_COST_TIER');
-    if (costTier && ['low', 'medium', 'high', 'xhigh', 'max'].includes(costTier)) {
-      payload.plugins = [
-        ...(Array.isArray(payload.plugins) ? payload.plugins : []),
-        {
-          id: 'auto-router',
-          cost_tier: costTier,
-        },
-      ];
-    }
+
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
