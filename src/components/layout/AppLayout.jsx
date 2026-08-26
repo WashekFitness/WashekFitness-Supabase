@@ -1,10 +1,10 @@
+```jsx
 import { useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, Dumbbell, Camera, User, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import Footer from '@/components/layout/Footer';
-import BrandLogo from '@/components/BrandLogo';
+import { Footer } from '@/components/layout/Footer';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
@@ -29,6 +29,7 @@ function NavItem({ path, icon: Icon, label, isActive }) {
         className="w-5 h-5 shrink-0"
         strokeWidth={isActive ? 2.5 : 1.5}
       />
+
       <span className="font-medium text-sm hidden md:block">
         {label}
       </span>
@@ -42,7 +43,9 @@ export default function AppLayout() {
   const isKael = location.pathname === '/kael';
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
+    scrollRef.current?.scrollTo({
+      top: 0,
+    });
   }, [location.pathname]);
 
   if (location.pathname === '/onboarding') {
@@ -141,7 +144,9 @@ export default function AppLayout() {
                       ? 'text-primary'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
-                  style={{ minHeight: 44 }}
+                  style={{
+                    minHeight: 44,
+                  }}
                 >
                   <div
                     className={cn(
@@ -167,3 +172,4 @@ export default function AppLayout() {
     </div>
   );
 }
+```
