@@ -23,14 +23,14 @@ export default function Footer() {
         >
           <Link
             to="/about"
-            className="inline-flex items-center justify-center min-h-10 px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             About
           </Link>
 
           <Link
             to="/contact"
-            className="inline-flex items-center justify-center min-h-10 px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             Contact
           </Link>
