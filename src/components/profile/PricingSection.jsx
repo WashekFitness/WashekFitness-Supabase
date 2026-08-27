@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { Check, Zap, Crown, Flame, Loader2, XCircle } from 'lucide-react';
+import {
+  Check,
+  Zap,
+  Crown,
+  Flame,
+  Loader2,
+  XCircle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +17,6 @@ const plans = [
   {
     name: 'Progress',
     planKey: 'progress',
-    paymentLink: 'https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600',
     price: '$7.99',
     period: '/mo',
     icon: Flame,
@@ -30,7 +36,6 @@ const plans = [
   {
     name: 'Performance',
     planKey: 'performance',
-    paymentLink: 'https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601',
     price: '$14.99',
     period: '/mo',
     icon: Zap,
@@ -52,7 +57,6 @@ const plans = [
   {
     name: 'Elite',
     planKey: 'elite',
-    paymentLink: 'https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602',
     price: '$24.99',
     period: '/mo',
     icon: Crown,
@@ -74,49 +78,112 @@ const plans = [
   },
 ];
 
-const labels = {
-  free: 'Free',
-  progress: 'Progress',
-  performance: 'Performance',
-  elite: 'Elite',
-};
-
-function makePaymentLink(base, userId, planKey) {
-  const params = new URLSearchParams();
-
-  // Stripe allows this to be attached to a Payment Link and sends it
-  // back in checkout.session.completed.
-  params.set('client_reference_id', `${userId}_${planKey}`);
-
-  return `${base}?${params.toString()}`;
-}
-
 export default function PricingSection({
   user,
   onSubscriptionChanged,
 }) {
+  const [checkoutPlan, setCheckoutPlan] = useState(null);
   const [canceling, setCanceling] = useState(false);
 
-  const currentPlan = user?.subscription_plan || 'free';
+  const currentPlan =
+    user?.subscription_plan || 'free';
+
+  const handleUpgrade = async (planKey) => {
+    if (!user?.id) {
+      toast.error(
+        'Please sign in before choosing a subscription.'
+      );
+      return;
+    }
+
+    if (planKey === currentPlan) {
+      return;
+    }
+
+    setCheckoutPlan(planKey);
+
+    try {
+      const result =
+        await supabaseApi.subscription.createCheckout(
+          planKey
+        );
+
+      if (!result?.url) {
+        throw new Error(
+          'Stripe did not return a checkout URL.'
+        );
+      }
+
+      /*
+       * Intentionally use the same tab.
+       *
+       * This replaces the old Stripe Payment Link
+       * target="_blank" behavior.
+       */
+      window.location.assign(result.url);
+    } catch (error) {
+      console.error(
+        'Stripe checkout error:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Unable to start checkout. Please try again.'
+      );
+
+      setCheckoutPlan(null);
+    }
+  };
 
   const handleCancel = async () => {
-    if (!user?.id) return;
+    if (!user?.id || canceling) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Cancel your ${getPlanLabel(
+          currentPlan
+        )} subscription immediately?\n\n` +
+          'Your account will switch to the Free Plan immediately and paid-only features will be removed.'
+      );
+
+    if (!confirmed) {
+      return;
+    }
 
     setCanceling(true);
 
     try {
-      const result = await supabaseApi.subscription.cancel();
+      const result =
+        await supabaseApi.subscription.cancel();
 
       toast.success(
         'Your subscription has been cancelled. You are now on the Free Plan.'
       );
 
       if (result?.user) {
-        onSubscriptionChanged?.(result.user);
+        onSubscriptionChanged?.(
+          result.user
+        );
+      } else {
+        const refreshed =
+          await supabaseApi.auth.me();
+
+        onSubscriptionChanged?.(
+          refreshed
+        );
       }
-    } catch (err) {
+    } catch (error) {
+      console.error(
+        'Subscription cancellation error:',
+        error
+      );
+
       toast.error(
-        err?.message || 'Unable to cancel your subscription.'
+        error?.message ||
+          'Unable to cancel your subscription.'
       );
     } finally {
       setCanceling(false);
@@ -125,34 +192,20 @@ export default function PricingSection({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-1">
-        <Crown className="w-4 h-4 text-chart-4" />
-
-        <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
-          Your Plan
-        </h3>
-      </div>
-
-      <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        Current plan:{' '}
-        <span className="font-semibold text-foreground">
-          {labels[currentPlan] || 'Free'}
-        </span>
-      </p>
-
       {currentPlan !== 'free' && (
         <Card className="p-4 border-destructive/20 bg-destructive/5">
           <div className="flex items-center gap-2 mb-2">
             <XCircle className="w-4 h-4 text-destructive" />
 
             <span className="font-heading font-bold text-sm">
-              Cancel {labels[currentPlan]} Plan
+              Cancel Subscription
             </span>
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel immediately and switch back to Free. Your paid AI
-            allowance and paid-only features are removed immediately.
+            Cancel immediately and return to the Free
+            Plan. Paid AI allowances and paid-only
+            features will be removed immediately.
           </p>
 
           <Button
@@ -167,7 +220,9 @@ export default function PricingSection({
               <XCircle className="w-4 h-4 mr-2" />
             )}
 
-            {canceling ? 'Cancelling…' : 'Cancel Plan'}
+            {canceling
+              ? 'Cancelling…'
+              : 'Cancel Subscription'}
           </Button>
         </Card>
       )}
@@ -186,11 +241,16 @@ export default function PricingSection({
 
       {plans.map((plan) => {
         const Icon = plan.icon;
-        const isCurrent = currentPlan === plan.planKey;
+
+        const isCurrent =
+          currentPlan === plan.planKey;
+
+        const isCheckingOut =
+          checkoutPlan === plan.planKey;
 
         return (
           <Card
-            key={plan.name}
+            key={plan.planKey}
             className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
           >
             {plan.badge && (
@@ -201,7 +261,9 @@ export default function PricingSection({
 
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Icon className={`w-5 h-5 ${plan.color}`} />
+                <Icon
+                  className={`w-5 h-5 ${plan.color}`}
+                />
 
                 <span className="font-heading font-bold text-base">
                   {plan.name}
@@ -222,16 +284,18 @@ export default function PricingSection({
             </div>
 
             <ul className="space-y-1.5 mb-3">
-              {plan.features.map((feature) => (
-                <li
-                  key={feature}
-                  className="flex items-start gap-2 text-sm"
-                >
-                  <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+              {plan.features.map(
+                (feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-start gap-2 text-sm"
+                  >
+                    <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
 
-                  <span>{feature}</span>
-                </li>
-              ))}
+                    <span>{feature}</span>
+                  </li>
+                )
+              )}
             </ul>
 
             {plan.disclaimer && (
@@ -252,23 +316,23 @@ export default function PricingSection({
               <Button
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
-                asChild
+                onClick={() =>
+                  handleUpgrade(
+                    plan.planKey
+                  )
+                }
+                disabled={
+                  checkoutPlan !== null
+                }
               >
-                <a
-                  href={
-                    user?.id
-                      ? makePaymentLink(
-                          plan.paymentLink,
-                          user.id,
-                          plan.planKey
-                        )
-                      : '#'
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Get {plan.name}
-                </a>
+                {isCheckingOut ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Opening Checkout…
+                  </>
+                ) : (
+                  `Get ${plan.name}`
+                )}
               </Button>
             )}
           </Card>
@@ -280,4 +344,15 @@ export default function PricingSection({
       </p>
     </div>
   );
+}
+
+function getPlanLabel(plan) {
+  const labels = {
+    free: 'Free',
+    progress: 'Progress',
+    performance: 'Performance',
+    elite: 'Elite',
+  };
+
+  return labels[plan] || 'paid';
 }
