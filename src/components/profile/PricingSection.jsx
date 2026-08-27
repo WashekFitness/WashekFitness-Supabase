@@ -1,35 +1,16 @@
-import { useEffect, useState } from 'react';
-import {
-  Check,
-  Zap,
-  Crown,
-  Flame,
-  XCircle,
-  Loader2,
-} from 'lucide-react';
-
+import { useState } from 'react';
+import { Check, Zap, Crown, Flame, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-
 import { supabaseApi } from '@/lib/supabaseApi';
-
-const APP_URL = window.location.origin;
-
-const PLAN_LABELS = {
-  free: 'Free',
-  progress: 'Progress',
-  performance: 'Performance',
-  elite: 'Elite',
-};
+import { toast } from 'sonner';
 
 const plans = [
   {
     name: 'Progress',
     planKey: 'progress',
-    paymentLink: `https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600?client_reference_id=progress&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=progress',
-    )}`,
+    paymentLink: 'https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600',
     price: '$7.99',
     period: '/mo',
     icon: Flame,
@@ -49,9 +30,7 @@ const plans = [
   {
     name: 'Performance',
     planKey: 'performance',
-    paymentLink: `https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601?client_reference_id=performance&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=performance',
-    )}`,
+    paymentLink: 'https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601',
     price: '$14.99',
     period: '/mo',
     icon: Zap,
@@ -73,9 +52,7 @@ const plans = [
   {
     name: 'Elite',
     planKey: 'elite',
-    paymentLink: `https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602?client_reference_id=elite&success_url=${encodeURIComponent(
-      APP_URL + '/subscription-return?plan=elite',
-    )}`,
+    paymentLink: 'https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602',
     price: '$24.99',
     period: '/mo',
     icon: Crown,
@@ -97,75 +74,49 @@ const plans = [
   },
 ];
 
-export default function PricingSection() {
-  const [user, setUser] = useState(null);
-  const [cancelOpen, setCancelOpen] = useState(false);
+const labels = {
+  free: 'Free',
+  progress: 'Progress',
+  performance: 'Performance',
+  elite: 'Elite',
+};
+
+function makePaymentLink(base, userId, planKey) {
+  const params = new URLSearchParams();
+
+  // Stripe allows this to be attached to a Payment Link and sends it
+  // back in checkout.session.completed.
+  params.set('client_reference_id', `${userId}_${planKey}`);
+
+  return `${base}?${params.toString()}`;
+}
+
+export default function PricingSection({
+  user,
+  onSubscriptionChanged,
+}) {
   const [canceling, setCanceling] = useState(false);
-  const [cancelError, setCancelError] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
+  const currentPlan = user?.subscription_plan || 'free';
 
-    supabaseApi.auth
-      .me()
-      .then((currentUser) => {
-        if (mounted) {
-          setUser(currentUser);
-        }
-      })
-      .catch((error) => {
-        console.error(
-          'Unable to load subscription:',
-          error,
-        );
-      });
+  const handleCancel = async () => {
+    if (!user?.id) return;
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const currentPlan =
-    user?.subscription_plan || 'free';
-
-  const isPaid =
-    currentPlan !== 'free' &&
-    ['progress', 'performance', 'elite'].includes(
-      currentPlan,
-    );
-
-  const cancelSubscription = async () => {
     setCanceling(true);
-    setCancelError('');
 
     try {
-      await supabaseApi.subscriptions.cancel();
+      const result = await supabaseApi.subscription.cancel();
 
-      /*
-       * Immediately update the local user state.
-       * This prevents the user from continuing to see
-       * paid-plan UI while the rest of the app refreshes.
-       */
-      const refreshed =
-        await supabaseApi.auth.me();
-
-      setUser(refreshed);
-      setCancelOpen(false);
-
-      /*
-       * Reloading guarantees every feature gate in the
-       * application sees Free immediately.
-       */
-      window.location.reload();
-    } catch (error) {
-      console.error(
-        'Subscription cancellation failed:',
-        error,
+      toast.success(
+        'Your subscription has been cancelled. You are now on the Free Plan.'
       );
 
-      setCancelError(
-        error?.message ||
-          'Unable to cancel your subscription. Please try again.',
+      if (result?.user) {
+        onSubscriptionChanged?.(result.user);
+      }
+    } catch (err) {
+      toast.error(
+        err?.message || 'Unable to cancel your subscription.'
       );
     } finally {
       setCanceling(false);
@@ -178,184 +129,154 @@ export default function PricingSection() {
         <Crown className="w-4 h-4 text-chart-4" />
 
         <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
-          {isPaid
-            ? 'Manage Your Plan'
-            : 'Upgrade Your Plan'}
+          Your Plan
         </h3>
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        {isPaid
-          ? `You're currently on the ${PLAN_LABELS[currentPlan]} Plan.`
-          : 'Unlock the full Washek experience.'}
+        Current plan:{' '}
+        <span className="font-semibold text-foreground">
+          {labels[currentPlan] || 'Free'}
+        </span>
       </p>
 
-      {isPaid && (
+      {currentPlan !== 'free' && (
         <Card className="p-4 border-destructive/20 bg-destructive/5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-heading font-bold text-sm">
-                {PLAN_LABELS[currentPlan]} Plan
-              </p>
+          <div className="flex items-center gap-2 mb-2">
+            <XCircle className="w-4 h-4 text-destructive" />
 
-              <p className="text-xs text-muted-foreground mt-1">
-                Want to return to the Free Plan?
-              </p>
-            </div>
-
-            <Button
-              variant="outline"
-              className="border-destructive/30 text-destructive hover:bg-destructive/10"
-              onClick={() => {
-                setCancelError('');
-                setCancelOpen(true);
-              }}
-              disabled={canceling}
-            >
-              <XCircle className="w-4 h-4 mr-2" />
-              Cancel Plan
-            </Button>
+            <span className="font-heading font-bold text-sm">
+              Cancel {labels[currentPlan]} Plan
+            </span>
           </div>
-        </Card>
-      )}
 
-      {cancelOpen && (
-        <Card className="p-4 border-destructive/40 bg-destructive/5">
-          <div className="space-y-3">
-            <div>
-              <h4 className="font-heading font-bold text-sm">
-                Cancel {PLAN_LABELS[currentPlan]}?
-              </h4>
+          <p className="text-xs text-muted-foreground mb-3">
+            Cancel immediately and switch back to Free. Your paid AI
+            allowance and paid-only features are removed immediately.
+          </p>
 
-              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Your subscription will be canceled
-                <strong> immediately</strong>. You will
-                immediately move to the Free Plan and
-                lose access to paid features and paid
-                Kael AI allowances.
-              </p>
-            </div>
-
-            {cancelError && (
-              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
-                {cancelError}
-              </div>
+          <Button
+            variant="outline"
+            className="w-full text-destructive border-destructive/30 hover:text-destructive"
+            onClick={handleCancel}
+            disabled={canceling}
+          >
+            {canceling ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <XCircle className="w-4 h-4 mr-2" />
             )}
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() =>
-                  setCancelOpen(false)
-                }
-                disabled={canceling}
-              >
-                Keep My Plan
-              </Button>
-
-              <Button
-                variant="destructive"
-                className="flex-1"
-                onClick={cancelSubscription}
-                disabled={canceling}
-              >
-                {canceling ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Canceling…
-                  </>
-                ) : (
-                  'Cancel & Go Free'
-                )}
-              </Button>
-            </div>
-          </div>
+            {canceling ? 'Cancelling…' : 'Cancel Plan'}
+          </Button>
         </Card>
       )}
 
-      {!isPaid && (
-        <>
-          {plans.map((plan) => {
-            const Icon = plan.icon;
+      <div className="flex items-center gap-2 pt-2">
+        <Crown className="w-4 h-4 text-chart-4" />
 
-            return (
-              <Card
-                key={plan.name}
-                className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
-              >
-                {plan.badge && (
-                  <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
-                    {plan.badge}
-                  </Badge>
-                )}
+        <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
+          Upgrade Your Plan
+        </h3>
+      </div>
 
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      className={`w-5 h-5 ${plan.color}`}
-                    />
+      <p className="text-xs text-muted-foreground -mt-2 mb-3">
+        Unlock more of the Washek experience.
+      </p>
 
-                    <span className="font-heading font-bold text-base">
-                      {plan.name}
-                    </span>
-                  </div>
+      {plans.map((plan) => {
+        const Icon = plan.icon;
+        const isCurrent = currentPlan === plan.planKey;
 
-                  <div className="flex items-baseline gap-0.5">
-                    <span
-                      className={`font-heading font-bold text-xl ${plan.color}`}
-                    >
-                      {plan.price}
-                    </span>
+        return (
+          <Card
+            key={plan.name}
+            className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
+          >
+            {plan.badge && (
+              <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
+                {plan.badge}
+              </Badge>
+            )}
 
-                    <span className="text-xs text-muted-foreground">
-                      {plan.period}
-                    </span>
-                  </div>
-                </div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Icon className={`w-5 h-5 ${plan.color}`} />
 
-                <ul className="space-y-1.5 mb-3">
-                  {plan.features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+                <span className="font-heading font-bold text-base">
+                  {plan.name}
+                </span>
+              </div>
 
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {plan.disclaimer && (
-                  <p className="text-[10px] text-muted-foreground italic mb-3">
-                    {plan.disclaimer}
-                  </p>
-                )}
-
-                <Button
-                  className="w-full h-10 font-heading font-semibold"
-                  variant="outline"
-                  asChild
+              <div className="flex items-baseline gap-0.5">
+                <span
+                  className={`font-heading font-bold text-xl ${plan.color}`}
                 >
-                  <a
-                    href={plan.paymentLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Get {plan.name}
-                  </a>
-                </Button>
-              </Card>
-            );
-          })}
-        </>
-      )}
+                  {plan.price}
+                </span>
+
+                <span className="text-xs text-muted-foreground">
+                  {plan.period}
+                </span>
+              </div>
+            </div>
+
+            <ul className="space-y-1.5 mb-3">
+              {plan.features.map((feature) => (
+                <li
+                  key={feature}
+                  className="flex items-start gap-2 text-sm"
+                >
+                  <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+
+            {plan.disclaimer && (
+              <p className="text-[10px] text-muted-foreground italic mb-3">
+                {plan.disclaimer}
+              </p>
+            )}
+
+            {isCurrent ? (
+              <Button
+                className="w-full h-10 font-heading font-semibold"
+                variant="secondary"
+                disabled
+              >
+                Current Plan
+              </Button>
+            ) : (
+              <Button
+                className="w-full h-10 font-heading font-semibold"
+                variant="outline"
+                asChild
+              >
+                <a
+                  href={
+                    user?.id
+                      ? makePaymentLink(
+                          plan.paymentLink,
+                          user.id,
+                          plan.planKey
+                        )
+                      : '#'
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Get {plan.name}
+                </a>
+              </Button>
+            )}
+          </Card>
+        );
+      })}
 
       <p className="text-[10px] text-muted-foreground text-center">
-        {isPaid
-          ? 'Cancel anytime. Cancellation takes effect immediately.'
-          : 'Cancel anytime. Billed monthly.'}
+        Paid plans are billed monthly. Cancellation is immediate.
       </p>
     </div>
   );
