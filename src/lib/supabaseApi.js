@@ -12,6 +12,10 @@ const EMAIL_FUNCTION =
   import.meta.env.VITE_SUPABASE_EMAIL_FUNCTION ||
   'send-contact-email';
 
+const CANCEL_SUBSCRIPTION_FUNCTION =
+  import.meta.env.VITE_SUPABASE_CANCEL_SUBSCRIPTION_FUNCTION ||
+  'cancel-subscription';
+
 function errorFrom(
   error,
   fallback = 'Supabase request failed.'
@@ -24,9 +28,9 @@ function errorFrom(
 
   return new Error(
     error.message ||
-    error.details ||
-    error.hint ||
-    fallback
+      error.details ||
+      error.hint ||
+      fallback
   );
 }
 
@@ -51,12 +55,11 @@ async function requireUser() {
 }
 
 async function getProfile(userId) {
-  const { data, error } =
-    await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
 
   if (error) {
     throw errorFrom(
@@ -91,11 +94,14 @@ function normalizeUser(authUser, profile) {
   return {
     id: authUser.id,
     email: authUser.email,
+
     role:
       profile.role ||
       authUser.user_metadata?.role ||
       'user',
+
     ...profile,
+
     first_name: firstName,
     last_name: lastName,
     full_name: fullName,
@@ -142,7 +148,10 @@ function applyFilters(
       continue;
     }
 
-    if (value === undefined || value === null) {
+    if (
+      value === undefined ||
+      value === null
+    ) {
       continue;
     }
 
@@ -168,19 +177,22 @@ function entity(table) {
     ) {
       const user = await requireUser();
 
-      const rawColumn = sort.replace(/^-/, '');
-
       const column =
-        ORDER_ALIASES[rawColumn] ||
-        rawColumn;
+        ORDER_ALIASES[
+          sort.replace(/^-/, '')
+        ] ||
+        sort.replace(/^-/, '');
 
-      const ascending = !sort.startsWith('-');
+      const ascending =
+        !sort.startsWith('-');
 
       let q = supabase
         .from(table)
         .select('*')
         .eq('user_id', user.id)
-        .order(column, { ascending });
+        .order(column, {
+          ascending,
+        });
 
       if (Number.isFinite(limit)) {
         q = q.limit(limit);
@@ -205,13 +217,14 @@ function entity(table) {
     ) {
       const user = await requireUser();
 
-      const rawColumn = sort.replace(/^-/, '');
-
       const column =
-        ORDER_ALIASES[rawColumn] ||
-        rawColumn;
+        ORDER_ALIASES[
+          sort.replace(/^-/, '')
+        ] ||
+        sort.replace(/^-/, '');
 
-      const ascending = !sort.startsWith('-');
+      const ascending =
+        !sort.startsWith('-');
 
       let q = applyFilters(
         supabase
@@ -219,7 +232,9 @@ function entity(table) {
           .select('*'),
         filters,
         user.id
-      ).order(column, { ascending });
+      ).order(column, {
+        ascending,
+      });
 
       if (Number.isFinite(limit)) {
         q = q.limit(limit);
@@ -319,24 +334,28 @@ async function uploadFile(
   input,
   folder = 'uploads'
 ) {
-  const file = input?.file || input;
+  const file =
+    input?.file || input;
+
   const actualFolder =
     input?.folder || folder;
 
   if (!file) {
-    throw new Error('No file was provided.');
+    throw new Error(
+      'No file was provided.'
+    );
   }
 
   const user = await requireUser();
 
-  const safeName = file.name.replace(
-    /[^a-zA-Z0-9._-]/g,
-    '_'
-  );
+  const safeName =
+    file.name.replace(
+      /[^a-zA-Z0-9._-]/g,
+      '_'
+    );
 
   const path =
-    `${user.id}/${actualFolder}/` +
-    `${crypto.randomUUID()}-${safeName}`;
+    `${user.id}/${actualFolder}/${crypto.randomUUID()}-${safeName}`;
 
   const { error } =
     await supabase.storage
@@ -416,60 +435,19 @@ async function invokeAI({
   if (result?.success === false) {
     throw new Error(
       result.error ||
-      'AI generation failed.'
+        'AI generation failed.'
     );
   }
 
   return result;
 }
 
-async function sendEmail({
-  name,
-  email,
-  message,
-} = {}) {
-  const cleanName =
-    typeof name === 'string'
-      ? name.trim()
-      : '';
-
-  const cleanEmail =
-    typeof email === 'string'
-      ? email.trim()
-      : '';
-
-  const cleanMessage =
-    typeof message === 'string'
-      ? message.trim()
-      : '';
-
-  if (!cleanName) {
-    throw new Error(
-      'Your name is required.'
-    );
-  }
-
-  if (!cleanEmail) {
-    throw new Error(
-      'Your email address is required.'
-    );
-  }
-
-  if (!cleanMessage) {
-    throw new Error(
-      'Your message is required.'
-    );
-  }
-
+async function sendEmail(payload) {
   const { data, error } =
     await supabase.functions.invoke(
       EMAIL_FUNCTION,
       {
-        body: {
-          name: cleanName,
-          email: cleanEmail,
-          message: cleanMessage,
-        },
+        body: payload,
       }
     );
 
@@ -483,7 +461,33 @@ async function sendEmail({
   if (data?.success === false) {
     throw new Error(
       data.error ||
-      'Email could not be sent.'
+        'Email could not be sent.'
+    );
+  }
+
+  return data;
+}
+
+async function cancelCurrentSubscription() {
+  const { data, error } =
+    await supabase.functions.invoke(
+      CANCEL_SUBSCRIPTION_FUNCTION,
+      {
+        body: {},
+      }
+    );
+
+  if (error) {
+    throw errorFrom(
+      error,
+      'Unable to cancel your subscription.'
+    );
+  }
+
+  if (!data?.success) {
+    throw new Error(
+      data?.error ||
+        'Unable to cancel your subscription.'
     );
   }
 
@@ -507,7 +511,9 @@ export const supabaseApi = {
           .from('profiles')
           .upsert(
             profilePatch,
-            { onConflict: 'id' }
+            {
+              onConflict: 'id',
+            }
           )
           .select()
           .single();
@@ -540,6 +546,10 @@ export const supabaseApi = {
     redirectToLogin: () => {
       window.location.assign('/login');
     },
+  },
+
+  subscription: {
+    cancel: cancelCurrentSubscription,
   },
 
   entities: {
