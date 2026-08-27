@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { supabaseApi } from '@/lib/supabaseApi';
@@ -9,172 +9,182 @@ import {
   CheckCircle2,
   Dumbbell,
   CalendarDays,
-  Repeat2,
   Activity,
+  Clock3,
   Utensils,
   AlertCircle,
+  Lock,
 } from 'lucide-react';
 import { useAppSettings } from '@/lib/AppSettingsContext';
 
 
 // ============================================================
-// DATE / NUMBER HELPERS
+// DATE HELPERS
 // ============================================================
 
-function getWeekStart() {
-  const d = new Date();
+function formatDateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+
+function getMonday(date = new Date()) {
+  const d = new Date(date);
   const day = d.getDay();
+
   const diff = day === 0 ? -6 : 1 - day;
 
   d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
 
-  return d.toISOString().split('T')[0];
+  return d;
 }
 
 
-function normalizeWeekNumber(value) {
-  const number = Number(value);
+function getPreviousWeekRange() {
+  const currentMonday = getMonday();
 
-  return Number.isFinite(number) ? number : null;
+  const previousMonday = new Date(currentMonday);
+  previousMonday.setDate(
+    previousMonday.getDate() - 7
+  );
+
+  const previousSunday = new Date(currentMonday);
+  previousSunday.setDate(
+    previousSunday.getDate() - 1
+  );
+
+  return {
+    start: formatDateLocal(previousMonday),
+    end: formatDateLocal(previousSunday),
+  };
 }
 
 
-function toNumber(value) {
-  const number = Number(value);
+function isMonday() {
+  return new Date().getDay() === 1;
+}
 
-  return Number.isFinite(number) ? number : 0;
+
+// ============================================================
+// SAFE HELPERS
+// ============================================================
+
+function number(value) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : 0;
+}
+
+
+function string(value) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return '';
+  }
+
+  return String(value).trim();
+}
+
+
+function unique(values) {
+  return [
+    ...new Set(
+      values.filter(Boolean)
+    ),
+  ];
 }
 
 
 // ============================================================
 // AI RESPONSE NORMALIZER
 //
-// Different OpenRouter/Supabase responses can sometimes be
-// wrapped differently. This makes WeeklyUpdate tolerant of:
-//
-// { win, improve, next_recommendation, motivation }
-//
-// { result: { win, ... } }
-//
-// { data: { win, ... } }
-//
-// { result: "{\"win\":\"...\"}" }
-//
-// etc.
+// Your Supabase API unwraps data.result already, but this also
+// protects the component if OpenRouter returns a JSON string
+// or another wrapper.
 // ============================================================
 
-function normalizeKaelResponse(raw) {
-  let value = raw;
+function normalizeAIResponse(raw) {
+  let result = raw;
 
-  // Unwrap common response wrappers.
   if (
-    value &&
-    typeof value === 'object' &&
-    value.result !== undefined
+    result &&
+    typeof result === 'object' &&
+    result.result !== undefined
   ) {
-    value = value.result;
+    result = result.result;
   }
 
   if (
-    value &&
-    typeof value === 'object' &&
-    value.data !== undefined &&
-    (
-      typeof value.data === 'object' ||
-      typeof value.data === 'string'
-    )
+    result &&
+    typeof result === 'object' &&
+    result.data !== undefined
   ) {
-    value = value.data;
+    result = result.data;
   }
 
-  // Sometimes the AI result itself is a JSON string.
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
+  if (typeof result === 'string') {
+    let cleaned = result.trim();
 
-    // Remove markdown JSON fences if the model returned them.
-    const cleaned = trimmed
+    cleaned = cleaned
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
 
     try {
-      value = JSON.parse(cleaned);
+      result = JSON.parse(cleaned);
     } catch {
-      // If it is not JSON, keep the string so we can
-      // attempt to extract useful information below.
-      value = {
-        raw_text: cleaned,
+      result = {
+        summary: cleaned,
       };
     }
   }
 
-  if (!value || typeof value !== 'object') {
-    return {
-      win: '',
-      improve: '',
-      next_recommendation: '',
-      motivation: '',
-      adjusted_microcycle: null,
-    };
+  if (
+    !result ||
+    typeof result !== 'object'
+  ) {
+    result = {};
   }
 
-  // Support a few alternate names in case the model/provider
-  // changes field naming.
-  const win =
-    value.win ??
-    value.what_you_crushed ??
-    value.what_you_did_well ??
-    value.strengths ??
-    value.positive ??
-    '';
-
-  const improve =
-    value.improve ??
-    value.keep_an_eye_on ??
-    value.what_to_improve ??
-    value.improvements ??
-    value.watch_out_for ??
-    '';
-
-  const nextRecommendation =
-    value.next_recommendation ??
-    value.next_week ??
-    value.next_week_recommendation ??
-    value.recommendation ??
-    '';
-
-  const motivation =
-    value.motivation ??
-    value.motivational_line ??
-    value.motivational_message ??
-    'Keep showing up. Consistency is what turns good weeks into real progress.';
-
   return {
-    ...value,
+    summary:
+      string(result.summary) ||
+      string(result.week_summary) ||
+      string(result.overview),
 
     win:
-      typeof win === 'string'
-        ? win.trim()
-        : String(win || '').trim(),
+      string(result.win) ||
+      string(result.what_you_crushed) ||
+      string(result.strengths),
 
     improve:
-      typeof improve === 'string'
-        ? improve.trim()
-        : String(improve || '').trim(),
+      string(result.improve) ||
+      string(result.keep_an_eye_on) ||
+      string(result.concerns) ||
+      string(result.watch_out_for),
 
     next_recommendation:
-      typeof nextRecommendation === 'string'
-        ? nextRecommendation.trim()
-        : String(nextRecommendation || '').trim(),
+      string(result.next_recommendation) ||
+      string(result.next_week) ||
+      string(result.next_week_plan) ||
+      string(result.recommendation),
 
     motivation:
-      typeof motivation === 'string'
-        ? motivation.trim()
-        : String(motivation || '').trim(),
+      string(result.motivation) ||
+      string(result.motivational_line),
 
     adjusted_microcycle:
-      value.adjusted_microcycle ?? null,
+      result.adjusted_microcycle ||
+      null,
   };
 }
 
@@ -195,108 +205,156 @@ export default function WeeklyUpdate({
   const [open, setOpen] = useState(false);
   const [insight, setInsight] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [alreadyGenerated, setAlreadyGenerated] = useState(false);
   const [error, setError] = useState(null);
+  const [generated, setGenerated] = useState(false);
 
-  const weekStartStr = getWeekStart();
+  const monday = isMonday();
+
+  const previousWeek = useMemo(
+    () => getPreviousWeekRange(),
+    []
+  );
+
+  const weekStart =
+    previousWeek.start;
+
+  const weekEnd =
+    previousWeek.end;
 
 
   // ============================================================
-  // WEEK LOGS
+  // ONLY REVIEW PREVIOUS MONDAY-SUNDAY
   // ============================================================
 
-  const weekLogs = useMemo(() => {
+  const previousWeekLogs = useMemo(() => {
     if (!Array.isArray(logs)) {
       return [];
     }
 
-    return logs.filter((log) => {
-      if (!log?.date) {
-        return false;
-      }
+    return logs
+      .filter((log) => {
+        const date = string(log?.date).slice(0, 10);
 
-      const date = String(log.date).slice(0, 10);
+        return (
+          date >= weekStart &&
+          date <= weekEnd
+        );
+      })
+      .sort((a, b) =>
+        string(a?.date).localeCompare(
+          string(b?.date)
+        )
+      );
+  }, [
+    logs,
+    weekStart,
+    weekEnd,
+  ]);
 
-      return date >= weekStartStr;
-    });
-  }, [logs, weekStartStr]);
 
-
-  // ============================================================
-  // WEEK NUTRITION
-  // ============================================================
-
-  const weekNutrition = useMemo(() => {
+  const previousWeekNutrition = useMemo(() => {
     if (!Array.isArray(nutrition)) {
       return [];
     }
 
-    return nutrition.filter((entry) => {
-      if (!entry?.date) {
-        return false;
-      }
+    return nutrition
+      .filter((entry) => {
+        const date = string(entry?.date).slice(0, 10);
 
-      const date = String(entry.date).slice(0, 10);
-
-      return date >= weekStartStr;
-    });
-  }, [nutrition, weekStartStr]);
-
-
-  const recentPhotos = Array.isArray(photos)
-    ? photos.slice(0, 3)
-    : [];
+        return (
+          date >= weekStart &&
+          date <= weekEnd
+        );
+      })
+      .sort((a, b) =>
+        string(a?.date).localeCompare(
+          string(b?.date)
+        )
+      );
+  }, [
+    nutrition,
+    weekStart,
+    weekEnd,
+  ]);
 
 
   // ============================================================
   // WEEKLY STATS
   //
-  // Calculated locally = NO AI COST.
+  // These are calculated locally.
+  // No AI tokens are used for these numbers.
   // ============================================================
 
-  const weeklyStats = useMemo(() => {
-    const workoutCount = weekLogs.length;
-
-    const trainingDates = [
-      ...new Set(
-        weekLogs
-          .map((log) =>
-            String(log?.date || '').slice(0, 10)
-          )
-          .filter(Boolean)
-      ),
-    ];
+  const stats = useMemo(() => {
+    const workoutCount =
+      previousWeekLogs.length;
 
 
-    let exerciseCount = 0;
+    const trainingDays =
+      unique(
+        previousWeekLogs.map(
+          (log) =>
+            string(log?.date).slice(0, 10)
+        )
+      ).length;
+
+
+    let totalExercises = 0;
     let totalSets = 0;
     let totalReps = 0;
+    let totalDuration = 0;
+
 
     const exerciseNames = [];
 
 
-    weekLogs.forEach((log) => {
-      const exercises = Array.isArray(
-        log?.exercises_completed
-      )
-        ? log.exercises_completed
-        : [];
+    previousWeekLogs.forEach((log) => {
+      totalDuration += number(
+        log?.duration_minutes
+      );
 
 
-      exerciseCount += exercises.length;
+      const exercises =
+        Array.isArray(
+          log?.exercises_completed
+        )
+          ? log.exercises_completed
+          : [];
+
+
+      totalExercises +=
+        exercises.length;
 
 
       exercises.forEach((exercise) => {
-        totalSets += toNumber(
+        totalSets += number(
           exercise?.sets_completed
         );
 
-        totalReps += toNumber(
-          exercise?.reps_achieved
-        );
+
+        /*
+         * reps_achieved can sometimes be a number,
+         * "8-10", "10", etc.
+         *
+         * We only count it when it is actually numeric.
+         * The raw value is still sent to Kael.
+         */
+        const reps =
+          Number(
+            exercise?.reps_achieved
+          );
 
 
-        if (exercise?.name) {
+        if (
+          Number.isFinite(reps)
+        ) {
+          totalReps += reps;
+        }
+
+
+        if (
+          exercise?.name
+        ) {
           exerciseNames.push(
             exercise.name
           );
@@ -306,155 +364,84 @@ export default function WeeklyUpdate({
 
 
     const checkinCount =
-      weekLogs.filter((log) => {
-        return (
-          typeof log?.post_workout_checkin ===
-            'string' &&
-          log.post_workout_checkin.trim()
-            .length > 0
-        );
-      }).length;
-
-
-    const nutritionDates = [
-      ...new Set(
-        weekNutrition
-          .map((entry) =>
-            String(entry?.date || '').slice(0, 10)
+      previousWeekLogs.filter(
+        (log) =>
+          string(
+            log?.post_workout_checkin
           )
-          .filter(Boolean)
-      ),
-    ];
+      ).length;
+
+
+    const nutritionDays =
+      unique(
+        previousWeekNutrition.map(
+          (entry) =>
+            string(entry?.date).slice(0, 10)
+        )
+      ).length;
 
 
     const totalCalories =
-      weekNutrition.reduce(
+      previousWeekNutrition.reduce(
         (sum, entry) =>
           sum +
-          toNumber(entry?.calories),
+          number(entry?.calories),
         0
       );
 
 
-    const daysWithNutrition =
-      nutritionDates.length;
-
-
     const averageCalories =
-      daysWithNutrition > 0
+      nutritionDays > 0
         ? Math.round(
             totalCalories /
-              daysWithNutrition
+              nutritionDays
           )
         : 0;
 
 
-    const bodyFatReadings =
-      recentPhotos
-        .filter(
-          (photo) =>
-            photo?.body_fat_estimate != null
-        )
-        .map(
-          (photo) =>
-            photo.body_fat_estimate
-        );
-
-
     return {
       workoutCount,
-      trainingDays:
-        trainingDates.length,
-      exerciseCount,
+      trainingDays,
+      totalExercises,
       totalSets,
       totalReps,
+      totalDuration,
       checkinCount,
-      daysWithNutrition,
+      nutritionDays,
       totalCalories,
       averageCalories,
-      bodyFatReadings,
-      exerciseNames,
+      exerciseNames:
+        unique(exerciseNames),
     };
   }, [
-    weekLogs,
-    weekNutrition,
-    recentPhotos,
+    previousWeekLogs,
+    previousWeekNutrition,
   ]);
 
 
   // ============================================================
-  // WEEKLY SUMMARY
-  // ============================================================
-
-  const weeklySummary = useMemo(() => {
-    const {
-      workoutCount,
-      trainingDays,
-      exerciseCount,
-      totalSets,
-      totalReps,
-    } = weeklyStats;
-
-
-    if (workoutCount === 0) {
-      return 'No completed workouts have been logged this week yet.';
-    }
-
-
-    const workoutWord =
-      workoutCount === 1
-        ? 'workout'
-        : 'workouts';
-
-
-    const dayWord =
-      trainingDays === 1
-        ? 'training day'
-        : 'training days';
-
-
-    const exerciseWord =
-      exerciseCount === 1
-        ? 'exercise'
-        : 'exercises';
-
-
-    const setWord =
-      totalSets === 1
-        ? 'set'
-        : 'sets';
-
-
-    const repWord =
-      totalReps === 1
-        ? 'rep'
-        : 'reps';
-
-
-    return (
-      `You completed ${workoutCount} ${workoutWord} ` +
-      `across ${trainingDays} ${dayWord}, ` +
-      `with ${exerciseCount} ${exerciseWord}, ` +
-      `${totalSets} ${setWord}, and ` +
-      `${totalReps} ${repWord}.`
-    );
-  }, [weeklyStats]);
-
-
-  // ============================================================
   // CACHE
+  //
+  // One report per previous week.
+  //
+  // The cache key deliberately uses the week being reviewed,
+  // not the current date.
   // ============================================================
 
   const cacheKey =
-    `weekly_insight_${weekStartStr}_${user?.id || 'u'}`;
+    `kael_weekly_report_${weekStart}_${weekEnd}_${user?.id || 'user'}`;
 
 
   useEffect(() => {
     const cached =
-      localStorage.getItem(cacheKey);
+      localStorage.getItem(
+        cacheKey
+      );
 
 
     if (!cached) {
+      setInsight(null);
+      setGenerated(false);
       return;
     }
 
@@ -463,32 +450,222 @@ export default function WeeklyUpdate({
       const parsed =
         JSON.parse(cached);
 
+
       const normalized =
-        normalizeKaelResponse(parsed);
+        normalizeAIResponse(
+          parsed
+        );
+
 
       setInsight(normalized);
-      setAlreadyGenerated(true);
-    } catch (cacheError) {
+      setGenerated(true);
+    } catch (err) {
       console.warn(
-        'Unable to read cached Kael weekly update:',
-        cacheError
+        '[Kael Weekly Update] Invalid cached report:',
+        err
       );
 
-      localStorage.removeItem(cacheKey);
+      localStorage.removeItem(
+        cacheKey
+      );
     }
   }, [cacheKey]);
 
 
-  const hasEnoughData =
-    weeklyStats.workoutCount >= 1;
+  // ============================================================
+  // SERIALIZE ALL WORKOUT INFORMATION
+  //
+  // We intentionally send the raw workout information rather
+  // than just totals. This is what allows Kael to notice things
+  // like:
+  //
+  // "You struggled with dips on Wednesday but pull-ups felt
+  // strong on Friday."
+  // ============================================================
+
+  const workoutReport = useMemo(() => {
+    return previousWeekLogs.map(
+      (log, index) => {
+        const exercises =
+          Array.isArray(
+            log?.exercises_completed
+          )
+            ? log.exercises_completed
+            : [];
+
+
+        return {
+          workout_number:
+            index + 1,
+
+          date:
+            string(log?.date),
+
+          day_name:
+            string(log?.day_name) ||
+            'Training day',
+
+          week_number:
+            log?.week_number ?? null,
+
+          duration_minutes:
+            number(
+              log?.duration_minutes
+            ),
+
+          exercises_completed:
+            exercises.map(
+              (exercise) => ({
+                name:
+                  string(
+                    exercise?.name
+                  ),
+
+                sets_completed:
+                  exercise?.sets_completed ??
+                  0,
+
+                reps_achieved:
+                  exercise?.reps_achieved ??
+                  '',
+
+                notes:
+                  string(
+                    exercise?.notes
+                  ),
+              })
+            ),
+
+          post_workout_checkin:
+            string(
+              log?.post_workout_checkin
+            ),
+
+          ai_adjustment_notes:
+            string(
+              log?.ai_adjustment_notes
+            ),
+        };
+      }
+    );
+  }, [
+    previousWeekLogs,
+  ]);
 
 
   // ============================================================
-  // GENERATE KAEL UPDATE
+  // NUTRITION REPORT
+  // ============================================================
+
+  const nutritionReport = useMemo(() => {
+    return previousWeekNutrition.map(
+      (entry) => ({
+        date:
+          string(entry?.date),
+
+        calories:
+          entry?.calories ??
+          null,
+
+        protein:
+          entry?.protein ??
+          entry?.protein_grams ??
+          null,
+
+        carbs:
+          entry?.carbs ??
+          entry?.carbohydrates ??
+          null,
+
+        fat:
+          entry?.fat ??
+          entry?.fat_grams ??
+          null,
+
+        water:
+          entry?.water ??
+          entry?.water_oz ??
+          null,
+
+        notes:
+          string(
+            entry?.notes
+          ),
+      })
+    );
+  }, [
+    previousWeekNutrition,
+  ]);
+
+
+  // ============================================================
+  // PAIN / DISCOMFORT QUICK DETECTION
+  //
+  // This isn't replacing Kael.
+  // It makes sure the prompt explicitly tells him which logs
+  // contain possible pain/injury language.
+  // ============================================================
+
+  const concerningCheckins =
+    useMemo(() => {
+      return previousWeekLogs
+        .filter((log) =>
+          /pain|hurt|hurting|injury|injured|strain|strained|ache|aching|sharp|joint|shoulder|elbow|wrist|knee|hip|back|neck|ankle|tight|tightness|discomfort|sore|soreness/i.test(
+            string(
+              log?.post_workout_checkin
+            )
+          )
+        )
+        .map((log) => ({
+          date:
+            string(log?.date),
+
+          day_name:
+            string(log?.day_name),
+
+          checkin:
+            string(
+              log?.post_workout_checkin
+            ),
+
+          exercises:
+            Array.isArray(
+              log?.exercises_completed
+            )
+              ? log.exercises_completed.map(
+                  (exercise) =>
+                    string(
+                      exercise?.name
+                    )
+                )
+              : [],
+        }));
+    }, [
+      previousWeekLogs,
+    ]);
+
+
+  // ============================================================
+  // GENERATE
   // ============================================================
 
   const generate = async () => {
-    if (alreadyGenerated || loading) {
+    if (!monday) {
+      return;
+    }
+
+
+    if (generated) {
+      return;
+    }
+
+
+    if (loading) {
+      return;
+    }
+
+
+    if (!stats.workoutCount) {
       return;
     }
 
@@ -498,97 +675,20 @@ export default function WeeklyUpdate({
 
 
     try {
-      const lang =
+      const language =
         settings?.language ||
+        user?.language ||
         'English';
 
 
       const unit =
         settings?.unit ||
+        user?.unit ||
         'imperial';
 
 
-      // --------------------------------------------------------
-      // CHECK-INS
-      // --------------------------------------------------------
-
-      const checkins =
-        weekLogs
-          .map(
-            (log) =>
-              log?.post_workout_checkin
-          )
-          .filter(Boolean)
-          .join('\n---\n') ||
-        'No check-ins logged this week.';
-
-
-      // --------------------------------------------------------
-      // EXERCISE SUMMARY
-      // --------------------------------------------------------
-
-      const exerciseSummary =
-        weekLogs
-          .flatMap((log) =>
-            (
-              Array.isArray(
-                log?.exercises_completed
-              )
-                ? log.exercises_completed
-                : []
-            ).map(
-              (exercise) =>
-                `${exercise?.name || 'Exercise'}: ` +
-                `${exercise?.sets_completed || 0}×` +
-                `${exercise?.reps_achieved || 0}`
-            )
-          )
-          .join(', ') ||
-        'No exercises logged';
-
-
-      // --------------------------------------------------------
-      // PAIN / DISCOMFORT
-      // --------------------------------------------------------
-
-      const painMentions =
-        weekLogs
-          .map(
-            (log) =>
-              log?.post_workout_checkin
-          )
-          .filter(Boolean)
-          .filter((checkin) =>
-            /pain|hurt|sore|tight|ache|injury|strain/i.test(
-              checkin
-            )
-          )
-          .join(' | ');
-
-
-      // --------------------------------------------------------
-      // BODY COMPOSITION
-      // --------------------------------------------------------
-
-      const photoBf =
-        recentPhotos
-          .filter(
-            (photo) =>
-              photo?.body_fat_estimate != null
-          )
-          .map(
-            (photo) =>
-              photo.body_fat_estimate
-          )
-          .join(', ');
-
-
-      // --------------------------------------------------------
-      // CURRENT / NEXT WEEK
-      // --------------------------------------------------------
-
       const currentWeek =
-        normalizeWeekNumber(
+        number(
           program?.current_week
         ) || 1;
 
@@ -597,22 +697,47 @@ export default function WeeklyUpdate({
         currentWeek + 1;
 
 
-      const nextMicro =
+      const nextMicrocycle =
         Array.isArray(
           program?.microcycles
         )
           ? program.microcycles.find(
               (microcycle) =>
-                normalizeWeekNumber(
+                number(
                   microcycle?.week_number
-                ) === nextWeekNumber
+                ) ===
+                nextWeekNumber
             )
           : null;
 
 
-      // --------------------------------------------------------
-      // TRAINING TYPE
-      // --------------------------------------------------------
+      const currentMicrocycle =
+        Array.isArray(
+          program?.microcycles
+        )
+          ? program.microcycles.find(
+              (microcycle) =>
+                number(
+                  microcycle?.week_number
+                ) ===
+                currentWeek
+            )
+          : null;
+
+
+      const previousMicrocycle =
+        Array.isArray(
+          program?.microcycles
+        )
+          ? program.microcycles.find(
+              (microcycle) =>
+                number(
+                  microcycle?.week_number
+                ) ===
+                currentWeek - 1
+            )
+          : null;
+
 
       const trainingType =
         user?.training_type ||
@@ -632,21 +757,54 @@ export default function WeeklyUpdate({
             'weight training',
 
           hybrid:
-            'hybrid training (calisthenics + weights)',
+            'hybrid training combining calisthenics and weights',
         }[trainingType] ||
         trainingType;
 
 
+      const goals =
+        Array.isArray(
+          user?.fitness_goals
+        ) &&
+        user.fitness_goals.length
+          ? user.fitness_goals.join(', ')
+          : (
+              Array.isArray(
+                user?.weight_goals
+              ) &&
+              user.weight_goals.length
+            )
+              ? user.weight_goals.join(', ')
+              : (
+                  user?.primary_goal ||
+                  program?.goal ||
+                  'general fitness'
+                );
+
+
       // --------------------------------------------------------
-      // GOALS
+      // FULL CHECK-IN TEXT
       // --------------------------------------------------------
 
-      const goals =
-        user?.fitness_goals?.join(', ') ||
-        user?.weight_goals?.join(', ') ||
-        user?.primary_goal ||
-        program?.goal ||
-        'general fitness';
+      const allCheckins =
+        previousWeekLogs
+          .filter((log) =>
+            string(
+              log?.post_workout_checkin
+            )
+          )
+          .map(
+            (log) =>
+              `[${string(
+                log?.date
+              )} — ${string(
+                log?.day_name
+              )}]\n${string(
+                log?.post_workout_checkin
+              )}`
+          )
+          .join('\n\n---\n\n') ||
+        'No post-workout check-ins were submitted.';
 
 
       // --------------------------------------------------------
@@ -654,19 +812,21 @@ export default function WeeklyUpdate({
       // --------------------------------------------------------
 
       const prompt = `
-You are Kael, a straight-talking, knowledgeable ${typeLabel} coach.
+You are Kael, the athlete's personal ${typeLabel} coach.
 
-Give a weekly coaching check-in for this athlete.
+You are NOT writing a generic motivational message.
 
-Respond ENTIRELY in ${lang}.
+You are performing a real weekly coaching review using the
+athlete's actual completed workouts and their own words.
 
-IMPORTANT:
-Use ONLY the information supplied below.
-Do not invent workouts, numbers, accomplishments,
-pain, or progress that are not present in the data.
+Respond entirely in ${language}.
 
-ATHLETE:
-${user?.full_name?.split(' ')[0] || 'Athlete'}
+============================================================
+ATHLETE
+============================================================
+
+NAME:
+${user?.first_name || user?.full_name?.split(' ')[0] || 'Athlete'}
 
 FITNESS LEVEL:
 ${user?.fitness_level || 'intermediate'}
@@ -677,173 +837,396 @@ ${typeLabel}
 GOALS:
 ${goals}
 
-WEEK START:
-${weekStartStr}
+GOAL TIMEFRAME:
+${user?.goal_timeframe || 'Not specified'}
+
+CURRENT SKILLS:
+${user?.current_skills || 'Not specified'}
+
+EQUIPMENT:
+${user?.available_equipment || 'Not specified'}
+
+TRAINING REQUIREMENTS / LIMITATIONS:
+${user?.training_requirements || 'None specified'}
+
+MEASUREMENT SYSTEM:
+${unit === 'metric'
+  ? 'Metric'
+  : 'Imperial'}
 
 ============================================================
-ACTUAL WEEKLY PERFORMANCE
+WEEK BEING REVIEWED
 ============================================================
+
+PREVIOUS WEEK:
+${weekStart} through ${weekEnd}
 
 WORKOUTS COMPLETED:
-${weeklyStats.workoutCount}
+${stats.workoutCount}
 
 TRAINING DAYS:
-${weeklyStats.trainingDays}
+${stats.trainingDays}
 
-EXERCISES COMPLETED:
-${weeklyStats.exerciseCount}
+TOTAL EXERCISES LOGGED:
+${stats.totalExercises}
 
-SETS COMPLETED:
-${weeklyStats.totalSets}
+TOTAL SETS COMPLETED:
+${stats.totalSets}
 
-REPS COMPLETED:
-${weeklyStats.totalReps}
+NUMERIC REPS COMPLETED:
+${stats.totalReps}
 
-POST-WORKOUT CHECK-INS:
-${weeklyStats.checkinCount}
-
-EXERCISES:
-${exerciseSummary}
-
-============================================================
-ATHLETE FEEDBACK
-============================================================
+TOTAL TRAINING MINUTES:
+${stats.totalDuration}
 
 POST-WORKOUT CHECK-INS:
-${checkins}
+${stats.checkinCount}
 
-PAIN / DISCOMFORT MENTIONED:
-${painMentions || 'none reported'}
+EXERCISES PERFORMED:
+${stats.exerciseNames.join(', ') || 'None'}
+
+============================================================
+COMPLETE WORKOUT DATA
+============================================================
+
+The following is the athlete's actual logged workout data.
+
+DO NOT summarize this into generic advice.
+
+Look at each workout individually.
+
+Compare:
+- what was planned
+- what was actually completed
+- sets
+- reps
+- exercise selection
+- workout duration
+- check-in feedback
+- performance trends across the week
+
+WORKOUT DATA:
+
+${JSON.stringify(
+  workoutReport,
+  null,
+  2
+)}
+
+============================================================
+EVERY POST-WORKOUT CHECK-IN
+============================================================
+
+These are the athlete's actual words.
+
+Pay close attention to:
+- pain
+- discomfort
+- fatigue
+- recovery
+- exercises that felt unusually hard
+- exercises that felt unusually easy
+- exercises where they had more capacity
+- exercises where they struggled
+- energy
+- motivation
+- technique concerns
+- comments about specific body parts
+- comments about specific exercises
+- anything that changed during the week
+
+DO NOT ignore these comments.
+
+POST-WORKOUT CHECK-INS:
+
+${allCheckins}
+
+============================================================
+POSSIBLE CONCERNING CHECK-INS
+============================================================
+
+The following check-ins contain words that may indicate
+pain, discomfort, soreness, tightness, or injury.
+
+These are NOT automatically injuries.
+
+Read the athlete's actual words and determine whether
+there is a meaningful concern.
+
+${JSON.stringify(
+  concerningCheckins,
+  null,
+  2
+)}
 
 ============================================================
 NUTRITION
 ============================================================
 
-DAYS TRACKED:
-${weeklyStats.daysWithNutrition}
+NUTRITION DAYS:
+${stats.nutritionDays}
 
-AVERAGE CALORIES:
-${weeklyStats.averageCalories || 'not enough data'}
+TOTAL CALORIES LOGGED:
+${stats.totalCalories || 'Not available'}
 
-============================================================
-BODY COMPOSITION
-============================================================
+AVERAGE CALORIES ON TRACKED DAYS:
+${stats.averageCalories || 'Not available'}
 
-BODY FAT READINGS:
-${photoBf || 'no data'}
+DETAILED NUTRITION DATA:
+
+${JSON.stringify(
+  nutritionReport,
+  null,
+  2
+)}
 
 ============================================================
 CURRENT PROGRAM
 ============================================================
 
-PROGRAM:
-${program?.program_name || 'custom'}
+PROGRAM NAME:
+${program?.program_name || 'Custom program'}
 
-CURRENT WEEK:
+CURRENT PROGRAM WEEK:
 ${currentWeek}
 
+CURRENT WEEK PROGRAM:
+
+${JSON.stringify(
+  currentMicrocycle ||
+  'Not available',
+  null,
+  2
+)}
+
 ============================================================
-YOUR JOB
+PREVIOUS PROGRAM
 ============================================================
 
-Create a useful weekly coaching review.
-
-SECTION 1 — WHAT YOU CRUSHED
-
-Explain what the athlete did well this week.
-
-Reference actual workouts, exercises,
-sets/reps, consistency, or feedback.
-
-SECTION 2 — KEEP AN EYE ON
-
-Explain what could be improved or watched.
-
-Reference actual fatigue, pain, difficulty,
-missed work, recovery issues, or performance
-when that information exists.
-
-If there were no meaningful problems,
-say so rather than inventing one.
-
-SECTION 3 — NEXT WEEK
-
-Give a concrete recommendation for next week
-that moves the athlete toward their stated goals.
-
-SECTION 4 — MOTIVATION
-
-Give one short, genuine motivational line.
-
-Keep everything concise, specific,
-and coach-like.
+${JSON.stringify(
+  previousMicrocycle ||
+  'Not available',
+  null,
+  2
+)}
 
 ============================================================
 NEXT WEEK PROGRAM
 ============================================================
 
-${
-  nextMicro
-    ? JSON.stringify(
-        nextMicro,
-        null,
-        2
-      )
-    : 'No next week program available.'
-}
-
-If a next-week program exists, also return
-an adjusted version only when the athlete's
-actual performance or feedback justifies a change.
-
-Adjustment rules:
-
-- Struggled:
-  reduce volume/reps by approximately 10-20%.
-
-- Pain:
-  remove the aggravating movement or use a
-  safer appropriate variation.
-
-- Strong performance:
-  progress slightly through reps, sets,
-  resistance, or exercise difficulty.
-
-- Do not make unreasonable jumps.
-
-- Preserve the athlete's training goal.
-
-- Preserve appropriate rep ranges.
-
-- Preserve appropriate rest periods.
-
-- Do not change the entire program unnecessarily.
+${JSON.stringify(
+  nextMicrocycle ||
+  'Not available',
+  null,
+  2
+)}
 
 ============================================================
-REQUIRED RESPONSE
+COACHING INSTRUCTIONS
+============================================================
+
+This is the most important part.
+
+Your report MUST be highly specific to this athlete.
+
+Do NOT write generic statements such as:
+
+"Keep progressing."
+
+"Stay consistent."
+
+"Focus on recovery."
+
+"Push yourself next week."
+
+"Continue working toward your goals."
+
+Those statements are only acceptable if they are attached
+to specific evidence from this athlete's actual week.
+
+Instead, reference exact things that happened.
+
+For example:
+
+GOOD:
+"You completed all four sets of pull-ups on Monday and
+reported that you still had 2-3 reps available. By Friday,
+your weighted pull-ups were also completed at the prescribed
+volume. That suggests your pulling strength is responding
+well, so I want to progress that movement slightly next week."
+
+BAD:
+"Your pulling strength is improving. Keep progressing."
+
+If the athlete mentions pain, connect it to the workout
+and exercise where it happened.
+
+For example:
+
+"The left shoulder discomfort you mentioned after dips
+on Wednesday is the biggest thing I want to address.
+Because you specifically connected it to dips, I don't want
+to simply increase pressing volume next week. We'll reduce
+the intensity of that movement and use a shoulder-friendlier
+variation while keeping your other pressing work intact."
+
+Do NOT diagnose injuries.
+
+Do NOT invent pain.
+
+Do NOT invent performance.
+
+Do NOT assume an exercise caused pain unless the athlete's
+actual feedback supports that connection.
+
+If something is uncertain, say that it is uncertain.
+
+============================================================
+WHAT TO ANALYZE
+============================================================
+
+1. PERFORMANCE
+
+Identify the strongest actual performance of the week.
+
+Mention the specific exercise, workout, sets, reps,
+or feedback that supports your conclusion.
+
+2. WEAKNESS / PROBLEM
+
+Identify the most important actual issue.
+
+This could be:
+- missed sets
+- reduced reps
+- fatigue
+- poor recovery
+- pain/discomfort
+- an exercise consistently feeling difficult
+- lack of adherence
+- excessive volume
+- unusually easy work
+- nutrition inconsistency
+
+Only mention an issue if the data supports it.
+
+3. TREND
+
+Look across the entire week.
+
+Determine whether the athlete appears to be:
+- improving
+- maintaining
+- struggling
+- recovering poorly
+- adapting well
+
+Use actual evidence.
+
+4. NEXT WEEK
+
+Give a specific recommendation.
+
+If an exercise needs to change, name it.
+
+If intensity should change, say how.
+
+If volume should change, say how.
+
+If rest should change, say how.
+
+If an exercise performed very well, identify the exact
+progression you recommend.
+
+Do not make massive changes without evidence.
+
+5. GOAL CONNECTION
+
+Explain how this week's performance relates to the
+athlete's actual stated goal.
+
+For example:
+If the goal is a muscle-up, explain how the logged pulling,
+dip, transition, or skill work supports that goal.
+
+If the goal is hypertrophy, discuss actual volume and
+performance.
+
+If the goal is strength, discuss actual performance and
+progression.
+
+============================================================
+REPORT STYLE
+============================================================
+
+Sound like a real coach who has been following this athlete.
+
+Be direct.
+
+Be specific.
+
+Be observant.
+
+Be encouraging when deserved.
+
+Be honest when something needs attention.
+
+Do not sound like an AI assistant.
+
+Do not repeat the entire workout log.
+
+Instead, select the most meaningful details and explain
+what they mean.
+
+The report should feel like:
+
+"I actually watched your week."
+
+not:
+
+"Here are some generic fitness tips."
+
+============================================================
+REQUIRED JSON
 ============================================================
 
 Return ONLY valid JSON.
 
-Use EXACTLY these top-level fields:
+Use exactly this structure:
 
 {
-  "win": "specific description of what the athlete did well",
-  "improve": "specific thing to watch or improve",
-  "next_recommendation": "specific recommendation for next week",
-  "motivation": "one short motivational line",
+  "summary": "A detailed but concise overview of what actually happened during the week. Reference specific workouts, exercises, performance, and/or check-ins.",
+
+  "win": "The strongest specific thing the athlete did this week, with evidence from their actual logs.",
+
+  "improve": "The most important specific issue or trend to address, with evidence from actual logs. If there is pain/discomfort, identify the exact exercise and day when the athlete connected it to that issue.",
+
+  "next_recommendation": "A specific coaching recommendation for next week. Name exact exercises, progressions, regressions, volume, intensity, rest, or substitutions where appropriate.",
+
+  "motivation": "One short, genuine motivational sentence that relates to this athlete's actual week.",
+
   "adjusted_microcycle": null
 }
 
-If the next week's program actually needs adjustment,
-replace null with the complete adjusted microcycle object.
+If the next week's program should be changed based on the
+athlete's actual performance or feedback, return the complete
+adjusted next-week microcycle in adjusted_microcycle.
 
-Do not rename these four coaching fields.
+Otherwise return null.
+
+Do not change next week's program merely for the sake of
+changing it.
+
+If pain or discomfort was reported and the athlete connected
+it to a specific exercise, take that seriously and make an
+appropriate conservative programming adjustment.
+
+Never diagnose a medical condition.
 `;
 
 
       // --------------------------------------------------------
-      // CALL AI
+      // CALL KAEL
       // --------------------------------------------------------
 
       const rawResult =
@@ -855,7 +1238,13 @@ Do not rename these four coaching fields.
           response_json_schema: {
             type: 'object',
 
+            additionalProperties: false,
+
             properties: {
+              summary: {
+                type: 'string',
+              },
+
               win: {
                 type: 'string',
               },
@@ -873,94 +1262,89 @@ Do not rename these four coaching fields.
               },
 
               adjusted_microcycle: {
-                type: ['object', 'null'],
+                type: [
+                  'object',
+                  'null',
+                ],
               },
             },
 
             required: [
+              'summary',
               'win',
               'improve',
               'next_recommendation',
               'motivation',
+              'adjusted_microcycle',
             ],
           },
         });
 
 
       console.log(
-        '[Kael Weekly Update] Raw AI response:',
+        '[KAEL WEEKLY UPDATE] Raw result:',
         rawResult
       );
 
 
-      // --------------------------------------------------------
-      // NORMALIZE RESPONSE
-      // --------------------------------------------------------
-
       const result =
-        normalizeKaelResponse(
+        normalizeAIResponse(
           rawResult
         );
 
 
       console.log(
-        '[Kael Weekly Update] Normalized response:',
+        '[KAEL WEEKLY UPDATE] Normalized result:',
         result
       );
 
 
       // --------------------------------------------------------
-      // MAKE SURE THE FOUR SECTIONS ACTUALLY HAVE CONTENT
+      // DO NOT ACCEPT A USELESS GENERIC RESPONSE
+      //
+      // If the model somehow returns nothing useful, show an
+      // error instead of pretending the report was generated.
       // --------------------------------------------------------
 
-      const finalResult = {
-        ...result,
-
-        win:
-          result.win ||
-          'You showed up and put work in this week. Keep building on that consistency.',
-
-        improve:
-          result.improve ||
-          'Keep paying attention to how your body and performance respond to the training.',
-
-        next_recommendation:
-          result.next_recommendation ||
-          'Continue progressing gradually next week while keeping your technique and recovery a priority.',
-
-        motivation:
-          result.motivation ||
-          'Keep stacking good weeks. That is how the bigger goal gets built.',
-      };
-
-
-      // --------------------------------------------------------
-      // UPDATE NEXT WEEK'S PROGRAM
-      // --------------------------------------------------------
-
-      const adjustedMicrocycle =
-        result.adjusted_microcycle;
+      const meaningfulFields = [
+        result.summary,
+        result.win,
+        result.improve,
+        result.next_recommendation,
+      ].filter(
+        (value) =>
+          string(value).length > 20
+      );
 
 
       if (
-        adjustedMicrocycle &&
-        nextMicro &&
-        program &&
+        meaningfulFields.length < 2
+      ) {
+        throw new Error(
+          'Kael returned an incomplete weekly report. Please try again.'
+        );
+      }
+
+
+      // --------------------------------------------------------
+      // APPLY NEXT WEEK ADJUSTMENT
+      // --------------------------------------------------------
+
+      if (
+        result.adjusted_microcycle &&
+        nextMicrocycle &&
+        program?.id &&
         Array.isArray(
-          program.microcycles
+          program?.microcycles
         )
       ) {
         const updatedMicrocycles =
           program.microcycles.map(
             (microcycle) => {
-              const weekNumber =
-                normalizeWeekNumber(
-                  microcycle?.week_number
-                );
-
-
               if (
-                weekNumber !==
+                number(
+                  microcycle?.week_number
+                ) !==
                 nextWeekNumber
               ) {
                 return microcycle;
@@ -968,14 +1352,16 @@ Do not rename these four coaching fields.
 
 
               return {
-                ...adjustedMicrocycle,
+                ...result.adjusted_microcycle,
 
                 week_number:
                   nextWeekNumber,
 
                 mesocycle_index:
-                  adjustedMicrocycle.mesocycle_index ??
-                  microcycle.mesocycle_index,
+                  result
+                    .adjusted_microcycle
+                    ?.mesocycle_index ??
+                  microcycle?.mesocycle_index,
               };
             }
           );
@@ -992,24 +1378,24 @@ Do not rename these four coaching fields.
 
 
       // --------------------------------------------------------
-      // CACHE ONLY THE DISPLAY DATA
-      //
-      // We intentionally do not cache the adjusted program
-      // object in localStorage.
+      // CACHE ONLY THE REPORT
       // --------------------------------------------------------
 
       const displayResult = {
+        summary:
+          result.summary,
+
         win:
-          finalResult.win,
+          result.win,
 
         improve:
-          finalResult.improve,
+          result.improve,
 
         next_recommendation:
-          finalResult.next_recommendation,
+          result.next_recommendation,
 
         motivation:
-          finalResult.motivation,
+          result.motivation,
       };
 
 
@@ -1021,23 +1407,35 @@ Do not rename these four coaching fields.
       );
 
 
-      setInsight(displayResult);
-      setAlreadyGenerated(true);
+      setInsight(
+        displayResult
+      );
+
+      setGenerated(true);
     } catch (generationError) {
       console.error(
-        '[Kael Weekly Update] Generation failed:',
+        '[KAEL WEEKLY UPDATE] FAILED:',
         generationError
       );
 
 
       setError(
         generationError?.message ||
-        'Kael could not generate your weekly update right now.'
+        'Kael could not generate your weekly report.'
       );
     } finally {
       setLoading(false);
     }
   };
+
+
+  // ============================================================
+  // SUMMARY TEXT WHEN NOT MONDAY
+  // ============================================================
+
+  const dayMessage = monday
+    ? `Review ${weekStart} – ${weekEnd}`
+    : 'Your weekly review unlocks every Monday';
 
 
   // ============================================================
@@ -1063,8 +1461,11 @@ Do not rename these four coaching fields.
         <div className="flex items-center gap-2">
 
           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+
             <Sparkles className="w-4 h-4 text-primary" />
+
           </div>
+
 
           <div className="text-left">
 
@@ -1073,15 +1474,9 @@ Do not rename these four coaching fields.
             </p>
 
             <p className="text-xs text-muted-foreground">
-
-              {alreadyGenerated
-                ? "This week's update is ready"
-                : `${weeklyStats.workoutCount} workout${
-                    weeklyStats.workoutCount !== 1
-                      ? 's'
-                      : ''
-                  } logged · tap to view`}
-
+              {generated
+                ? 'Your weekly coaching report is ready'
+                : dayMessage}
             </p>
 
           </div>
@@ -1108,12 +1503,53 @@ Do not rename these four coaching fields.
 
 
           {/* ==================================================
-              YOUR WEEK
+              MONDAY LOCK
               ================================================== */}
 
-          <div className="space-y-2">
+          {!monday && (
 
-            <div className="flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-muted/50 border border-border">
+
+              <div className="flex items-start gap-3">
+
+                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+
+                  <Lock className="w-4 h-4 text-muted-foreground" />
+
+                </div>
+
+
+                <div>
+
+                  <p className="text-sm font-semibold">
+                    Kael's weekly review unlocks Monday
+                  </p>
+
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+
+                    Every Monday, Kael reviews the previous
+                    Monday through Sunday — including every
+                    workout, every set and rep logged, and
+                    every post-workout check-in.
+
+                  </p>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          )}
+
+
+          {/* ==================================================
+              WEEK SNAPSHOT
+              ================================================== */}
+
+          {monday && (
+
+            <div className="space-y-3">
 
               <div>
 
@@ -1121,195 +1557,112 @@ Do not rename these four coaching fields.
                   Your Week
                 </p>
 
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  A snapshot of what you actually completed
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {weekStart} → {weekEnd}
                 </p>
 
               </div>
 
 
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-
-                <CalendarDays className="w-3 h-3" />
-
-                <span>
-                  Week of {weekStartStr}
-                </span>
-
-              </div>
-
-            </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
 
-            {/* Summary */}
+                {/* Workouts */}
 
-            <div className="p-3 rounded-xl bg-background/70 border border-border">
+                <div className="p-3 rounded-xl bg-background/70 border border-border">
 
-              <p className="text-sm leading-relaxed">
-                {weeklySummary}
-              </p>
+                  <div className="flex items-center gap-2">
 
-            </div>
+                    <Dumbbell className="w-4 h-4 text-primary" />
 
+                    <div>
 
-            {/* =================================================
-                STAT GRID
-                ================================================= */}
+                      <p className="text-lg font-heading font-bold leading-none">
+                        {stats.workoutCount}
+                      </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Workouts
+                      </p>
 
-
-              {/* Workouts */}
-
-              <div className="p-3 rounded-xl bg-background/70 border border-border">
-
-                <div className="flex items-center gap-2">
-
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-
-                    <Dumbbell className="w-3.5 h-3.5 text-primary" />
-
-                  </div>
-
-
-                  <div>
-
-                    <p className="text-lg font-heading font-bold leading-none">
-                      {weeklyStats.workoutCount}
-                    </p>
-
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Workouts
-                    </p>
+                    </div>
 
                   </div>
 
                 </div>
 
-              </div>
 
+                {/* Training days */}
 
-              {/* Training Days */}
+                <div className="p-3 rounded-xl bg-background/70 border border-border">
 
-              <div className="p-3 rounded-xl bg-background/70 border border-border">
+                  <div className="flex items-center gap-2">
 
-                <div className="flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-accent" />
 
-                  <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+                    <div>
 
-                    <CalendarDays className="w-3.5 h-3.5 text-accent" />
+                      <p className="text-lg font-heading font-bold leading-none">
+                        {stats.trainingDays}
+                      </p>
 
-                  </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Training days
+                      </p>
 
-
-                  <div>
-
-                    <p className="text-lg font-heading font-bold leading-none">
-                      {weeklyStats.trainingDays}
-                    </p>
-
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Training days
-                    </p>
+                    </div>
 
                   </div>
 
                 </div>
 
-              </div>
 
+                {/* Sets */}
 
-              {/* Sets */}
+                <div className="p-3 rounded-xl bg-background/70 border border-border">
 
-              <div className="p-3 rounded-xl bg-background/70 border border-border">
+                  <div className="flex items-center gap-2">
 
-                <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-primary" />
 
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <div>
 
-                    <Repeat2 className="w-3.5 h-3.5 text-primary" />
+                      <p className="text-lg font-heading font-bold leading-none">
+                        {stats.totalSets}
+                      </p>
 
-                  </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Sets
+                      </p>
 
-
-                  <div>
-
-                    <p className="text-lg font-heading font-bold leading-none">
-                      {weeklyStats.totalSets}
-                    </p>
-
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Sets
-                    </p>
+                    </div>
 
                   </div>
 
                 </div>
 
-              </div>
 
+                {/* Time */}
 
-              {/* Reps */}
+                <div className="p-3 rounded-xl bg-background/70 border border-border">
 
-              <div className="p-3 rounded-xl bg-background/70 border border-border">
+                  <div className="flex items-center gap-2">
 
-                <div className="flex items-center gap-2">
+                    <Clock3 className="w-4 h-4 text-accent" />
 
-                  <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+                    <div>
 
-                    <Activity className="w-3.5 h-3.5 text-accent" />
+                      <p className="text-lg font-heading font-bold leading-none">
+                        {stats.totalDuration}
+                      </p>
 
-                  </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Minutes
+                      </p>
 
-
-                  <div>
-
-                    <p className="text-lg font-heading font-bold leading-none">
-                      {weeklyStats.totalReps}
-                    </p>
-
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Reps
-                    </p>
+                    </div>
 
                   </div>
-
-                </div>
-
-              </div>
-
-            </div>
-
-
-            {/* =================================================
-                SECONDARY STATS
-                ================================================= */}
-
-            <div className="grid grid-cols-2 gap-2">
-
-
-              {/* Check-ins */}
-
-              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-background/50 border border-border/60">
-
-                <CheckCircle2 className="w-3.5 h-3.5 text-accent shrink-0" />
-
-                <div>
-
-                  <p className="text-xs font-semibold">
-
-                    {weeklyStats.checkinCount}{' '}
-
-                    post-workout check-in
-                    {weeklyStats.checkinCount !== 1
-                      ? 's'
-                      : ''}
-
-                  </p>
-
-                  <p className="text-[10px] text-muted-foreground">
-                    Athlete feedback logged
-                  </p>
 
                 </div>
 
@@ -1318,30 +1671,110 @@ Do not rename these four coaching fields.
 
               {/* Nutrition */}
 
-              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-background/50 border border-border/60">
+              {stats.nutritionDays > 0 && (
 
-                <Utensils className="w-3.5 h-3.5 text-primary shrink-0" />
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-background/60 border border-border">
+
+                  <Utensils className="w-4 h-4 text-primary shrink-0" />
+
+                  <div>
+
+                    <p className="text-xs font-semibold">
+                      Nutrition tracked {stats.nutritionDays} day{stats.nutritionDays !== 1 ? 's' : ''}
+                    </p>
+
+                    {stats.averageCalories > 0 && (
+
+                      <p className="text-[10px] text-muted-foreground">
+                        Average: {stats.averageCalories.toLocaleString()} calories/day
+                      </p>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+              )}
+
+            </div>
+
+          )}
+
+
+          {/* ==================================================
+              NO DATA
+              ================================================== */}
+
+          {monday &&
+            !loading &&
+            !insight &&
+            !error &&
+            stats.workoutCount === 0 && (
+
+              <div className="p-4 rounded-xl bg-muted/50 border border-border text-center">
+
+                <Dumbbell className="w-6 h-6 mx-auto mb-2 text-muted-foreground opacity-50" />
+
+                <p className="text-sm font-semibold">
+                  No workouts to review yet
+                </p>
+
+                <p className="text-xs text-muted-foreground mt-1">
+                  Complete workouts during the week and
+                  Kael will review them the following Monday.
+                </p>
+
+              </div>
+
+            )}
+
+
+          {/* ==================================================
+              GENERATE BUTTON
+              ================================================== */}
+
+          {monday &&
+            !generated &&
+            !loading &&
+            !error &&
+            stats.workoutCount > 0 && (
+
+              <Button
+                className="w-full h-11 font-heading font-semibold"
+                onClick={generate}
+              >
+
+                <Sparkles className="w-4 h-4 mr-2" />
+
+                Get This Week's Update
+
+              </Button>
+
+            )}
+
+
+          {/* ==================================================
+              LOADING
+              ================================================== */}
+
+          {loading && (
+
+            <div className="p-4 rounded-xl bg-background/60 border border-border">
+
+              <div className="flex items-center gap-3">
+
+                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
 
                 <div>
 
-                  <p className="text-xs font-semibold">
-
-                    {weeklyStats.daysWithNutrition}{' '}
-
-                    nutrition day
-                    {weeklyStats.daysWithNutrition !== 1
-                      ? 's'
-                      : ''}
-
+                  <p className="text-sm font-semibold">
+                    Kael is reviewing your week...
                   </p>
 
-
-                  <p className="text-[10px] text-muted-foreground">
-
-                    {weeklyStats.averageCalories > 0
-                      ? `~${weeklyStats.averageCalories.toLocaleString()} cal/day`
-                      : 'No calorie average yet'}
-
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Looking through your workouts,
+                    check-ins, performance, and recovery.
                   </p>
 
                 </div>
@@ -1350,7 +1783,7 @@ Do not rename these four coaching fields.
 
             </div>
 
-          </div>
+          )}
 
 
           {/* ==================================================
@@ -1359,16 +1792,16 @@ Do not rename these four coaching fields.
 
           {error && (
 
-            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+            <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20">
 
               <div className="flex items-start gap-2">
 
                 <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
 
-                <div>
+                <div className="flex-1">
 
-                  <p className="text-xs font-bold text-destructive">
-                    Kael couldn't generate the update
+                  <p className="text-sm font-semibold text-destructive">
+                    Kael couldn't complete the report
                   </p>
 
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1378,6 +1811,7 @@ Do not rename these four coaching fields.
                 </div>
 
               </div>
+
 
               <Button
                 size="sm"
@@ -1397,71 +1831,7 @@ Do not rename these four coaching fields.
 
 
           {/* ==================================================
-              GENERATE BUTTON
-              ================================================== */}
-
-          {!insight &&
-            !loading &&
-            !error && (
-
-              <>
-                {!hasEnoughData ? (
-
-                  <div className="p-3 rounded-xl bg-muted/40 border border-border text-center">
-
-                    <p className="text-xs text-muted-foreground">
-                      Complete at least 1 workout this week
-                      to unlock your Kael check-in.
-                    </p>
-
-                  </div>
-
-                ) : (
-
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={generate}
-                  >
-
-                    <Sparkles className="w-4 h-4 mr-2" />
-
-                    Get This Week's Check-in
-
-                  </Button>
-
-                )}
-
-              </>
-
-            )}
-
-
-          {/* ==================================================
-              LOADING
-              ================================================== */}
-
-          {loading && (
-
-            <div className="p-3 rounded-xl bg-background/60 border border-border">
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-
-                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-
-                <span>
-                  Kael is reviewing your week...
-                </span>
-
-              </div>
-
-            </div>
-
-          )}
-
-
-          {/* ==================================================
-              KAEL'S ACTUAL ANALYSIS
+              KAEL REPORT
               ================================================== */}
 
           {insight && (
@@ -1475,125 +1845,108 @@ Do not rename these four coaching fields.
 
                 <CheckCircle2 className="w-3 h-3 text-accent" />
 
-                Generated for this week · resets Monday
+                Weekly report generated · next review Monday
 
               </div>
 
 
               {/* =================================================
-                  1. WHAT YOU CRUSHED
+                  SUMMARY
                   ================================================= */}
 
-              <div className="p-3 rounded-xl bg-accent/10 border border-accent/20">
+              {insight.summary && (
 
-                <p className="text-xs font-bold text-accent uppercase tracking-wider mb-1">
+                <div className="p-4 rounded-xl bg-background/80 border border-primary/20">
 
-                  What you crushed 🔥
+                  <div className="flex items-center gap-2 mb-2">
 
-                </p>
+                    <Sparkles className="w-4 h-4 text-primary" />
 
-
-                <p className="text-sm leading-relaxed">
-
-                  {insight.win ||
-                    'You put in the work this week. Keep building on that consistency.'}
-
-                </p>
-
-              </div>
-
-
-              {/* =================================================
-                  2. KEEP AN EYE ON
-                  ================================================= */}
-
-              <div className="p-3 rounded-xl bg-muted/50 border border-border">
-
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
-
-                  Keep an eye on
-
-                </p>
-
-
-                <p className="text-sm leading-relaxed">
-
-                  {insight.improve ||
-                    'Keep paying attention to your recovery, technique, and performance as you progress.'}
-
-                </p>
-
-              </div>
-
-
-              {/* =================================================
-                  3. NEXT WEEK
-                  ================================================= */}
-
-              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
-
-                <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">
-
-                  Next week
-
-                </p>
-
-
-                <p className="text-sm leading-relaxed">
-
-                  {insight.next_recommendation ||
-                    'Continue progressing gradually while keeping your technique and recovery a priority.'}
-
-                </p>
-
-              </div>
-
-
-              {/* =================================================
-                  4. MOTIVATION
-                  ================================================= */}
-
-              <div className="border-l-2 border-primary/40 pl-3 py-1">
-
-                <p className="text-sm italic text-muted-foreground">
-
-                  {insight.motivation ||
-                    'Keep stacking good weeks. That is how the bigger goal gets built.'}
-
-                </p>
-
-              </div>
-
-
-              {/* =================================================
-                  NEXT WEEK PROGRAM UPDATED
-                  ================================================= */}
-
-              {Array.isArray(
-                program?.microcycles
-              ) &&
-                program.microcycles.some(
-                  (microcycle) =>
-                    normalizeWeekNumber(
-                      microcycle?.week_number
-                    ) ===
-                    (
-                      normalizeWeekNumber(
-                        program?.current_week
-                      ) || 1
-                    ) + 1
-                ) && (
-
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
-
-                    <Sparkles className="w-3 h-3 text-primary flex-shrink-0" />
-
-                    Next week's workout has been adjusted
-                    based on your feedback.
+                    <p className="text-xs font-bold text-primary uppercase tracking-wider">
+                      Your Week
+                    </p>
 
                   </div>
 
-                )}
+
+                  <p className="text-sm leading-relaxed">
+                    {insight.summary}
+                  </p>
+
+                </div>
+
+              )}
+
+
+              {/* =================================================
+                  WIN
+                  ================================================= */}
+
+              <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
+
+                <p className="text-xs font-bold text-accent uppercase tracking-wider mb-1.5">
+                  What you crushed 🔥
+                </p>
+
+                <p className="text-sm leading-relaxed">
+                  {insight.win ||
+                    'You put meaningful work in this week.'}
+                </p>
+
+              </div>
+
+
+              {/* =================================================
+                  IMPROVE
+                  ================================================= */}
+
+              <div className="p-4 rounded-xl bg-muted/50 border border-border">
+
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                  What Kael noticed
+                </p>
+
+                <p className="text-sm leading-relaxed">
+                  {insight.improve ||
+                    'There was not enough evidence of a specific issue to flag this week.'}
+                </p>
+
+              </div>
+
+
+              {/* =================================================
+                  NEXT WEEK
+                  ================================================= */}
+
+              <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
+
+                <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1.5">
+                  Next week
+                </p>
+
+                <p className="text-sm leading-relaxed">
+                  {insight.next_recommendation ||
+                    'Kael did not identify a specific programming change from this week’s data.'}
+                </p>
+
+              </div>
+
+
+              {/* =================================================
+                  MOTIVATION
+                  ================================================= */}
+
+              {insight.motivation && (
+
+                <div className="border-l-2 border-primary/40 pl-3 py-1">
+
+                  <p className="text-sm italic text-muted-foreground leading-relaxed">
+                    {insight.motivation}
+                  </p>
+
+                </div>
+
+              )}
 
             </div>
 
