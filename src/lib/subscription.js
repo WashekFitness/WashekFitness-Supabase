@@ -1,15 +1,11 @@
 /**
- * Subscription plan feature gates.
+ * Washek Fitness subscription feature gates.
  *
  * Plans:
- *   free
- *   progress
- *   performance
- *   elite
- *
- * IMPORTANT:
- * Live Workout is FREE for everyone.
- * Only real-time/dynamic workout-program adjustments are Elite.
+ * free
+ * progress
+ * performance
+ * elite
  */
 
 export const PLAN_HIERARCHY = [
@@ -19,28 +15,18 @@ export const PLAN_HIERARCHY = [
   'elite',
 ];
 
-/**
- * Returns true if the user's plan is at or above the required plan.
- */
 export function hasPlan(userPlan, requiredPlan) {
-  const userIdx = PLAN_HIERARCHY.indexOf(userPlan || 'free');
-  const reqIdx = PLAN_HIERARCHY.indexOf(requiredPlan);
+  const userIdx = PLAN_HIERARCHY.indexOf(
+    userPlan || 'free'
+  );
 
-  // Unknown required features fail closed.
-  if (reqIdx === -1) return false;
+  const reqIdx = PLAN_HIERARCHY.indexOf(
+    requiredPlan
+  );
 
   return userIdx >= reqIdx;
 }
 
-/**
- * Feature gates.
- *
- * live_workout:
- *   FREE — the complete live workout tracker.
- *
- * live_workout_adjustments:
- *   ELITE — real-time/dynamic program changes based on performance.
- */
 export const FEATURE_PLANS = {
   snap_food: 'progress',
   scan_barcode: 'progress',
@@ -49,23 +35,16 @@ export const FEATURE_PLANS = {
   ai_body_analysis: 'performance',
 
   progress_graph: 'elite',
-
-  // FREE FOR EVERYONE
-  live_workout: 'free',
-
-  // ELITE ONLY
-  live_workout_adjustments: 'elite',
-
+  live_workout: 'elite',
   kael_elite_tips: 'elite',
 };
 
-/**
- * Check whether a user can access a feature.
- */
 export function canAccess(userPlan, feature) {
-  if (!feature || !Object.prototype.hasOwnProperty.call(FEATURE_PLANS, feature)) {
+  const requiredPlan = FEATURE_PLANS[feature];
+
+  if (!requiredPlan) {
     return false;
   }
 
-  return hasPlan(userPlan || 'free', FEATURE_PLANS[feature]);
+  return hasPlan(userPlan, requiredPlan);
 }
