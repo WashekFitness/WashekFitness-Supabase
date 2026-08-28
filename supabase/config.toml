@@ -1,7 +1,8 @@
-project_id = ""
-
-[functions.ai-generate]
+[functions.create-checkout-session]
 verify_jwt = true
 
-[functions.send-contact-email]
+[functions.cancel-subscription]
 verify_jwt = true
+
+[functions.stripe-webhooks]
+verify_jwt = false
