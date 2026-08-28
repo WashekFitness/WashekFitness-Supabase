@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabaseApi } from '@/lib/supabaseApi';
+import { createStripeCheckout } from '@/lib/stripeCheckout';
 import { toast } from 'sonner';
 
 const plans = [
@@ -82,13 +83,19 @@ export default function PricingSection({
   user,
   onSubscriptionChanged,
 }) {
-  const [checkoutPlan, setCheckoutPlan] = useState(null);
-  const [canceling, setCanceling] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] =
+    useState(null);
+
+  const [canceling, setCanceling] =
+    useState(false);
 
   const currentPlan =
-    user?.subscription_plan || 'free';
+    user?.subscription_plan ||
+    'free';
 
-  const handleUpgrade = async (planKey) => {
+  const handleUpgrade = async (
+    planKey
+  ) => {
     if (!user?.id) {
       toast.error(
         'Please sign in before choosing a subscription.'
@@ -104,23 +111,16 @@ export default function PricingSection({
 
     try {
       const result =
-        await supabaseApi.subscription.createCheckout(
+        await createStripeCheckout(
           planKey
         );
 
-      if (!result?.url) {
-        throw new Error(
-          'Stripe did not return a checkout URL.'
-        );
-      }
-
       /*
-       * Intentionally use the same tab.
-       *
-       * This replaces the old Stripe Payment Link
-       * target="_blank" behavior.
+       * Same-tab redirect.
        */
-      window.location.assign(result.url);
+      window.location.assign(
+        result.url
+      );
     } catch (error) {
       console.error(
         'Stripe checkout error:',
@@ -137,7 +137,10 @@ export default function PricingSection({
   };
 
   const handleCancel = async () => {
-    if (!user?.id || canceling) {
+    if (
+      !user?.id ||
+      canceling
+    ) {
       return;
     }
 
@@ -145,8 +148,7 @@ export default function PricingSection({
       window.confirm(
         `Cancel your ${getPlanLabel(
           currentPlan
-        )} subscription immediately?\n\n` +
-          'Your account will switch to the Free Plan immediately and paid-only features will be removed.'
+        )} subscription immediately?\n\nYour account will switch to the Free Plan immediately and paid-only features will be removed.`
       );
 
     if (!confirmed) {
@@ -203,9 +205,10 @@ export default function PricingSection({
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel immediately and return to the Free
-            Plan. Paid AI allowances and paid-only
-            features will be removed immediately.
+            Cancel immediately and return to
+            the Free Plan. Paid AI allowances
+            and paid-only features will be
+            removed immediately.
           </p>
 
           <Button
@@ -243,10 +246,12 @@ export default function PricingSection({
         const Icon = plan.icon;
 
         const isCurrent =
-          currentPlan === plan.planKey;
+          currentPlan ===
+          plan.planKey;
 
         const isCheckingOut =
-          checkoutPlan === plan.planKey;
+          checkoutPlan ===
+          plan.planKey;
 
         return (
           <Card
@@ -292,7 +297,9 @@ export default function PricingSection({
                   >
                     <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
 
-                    <span>{feature}</span>
+                    <span>
+                      {feature}
+                    </span>
                   </li>
                 )
               )}
@@ -340,13 +347,16 @@ export default function PricingSection({
       })}
 
       <p className="text-[10px] text-muted-foreground text-center">
-        Paid plans are billed monthly. Cancellation is immediate.
+        Paid plans are billed monthly.
+        Cancellation is immediate.
       </p>
     </div>
   );
 }
 
-function getPlanLabel(plan) {
+function getPlanLabel(
+  plan
+) {
   const labels = {
     free: 'Free',
     progress: 'Progress',
@@ -354,5 +364,8 @@ function getPlanLabel(plan) {
     elite: 'Elite',
   };
 
-  return labels[plan] || 'paid';
+  return (
+    labels[plan] ||
+    'paid'
+  );
 }
