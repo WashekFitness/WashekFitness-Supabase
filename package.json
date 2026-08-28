@@ -10,7 +10,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "supabase:deploy": "supabase functions deploy ai-generate && supabase functions deploy send-contact-email && supabase functions deploy cancel-subscription && supabase functions deploy stripe-webhook",
+    "supabase:deploy": "supabase functions deploy ai-generate && supabase functions deploy send-contact-email && supabase functions deploy create-checkout-session && supabase functions deploy cancel-subscription && supabase functions deploy stripe-webhooks",
     "supabase:push": "supabase db push"
   },
   "dependencies": {
