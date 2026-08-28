@@ -1,28 +1,57 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+import {
+  createClient,
+} from 'jsr:@supabase/supabase-js@2';
 
 const STRIPE_SECRET_KEY =
-  Deno.env.get('STRIPE_SECRET_KEY') || '';
+  Deno.env.get(
+    'STRIPE_SECRET_KEY'
+  ) || '';
 
 const STRIPE_WEBHOOK_SECRET =
-  Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
+  Deno.env.get(
+    'STRIPE_WEBHOOK_SECRET'
+  ) || '';
 
 const SUPABASE_URL =
-  Deno.env.get('SUPABASE_URL') || '';
+  Deno.env.get(
+    'SUPABASE_URL'
+  ) || '';
 
 const SUPABASE_SERVICE_ROLE_KEY =
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  Deno.env.get(
+    'SUPABASE_SERVICE_ROLE_KEY'
+  ) || '';
 
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
+const supabaseAdmin =
+  createClient(
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+
+/*
+ * ============================================================
+ * WASHEK FITNESS STRIPE PRODUCTS
+ * ============================================================
+ */
+
+const PRODUCT_IDS = {
+  progress:
+    'prod_USTp1fOzf3aHsl',
+
+  performance:
+    'prod_USTpsXJPgs7ccs',
+
+  elite:
+    'prod_USTqn0bZsTVUkH',
+};
 
 const PLAN_ORDER = [
   'free',
@@ -32,23 +61,30 @@ const PLAN_ORDER = [
 ];
 
 /*
- * YOUR STRIPE PRODUCT IDS
+ * ============================================================
+ * HELPERS
+ * ============================================================
  */
-const PRODUCT_IDS = {
-  progress:
-    Deno.env.get('STRIPE_PROGRESS_PRODUCT_ID') ||
-    'prod_USTp1fOzf3aHsl',
 
-  performance:
-    Deno.env.get('STRIPE_PERFORMANCE_PRODUCT_ID') ||
-    'prod_USTpsXJPgs7ccs',
+function json(
+  body: unknown,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: {
+        'Content-Type':
+          'application/json',
+      },
+    }
+  );
+}
 
-  elite:
-    Deno.env.get('STRIPE_ELITE_PRODUCT_ID') ||
-    'prod_USTqn0bZsTVUkH',
-};
-
-function paidStatus(status: string) {
+function isPaidStatus(
+  status: string
+) {
   return (
     status === 'active' ||
     status === 'trialing'
@@ -56,31 +92,29 @@ function paidStatus(status: string) {
 }
 
 /*
- * Determine the Washek plan from the Stripe PRODUCT.
- *
- * This is the important fix.
+ * Convert a Stripe Product ID to the
+ * corresponding Washek plan.
  */
 function planFromProduct(
   productId: string | null
 ) {
-  if (!productId) {
-    return null;
-  }
-
   if (
-    productId === PRODUCT_IDS.progress
+    productId ===
+    PRODUCT_IDS.progress
   ) {
     return 'progress';
   }
 
   if (
-    productId === PRODUCT_IDS.performance
+    productId ===
+    PRODUCT_IDS.performance
   ) {
     return 'performance';
   }
 
   if (
-    productId === PRODUCT_IDS.elite
+    productId ===
+    PRODUCT_IDS.elite
   ) {
     return 'elite';
   }
@@ -89,8 +123,8 @@ function planFromProduct(
 }
 
 /*
- * Keep compatibility with any Price IDs you
- * may already have configured.
+ * Compatibility with any Price IDs you may
+ * already have configured.
  */
 function planFromPrice(
   priceId: string | null
@@ -138,6 +172,12 @@ function planFromPrice(
   return null;
 }
 
+/*
+ * ============================================================
+ * STRIPE API
+ * ============================================================
+ */
+
 async function stripe(
   path: string,
   options: RequestInit = {}
@@ -161,7 +201,8 @@ async function stripe(
           'Content-Type':
             'application/x-www-form-urlencoded',
 
-          ...(options.headers || {}),
+          ...(options.headers ||
+            {}),
         },
       }
     );
@@ -180,28 +221,33 @@ async function stripe(
 }
 
 /*
- * Verify Stripe's webhook signature.
+ * ============================================================
+ * STRIPE WEBHOOK SIGNATURE VERIFICATION
+ * ============================================================
  */
-async function verifySignature(
+
+async function verifyStripeSignature(
   payload: string,
   signatureHeader: string
 ) {
-  if (!STRIPE_WEBHOOK_SECRET) {
+  if (
+    !STRIPE_WEBHOOK_SECRET
+  ) {
     throw new Error(
       'STRIPE_WEBHOOK_SECRET is not configured.'
     );
   }
 
-  const pieces =
+  const parts =
     signatureHeader.split(',');
 
   const timestampPart =
-    pieces.find((part) =>
+    parts.find((part) =>
       part.startsWith('t=')
     );
 
-  const signatures =
-    pieces
+  const signatureParts =
+    parts
       .filter((part) =>
         part.startsWith('v1=')
       )
@@ -211,10 +257,10 @@ async function verifySignature(
 
   if (
     !timestampPart ||
-    signatures.length === 0
+    signatureParts.length === 0
   ) {
     throw new Error(
-      'Invalid Stripe signature.'
+      'Invalid Stripe webhook signature.'
     );
   }
 
@@ -224,7 +270,9 @@ async function verifySignature(
     );
 
   if (
-    !Number.isFinite(timestamp)
+    !Number.isFinite(
+      timestamp
+    )
   ) {
     throw new Error(
       'Invalid Stripe webhook timestamp.'
@@ -232,7 +280,7 @@ async function verifySignature(
   }
 
   /*
-   * Five-minute tolerance.
+   * Reject signatures older than five minutes.
    */
   const age =
     Math.abs(
@@ -252,21 +300,30 @@ async function verifySignature(
   const key =
     await crypto.subtle.importKey(
       'raw',
+
       new TextEncoder().encode(
         STRIPE_WEBHOOK_SECRET
       ),
+
       {
-        name: 'HMAC',
-        hash: 'SHA-256',
+        name:
+          'HMAC',
+
+        hash:
+          'SHA-256',
       },
+
       false,
+
       ['sign']
     );
 
   const digest =
     await crypto.subtle.sign(
       'HMAC',
+
       key,
+
       new TextEncoder().encode(
         signedPayload
       )
@@ -274,17 +331,23 @@ async function verifySignature(
 
   const expected =
     Array.from(
-      new Uint8Array(digest)
+      new Uint8Array(
+        digest
+      )
     )
       .map((byte) =>
         byte
           .toString(16)
-          .padStart(2, '0')
+          .padStart(
+            2,
+            '0'
+          )
       )
       .join('');
 
   for (
-    const candidate of signatures
+    const candidate of
+    signatureParts
   ) {
     if (
       candidate.length !==
@@ -301,8 +364,12 @@ async function verifySignature(
       i += 1
     ) {
       difference |=
-        expected.charCodeAt(i) ^
-        candidate.charCodeAt(i);
+        expected.charCodeAt(
+          i
+        ) ^
+        candidate.charCodeAt(
+          i
+        );
     }
 
     if (
@@ -317,58 +384,322 @@ async function verifySignature(
   );
 }
 
-async function findProfile(
-  userId: string | null,
-  customerId: string | null
-) {
-  /*
-   * First: exact Washek user ID.
-   */
-  if (userId) {
-    const {
-      data,
-    } =
-      await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq(
-          'id',
-          userId
-        )
-        .maybeSingle();
+/*
+ * ============================================================
+ * FIND WASHEK USER
+ * ============================================================
+ */
 
-    if (data) {
-      return data;
-    }
+/*
+ * Find a Washek profile by Supabase auth user ID.
+ */
+async function findProfileByUserId(
+  userId: string
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq(
+        'id',
+        userId
+      )
+      .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/*
+ * Find a Washek profile by Stripe customer ID.
+ */
+async function findProfileByCustomerId(
+  customerId: string
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq(
+        'stripe_customer_id',
+        customerId
+      )
+      .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/*
+ * Find a Washek profile by email.
+ *
+ * Payment Links already know the customer's email,
+ * so this is the critical fallback for existing
+ * Stripe subscriptions.
+ */
+async function findProfileByEmail(
+  email: string
+) {
+  const normalized =
+    email
+      .trim()
+      .toLowerCase();
+
+  if (!normalized) {
+    return null;
   }
 
   /*
-   * Second: saved Stripe customer ID.
+   * First try the profiles table.
    */
-  if (customerId) {
-    const {
-      data,
-    } =
-      await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq(
-          'stripe_customer_id',
-          customerId
-        )
-        .maybeSingle();
+  const {
+    data: directProfile,
+    error: directError,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .ilike(
+        'email',
+        normalized
+      )
+      .limit(1)
+      .maybeSingle();
 
-    if (data) {
-      return data;
+  if (directError) {
+    throw directError;
+  }
+
+  if (directProfile) {
+    return directProfile;
+  }
+
+  /*
+   * Fallback to Supabase Auth.
+   *
+   * This handles cases where profile email
+   * was not populated correctly.
+   */
+  const {
+    data: usersData,
+    error: usersError,
+  } =
+    await supabaseAdmin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+
+  if (usersError) {
+    throw usersError;
+  }
+
+  const authUser =
+    usersData.users.find(
+      (user) =>
+        user.email
+          ?.trim()
+          .toLowerCase() ===
+        normalized
+    );
+
+  if (!authUser) {
+    return null;
+  }
+
+  return findProfileByUserId(
+    authUser.id
+  );
+}
+
+/*
+ * Given Stripe information, find the
+ * correct Washek profile.
+ */
+async function findWashekProfile({
+  userId,
+  customerId,
+  email,
+}: {
+  userId?: string | null;
+  customerId?: string | null;
+  email?: string | null;
+}) {
+  if (
+    userId
+  ) {
+    const profile =
+      await findProfileByUserId(
+        userId
+      );
+
+    if (profile) {
+      return profile;
+    }
+  }
+
+  if (
+    customerId
+  ) {
+    const profile =
+      await findProfileByCustomerId(
+        customerId
+      );
+
+    if (profile) {
+      return profile;
+    }
+  }
+
+  if (
+    email
+  ) {
+    const profile =
+      await findProfileByEmail(
+        email
+      );
+
+    if (profile) {
+      return profile;
     }
   }
 
   return null;
 }
 
+/*
+ * ============================================================
+ * STRIPE CUSTOMER DATA
+ * ============================================================
+ */
+
+async function getCustomer(
+  customerId: string | null
+) {
+  if (!customerId) {
+    return null;
+  }
+
+  return stripe(
+    `customers/${encodeURIComponent(
+      customerId
+    )}`
+  );
+}
+
+function getCustomerEmail(
+  customer: any
+) {
+  return (
+    customer?.email
+      ?.trim()
+      .toLowerCase() ||
+    null
+  );
+}
+
+/*
+ * ============================================================
+ * SUBSCRIPTION PLAN DETECTION
+ * ============================================================
+ */
+
+function getPlanFromSubscription(
+  subscription: any,
+  fallbackPlan: string | null
+) {
+  const item =
+    subscription
+      ?.items
+      ?.data?.[0];
+
+  const price =
+    item?.price;
+
+  const priceId =
+    price?.id ||
+    null;
+
+  const productId =
+    typeof price?.product ===
+    'string'
+      ? price.product
+      : null;
+
+  /*
+   * PRODUCT ID FIRST.
+   *
+   * This is what your current app gave me,
+   * and it is the most reliable plan mapping.
+   */
+  const productPlan =
+    planFromProduct(
+      productId
+    );
+
+  if (
+    productPlan
+  ) {
+    return productPlan;
+  }
+
+  /*
+   * PRICE ID SECOND.
+   */
+  const pricePlan =
+    planFromPrice(
+      priceId
+    );
+
+  if (
+    pricePlan
+  ) {
+    return pricePlan;
+  }
+
+  /*
+   * METADATA THIRD.
+   */
+  const metadataPlan =
+    subscription
+      ?.metadata
+      ?.plan;
+
+  if (
+    metadataPlan &&
+    PLAN_ORDER.includes(
+      metadataPlan
+    )
+  ) {
+    return metadataPlan;
+  }
+
+  /*
+   * Existing profile plan last.
+   */
+  return fallbackPlan;
+}
+
+/*
+ * ============================================================
+ * PROFILE UPDATE
+ * ============================================================
+ */
+
 async function updateProfile(
-  userId: string,
-  patch: Record<string, unknown>
+  profileId: string,
+  values: Record<string, unknown>
 ) {
   const {
     error,
@@ -376,7 +707,7 @@ async function updateProfile(
     await supabaseAdmin
       .from('profiles')
       .update({
-        ...patch,
+        ...values,
 
         subscription_updated_at:
           new Date().toISOString(),
@@ -386,7 +717,7 @@ async function updateProfile(
       })
       .eq(
         'id',
-        userId
+        profileId
       );
 
   if (error) {
@@ -395,13 +726,282 @@ async function updateProfile(
 }
 
 /*
- * Read a Stripe subscription and determine
- * its Washek plan from the underlying product.
+ * ============================================================
+ * CHECKOUT COMPLETED
+ * ============================================================
  */
-function getSubscriptionPlan(
-  subscription: any,
-  fallbackPlan: string | null = null
+
+async function handleCheckoutCompleted(
+  session: any
 ) {
+  const sessionCustomerId =
+    typeof session?.customer ===
+    'string'
+      ? session.customer
+      : null;
+
+  /*
+   * The Payment Link may have a plan as its
+   * client_reference_id. Do not assume that
+   * value is a Washek user ID.
+   */
+  const possibleUserId =
+    session?.metadata?.user_id ||
+    null;
+
+  /*
+   * Retrieve the Stripe Customer so we can
+   * reliably obtain the customer's email.
+   */
+  const customer =
+    await getCustomer(
+      sessionCustomerId
+    );
+
+  const customerEmail =
+    getCustomerEmail(
+      customer
+    ) ||
+    session?.customer_details?.email
+      ?.trim()
+      .toLowerCase() ||
+    session?.customer_email
+      ?.trim()
+      .toLowerCase() ||
+    null;
+
+  const profile =
+    await findWashekProfile({
+      userId:
+        possibleUserId,
+
+      customerId:
+        sessionCustomerId,
+
+      email:
+        customerEmail,
+    });
+
+  if (!profile) {
+    console.error(
+      'Stripe checkout completed but no Washek profile could be matched.',
+      {
+        sessionId:
+          session?.id,
+
+        customerId:
+          sessionCustomerId,
+
+        email:
+          customerEmail,
+      }
+    );
+
+    return;
+  }
+
+  const subscriptionId =
+    typeof session?.subscription ===
+    'string'
+      ? session.subscription
+      : null;
+
+  if (!subscriptionId) {
+    console.error(
+      'Stripe checkout completed without a subscription ID.',
+      {
+        sessionId:
+          session?.id,
+
+        profileId:
+          profile.id,
+      }
+    );
+
+    return;
+  }
+
+  const subscription =
+    await stripe(
+      `subscriptions/${encodeURIComponent(
+        subscriptionId
+      )}`
+    );
+
+  const plan =
+    getPlanFromSubscription(
+      subscription,
+      session?.metadata
+        ?.plan ||
+        null
+    );
+
+  if (
+    !plan ||
+    !PLAN_ORDER.includes(
+      plan
+    ) ||
+    plan ===
+      'free'
+  ) {
+    console.error(
+      'Could not determine Washek subscription plan.',
+      {
+        sessionId:
+          session?.id,
+
+        subscriptionId,
+
+        profileId:
+          profile.id,
+
+        priceId:
+          subscription
+            ?.items
+            ?.data?.[0]
+            ?.price?.id,
+
+        productId:
+          subscription
+            ?.items
+            ?.data?.[0]
+            ?.price?.product,
+      }
+    );
+
+    return;
+  }
+
+  const priceId =
+    subscription
+      ?.items
+      ?.data?.[0]
+      ?.price?.id ||
+    null;
+
+  const productId =
+    typeof subscription
+      ?.items
+      ?.data?.[0]
+      ?.price?.product ===
+    'string'
+      ? subscription
+          .items
+          .data[0]
+          .price
+          .product
+      : null;
+
+  await updateProfile(
+    profile.id,
+    {
+      subscription_plan:
+        plan,
+
+      subscription_status:
+        subscription.status ||
+        'active',
+
+      stripe_customer_id:
+        sessionCustomerId,
+
+      stripe_subscription_id:
+        subscriptionId,
+
+      stripe_price_id:
+        priceId,
+
+      subscription_cancelled_at:
+        null,
+    }
+  );
+
+  console.log(
+    'Washek subscription activated.',
+    {
+      profileId:
+        profile.id,
+
+      plan,
+
+      productId,
+
+      priceId,
+
+      subscriptionId,
+    }
+  );
+}
+
+/*
+ * ============================================================
+ * SUBSCRIPTION CREATED / UPDATED / DELETED
+ * ============================================================
+ */
+
+async function handleSubscription(
+  subscription: any
+) {
+  const metadata =
+    subscription
+      ?.metadata ||
+    {};
+
+  const userId =
+    metadata.user_id ||
+    null;
+
+  const customerId =
+    typeof subscription?.customer ===
+    'string'
+      ? subscription.customer
+      : null;
+
+  /*
+   * Retrieve customer email for subscriptions
+   * that don't have usable metadata.
+   */
+  const customer =
+    await getCustomer(
+      customerId
+    );
+
+  const customerEmail =
+    getCustomerEmail(
+      customer
+    );
+
+  const profile =
+    await findWashekProfile({
+      userId,
+
+      customerId,
+
+      email:
+        customerEmail,
+    });
+
+  if (!profile) {
+    console.error(
+      'Could not match Stripe subscription to a Washek profile.',
+      {
+        subscriptionId:
+          subscription?.id,
+
+        customerId,
+
+        email:
+          customerEmail,
+      }
+    );
+
+    return;
+  }
+
+  const status =
+    subscription?.status ||
+    'inactive';
+
   const item =
     subscription
       ?.items
@@ -417,261 +1017,18 @@ function getSubscriptionPlan(
       ? item.price.product
       : null;
 
-  /*
-   * PRODUCT ID FIRST
-   */
-  const productPlan =
-    planFromProduct(
-      productId
-    );
-
-  if (productPlan) {
-    return productPlan;
-  }
-
-  /*
-   * PRICE ID SECOND
-   */
-  const pricePlan =
-    planFromPrice(
-      priceId
-    );
-
-  if (pricePlan) {
-    return pricePlan;
-  }
-
-  /*
-   * Stripe subscription metadata may have
-   * the Washek plan.
-   */
-  const metadataPlan =
-    subscription?.metadata?.plan;
-
-  if (
-    metadataPlan &&
-    PLAN_ORDER.includes(
-      metadataPlan
-    )
-  ) {
-    return metadataPlan;
-  }
-
-  return fallbackPlan;
-}
-
-/*
- * Handle Checkout completion.
- *
- * This is used for brand-new subscriptions.
- */
-async function handleCheckoutCompleted(
-  session: any
-) {
-  const userId =
-    session?.metadata?.user_id ||
-    session?.client_reference_id ||
-    null;
-
-  const metadataPlan =
-    session?.metadata?.plan ||
-    null;
-
-  const customerId =
-    typeof session?.customer ===
-    'string'
-      ? session.customer
-      : null;
-
-  const subscriptionId =
-    typeof session?.subscription ===
-    'string'
-      ? session.subscription
-      : null;
-
-  if (!userId) {
-    console.error(
-      'Stripe checkout has no Washek user ID.',
-      {
-        sessionId:
-          session?.id,
-      }
-    );
-
-    return;
-  }
-
-  if (!subscriptionId) {
-    console.error(
-      'Stripe checkout has no subscription ID.',
-      {
-        sessionId:
-          session?.id,
-
-        userId,
-      }
-    );
-
-    return;
-  }
-
-  const subscription =
-    await stripe(
-      `subscriptions/${encodeURIComponent(
-        subscriptionId
-      )}`
-    );
-
   const plan =
-    getSubscriptionPlan(
+    getPlanFromSubscription(
       subscription,
-      metadataPlan
-    );
-
-  if (
-    !plan ||
-    !PLAN_ORDER.includes(
-      plan
-    ) ||
-    plan === 'free'
-  ) {
-    console.error(
-      'Unable to determine Washek plan from Stripe subscription.',
-      {
-        subscriptionId,
-        userId,
-        priceId:
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.id,
-        productId:
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.product,
-        metadataPlan,
-      }
-    );
-
-    return;
-  }
-
-  const priceId =
-    subscription
-      ?.items
-      ?.data?.[0]
-      ?.price?.id ||
-    null;
-
-  await updateProfile(
-    userId,
-    {
-      subscription_plan:
-        plan,
-
-      subscription_status:
-        subscription.status ||
-        'active',
-
-      stripe_customer_id:
-        customerId,
-
-      stripe_subscription_id:
-        subscriptionId,
-
-      stripe_price_id:
-        priceId,
-
-      subscription_cancelled_at:
-        null,
-    }
-  );
-
-  console.log(
-    `Washek subscription activated: ${userId} → ${plan}`
-  );
-}
-
-/*
- * Handle subscription created/updated/deleted.
- */
-async function handleSubscription(
-  subscription: any
-) {
-  const metadata =
-    subscription?.metadata ||
-    {};
-
-  const userId =
-    metadata.user_id ||
-    null;
-
-  const customerId =
-    typeof subscription?.customer ===
-    'string'
-      ? subscription.customer
-      : null;
-
-  const profile =
-    await findProfile(
-      userId,
-      customerId
-    );
-
-  if (!profile) {
-    console.error(
-      'No Washek profile found for Stripe subscription.',
-      {
-        subscriptionId:
-          subscription?.id,
-
-        userId,
-
-        customerId,
-      }
-    );
-
-    return;
-  }
-
-  const status =
-    subscription?.status ||
-    'inactive';
-
-  const priceId =
-    subscription
-      ?.items
-      ?.data?.[0]
-      ?.price?.id ||
-    null;
-
-  const productId =
-    typeof subscription
-      ?.items
-      ?.data?.[0]
-      ?.price
-      ?.product ===
-    'string'
-      ? subscription
-          .items
-          .data[0]
-          .price
-          .product
-      : null;
-
-  const plan =
-    getSubscriptionPlan(
-      subscription,
-      profile.subscription_plan ||
+      metadata.plan ||
+        profile.subscription_plan ||
         null
     );
 
   /*
-   * Canceled subscription:
-   * immediately Free.
+   * CANCELED
+   *
+   * Immediately return to Free.
    */
   if (
     status ===
@@ -703,15 +1060,21 @@ async function handleSubscription(
     );
 
     console.log(
-      `Washek subscription canceled: ${profile.id}`
+      'Washek subscription canceled.',
+      {
+        profileId:
+          profile.id,
+
+        subscriptionId:
+          subscription?.id,
+      }
     );
 
     return;
   }
 
   /*
-   * Active/trialing subscription:
-   * paid plan.
+   * ACTIVE / TRIALING
    */
   if (
     paidStatus(status) &&
@@ -719,7 +1082,8 @@ async function handleSubscription(
     PLAN_ORDER.includes(
       plan
     ) &&
-    plan !== 'free'
+    plan !==
+      'free'
   ) {
     await updateProfile(
       profile.id,
@@ -745,10 +1109,18 @@ async function handleSubscription(
     );
 
     console.log(
-      `Washek subscription synchronized: ${profile.id} → ${plan}`,
+      'Washek subscription synchronized.',
       {
+        profileId:
+          profile.id,
+
+        plan,
+
         productId,
+
         priceId,
+
+        status,
       }
     );
 
@@ -756,8 +1128,8 @@ async function handleSubscription(
   }
 
   /*
-   * Stripe no longer represents an active
-   * paid entitlement.
+   * Any subscription state that is not
+   * an active paid entitlement becomes Free.
    */
   await updateProfile(
     profile.id,
@@ -784,16 +1156,39 @@ async function handleSubscription(
 }
 
 /*
- * invoice.paid
+ * ============================================================
+ * INVOICE PAID
+ * ============================================================
  */
+
 async function handleInvoicePaid(
   invoice: any
 ) {
-  const subscriptionId =
+  /*
+   * Depending on Stripe API/event version,
+   * subscription may be directly present or
+   * inside parent.subscription_details.
+   */
+  const directSubscription =
     typeof invoice?.subscription ===
     'string'
       ? invoice.subscription
       : null;
+
+  const nestedSubscription =
+    typeof invoice?.parent
+      ?.subscription_details
+      ?.subscription ===
+    'string'
+      ? invoice.parent
+          .subscription_details
+          .subscription
+      : null;
+
+  const subscriptionId =
+    directSubscription ||
+    nestedSubscription ||
+    null;
 
   if (!subscriptionId) {
     return;
@@ -812,19 +1207,34 @@ async function handleInvoicePaid(
 }
 
 /*
- * invoice.payment_failed
- *
- * We record the status but don't instantly
- * revoke access solely because of one failed invoice.
+ * ============================================================
+ * INVOICE PAYMENT FAILED
+ * ============================================================
  */
+
 async function handleInvoicePaymentFailed(
   invoice: any
 ) {
-  const subscriptionId =
+  const directSubscription =
     typeof invoice?.subscription ===
     'string'
       ? invoice.subscription
       : null;
+
+  const nestedSubscription =
+    typeof invoice?.parent
+      ?.subscription_details
+      ?.subscription ===
+    'string'
+      ? invoice.parent
+          .subscription_details
+          .subscription
+      : null;
+
+  const subscriptionId =
+    directSubscription ||
+    nestedSubscription ||
+    null;
 
   if (!subscriptionId) {
     return;
@@ -843,28 +1253,61 @@ async function handleInvoicePaymentFailed(
       ? subscription.customer
       : null;
 
-  const profile =
-    await findProfile(
-      subscription
-        ?.metadata
-        ?.user_id ||
-        null,
+  const customer =
+    await getCustomer(
       customerId
     );
+
+  const email =
+    getCustomerEmail(
+      customer
+    );
+
+  const profile =
+    await findWashekProfile({
+      userId:
+        subscription
+          ?.metadata
+          ?.user_id ||
+        null,
+
+      customerId,
+
+      email,
+    });
 
   if (!profile) {
     return;
   }
 
+  /*
+   * Record the current Stripe status.
+   *
+   * Do not revoke access just because one
+   * invoice failed if Stripe still considers
+   * the subscription active.
+   */
   await updateProfile(
     profile.id,
     {
       subscription_status:
-        subscription?.status ||
+        subscription.status ||
         'past_due',
+
+      stripe_customer_id:
+        customerId,
+
+      stripe_subscription_id:
+        subscription.id,
     }
   );
 }
+
+/*
+ * ============================================================
+ * EDGE FUNCTION
+ * ============================================================
+ */
 
 Deno.serve(
   async (req) => {
@@ -898,7 +1341,7 @@ Deno.serve(
         );
       }
 
-      await verifySignature(
+      await verifyStripeSignature(
         payload,
         signature
       );
@@ -909,7 +1352,7 @@ Deno.serve(
         );
 
       console.log(
-        `Received Stripe event: ${event.type}`
+        `Stripe webhook received: ${event.type}`
       );
 
       switch (
@@ -943,7 +1386,9 @@ Deno.serve(
           break;
 
         default:
-          break;
+          console.log(
+            `Ignoring Stripe event: ${event.type}`
+          );
       }
 
       return new Response(
