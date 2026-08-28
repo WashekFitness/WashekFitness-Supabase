@@ -1,12 +1,11 @@
-import { useState } from 'react';
-
+import { useEffect, useState } from 'react';
 import {
   Check,
   Zap,
   Crown,
   Flame,
-  Loader2,
   XCircle,
+  Loader2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -14,9 +13,25 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 import { supabaseApi } from '@/lib/supabaseApi';
-import { createStripeCheckout } from '@/lib/stripeCheckout';
-
 import { toast } from 'sonner';
+
+/*
+ * These are the Stripe Payment Links that were already
+ * working before the recent checkout changes.
+ *
+ * We are deliberately going back to these for upgrades.
+ * No new checkout/session logic is used here.
+ */
+const PAYMENT_LINKS = {
+  progress:
+    'https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600',
+
+  performance:
+    'https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601',
+
+  elite:
+    'https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602',
+};
 
 const plans = [
   {
@@ -89,158 +104,67 @@ const plans = [
   },
 ];
 
-const PLAN_ORDER = {
-  free: 0,
-  progress: 1,
-  performance: 2,
-  elite: 3,
+const PLAN_LABELS = {
+  free: 'Free',
+  progress: 'Progress',
+  performance: 'Performance',
+  elite: 'Elite',
 };
 
-function getPlanLabel(plan) {
-  const labels = {
-    free: 'Free',
-    progress: 'Progress',
-    performance: 'Performance',
-    elite: 'Elite',
-  };
+export default function PricingSection() {
+  const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [canceling, setCanceling] = useState(false);
 
-  return labels[plan] || 'Free';
-}
+  /*
+   * Load the real current user here.
+   *
+   * This means PricingSection works even if Profile.jsx
+   * doesn't pass user props.
+   */
+  useEffect(() => {
+    let mounted = true;
 
-function getActionText(currentPlan, targetPlan) {
-  const currentLevel =
-    PLAN_ORDER[currentPlan] ?? 0;
+    const loadUser = async () => {
+      try {
+        const currentUser =
+          await supabaseApi.auth.me();
 
-  const targetLevel =
-    PLAN_ORDER[targetPlan] ?? 0;
+        if (mounted) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error(
+          'Unable to load subscription user:',
+          error
+        );
+      } finally {
+        if (mounted) {
+          setLoadingUser(false);
+        }
+      }
+    };
 
-  if (currentLevel === 0) {
-    return `Get ${getPlanLabel(targetPlan)}`;
-  }
+    loadUser();
 
-  if (targetLevel > currentLevel) {
-    return `Upgrade to ${getPlanLabel(targetPlan)}`;
-  }
-
-  return `Switch to ${getPlanLabel(targetPlan)}`;
-}
-
-export default function PricingSection({
-  user,
-  onSubscriptionChanged,
-}) {
-  const [checkoutPlan, setCheckoutPlan] =
-    useState(null);
-
-  const [canceling, setCanceling] =
-    useState(false);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const currentPlan =
     user?.subscription_plan ||
     'free';
 
-  /*
-   * Handles both:
-   *
-   * 1. Free -> paid
-   *    Opens Stripe Checkout.
-   *
-   * 2. Paid -> paid
-   *    Changes the existing Stripe subscription.
-   */
-  const handlePlanChange = async (
-    planKey
-  ) => {
-    if (!user?.id) {
-      toast.error(
-        'Please sign in before choosing a subscription.'
-      );
+  const isPaid =
+    [
+      'progress',
+      'performance',
+      'elite',
+    ].includes(
+      currentPlan
+    );
 
-      return;
-    }
-
-    if (planKey === currentPlan) {
-      return;
-    }
-
-    if (checkoutPlan) {
-      return;
-    }
-
-    setCheckoutPlan(planKey);
-
-    try {
-      const result =
-        await createStripeCheckout(
-          planKey
-        );
-
-      /*
-       * FREE USER:
-       *
-       * Send them to Stripe Checkout.
-       */
-      if (
-        result.action === 'checkout' &&
-        result.url
-      ) {
-        window.location.assign(
-          result.url
-        );
-
-        return;
-      }
-
-      /*
-       * EXISTING PAID USER:
-       *
-       * Subscription was changed directly
-       * through Stripe.
-       */
-      if (
-        result.action === 'changed'
-      ) {
-        const refreshedUser =
-          await supabaseApi.auth.me();
-
-        onSubscriptionChanged?.(
-          refreshedUser
-        );
-
-        toast.success(
-          `Your subscription has been changed to the ${getPlanLabel(
-            planKey
-          )} Plan.`
-        );
-
-        return;
-      }
-
-      throw new Error(
-        'The subscription service did not complete the requested change.'
-      );
-    } catch (error) {
-      console.error(
-        'Subscription change error:',
-        error
-      );
-
-      toast.error(
-        error?.message ||
-          'Unable to change your subscription. Please try again.'
-      );
-    } finally {
-      setCheckoutPlan(null);
-    }
-  };
-
-  /*
-   * Immediately cancel the Stripe subscription.
-   *
-   * The backend cancels it in Stripe and
-   * immediately removes the paid entitlement
-   * from the Supabase profile.
-   */
   const handleCancel = async () => {
     if (
       !user?.id ||
@@ -251,9 +175,7 @@ export default function PricingSection({
 
     const confirmed =
       window.confirm(
-        `Cancel your ${getPlanLabel(
-          currentPlan
-        )} subscription immediately?\n\nYour account will immediately return to the Free Plan and paid-only features will be removed.`
+        `Cancel your ${PLAN_LABELS[currentPlan] || 'paid'} subscription immediately?\n\nYou will be moved to the Free Plan immediately and paid-only features will be removed.`
       );
 
     if (!confirmed) {
@@ -267,23 +189,39 @@ export default function PricingSection({
         await supabaseApi.subscription.cancel();
 
       /*
-       * Refresh the authoritative profile
-       * from Supabase after cancellation.
+       * Update the local component immediately.
        */
-      const refreshedUser =
-        await supabaseApi.auth.me();
+      const updatedUser = {
+        ...(result?.user || user),
 
-      onSubscriptionChanged?.(
-        refreshedUser ||
-          result?.user
-      );
+        subscription_plan:
+          'free',
+
+        subscription_status:
+          'canceled',
+
+        stripe_subscription_id:
+          null,
+      };
+
+      setUser(updatedUser);
 
       toast.success(
         'Your subscription has been cancelled. You are now on the Free Plan.'
       );
+
+      /*
+       * Give the rest of the application the new state.
+       * A full reload is intentional here because other parts
+       * of Washek may be using the user's subscription state
+       * to gate paid features.
+       */
+      setTimeout(() => {
+        window.location.reload();
+      }, 700);
     } catch (error) {
       console.error(
-        'Subscription cancellation error:',
+        'Unable to cancel subscription:',
         error
       );
 
@@ -298,12 +236,14 @@ export default function PricingSection({
 
   return (
     <div className="space-y-4">
+
       {/* =====================================================
-          CURRENT SUBSCRIPTION / CANCEL
+          CURRENT PAID SUBSCRIPTION
           ===================================================== */}
 
-      {currentPlan !== 'free' && (
-        <Card className="p-4 border-destructive/20 bg-destructive/5">
+      {isPaid && (
+        <Card className="p-4 border-destructive/25 bg-destructive/5">
+
           <div className="flex items-center gap-2 mb-2">
             <XCircle className="w-4 h-4 text-destructive" />
 
@@ -313,19 +253,24 @@ export default function PricingSection({
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel your subscription immediately.
-            Your account will return to the Free
-            Plan right away and paid-only features
-            will be removed.
+            Cancel your{' '}
+            <span className="font-semibold text-foreground">
+              {PLAN_LABELS[currentPlan]}
+            </span>{' '}
+            subscription immediately.
+            Your account will return to the
+            Free Plan and paid-only features
+            will be removed right away.
           </p>
 
           <Button
+            type="button"
             variant="outline"
-            className="w-full text-destructive border-destructive/30 hover:text-destructive"
+            className="w-full text-destructive border-destructive/30 hover:text-destructive hover:bg-destructive/5"
             onClick={handleCancel}
             disabled={
               canceling ||
-              checkoutPlan !== null
+              loadingUser
             }
           >
             {canceling ? (
@@ -338,27 +283,30 @@ export default function PricingSection({
               ? 'Cancelling…'
               : 'Cancel Subscription'}
           </Button>
+
         </Card>
       )}
 
       {/* =====================================================
-          PLANS
+          PLAN OPTIONS
           ===================================================== */}
 
       <div className="flex items-center gap-2 pt-2">
+
         <Crown className="w-4 h-4 text-chart-4" />
 
         <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
-          {currentPlan === 'free'
-            ? 'Upgrade Your Plan'
-            : 'Change Your Plan'}
+          {isPaid
+            ? 'Change Your Plan'
+            : 'Upgrade Your Plan'}
         </h3>
+
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        {currentPlan === 'free'
-          ? 'Unlock more of the Washek experience.'
-          : 'Change your plan whenever you want. Changes to paid plans are applied directly to your subscription.'}
+        {isPaid
+          ? 'Choose another plan to change your subscription.'
+          : 'Unlock more of the Washek experience.'}
       </p>
 
       {plans.map((plan) => {
@@ -368,15 +316,12 @@ export default function PricingSection({
           currentPlan ===
           plan.planKey;
 
-        const isProcessing =
-          checkoutPlan ===
-          plan.planKey;
-
         return (
           <Card
             key={plan.planKey}
             className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
           >
+
             {plan.badge && (
               <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
                 {plan.badge}
@@ -384,7 +329,9 @@ export default function PricingSection({
             )}
 
             <div className="flex items-center justify-between mb-3">
+
               <div className="flex items-center gap-2">
+
                 <Icon
                   className={`w-5 h-5 ${plan.color}`}
                 />
@@ -392,9 +339,11 @@ export default function PricingSection({
                 <span className="font-heading font-bold text-base">
                   {plan.name}
                 </span>
+
               </div>
 
               <div className="flex items-baseline gap-0.5">
+
                 <span
                   className={`font-heading font-bold text-xl ${plan.color}`}
                 >
@@ -404,10 +353,13 @@ export default function PricingSection({
                 <span className="text-xs text-muted-foreground">
                   {plan.period}
                 </span>
+
               </div>
+
             </div>
 
             <ul className="space-y-1.5 mb-3">
+
               {plan.features.map(
                 (feature) => (
                   <li
@@ -422,6 +374,7 @@ export default function PricingSection({
                   </li>
                 )
               )}
+
             </ul>
 
             {plan.disclaimer && (
@@ -432,6 +385,7 @@ export default function PricingSection({
 
             {isCurrent ? (
               <Button
+                type="button"
                 className="w-full h-10 font-heading font-semibold"
                 variant="secondary"
                 disabled
@@ -440,34 +394,34 @@ export default function PricingSection({
               </Button>
             ) : (
               <Button
+                type="button"
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
-                onClick={() =>
-                  handlePlanChange(
-                    plan.planKey
-                  )
-                }
-                disabled={
-                  checkoutPlan !== null ||
-                  canceling
-                }
+                onClick={() => {
+                  /*
+                   * Restore the original working Stripe
+                   * Payment Link behavior.
+                   *
+                   * Same tab — no target="_blank".
+                   */
+                  window.location.href =
+                    PAYMENT_LINKS[
+                      plan.planKey
+                    ];
+                }}
               >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-
-                    {currentPlan === 'free'
-                      ? 'Opening Checkout…'
-                      : 'Changing Plan…'}
-                  </>
-                ) : (
-                  getActionText(
-                    currentPlan,
-                    plan.planKey
-                  )
-                )}
+                {isPaid
+                  ? plan.planKey ===
+                    'progress'
+                    ? 'Switch to Progress'
+                    : plan.planKey ===
+                      'performance'
+                      ? 'Switch to Performance'
+                      : 'Switch to Elite'
+                  : `Get ${plan.name}`}
               </Button>
             )}
+
           </Card>
         );
       })}
@@ -476,6 +430,7 @@ export default function PricingSection({
         Paid plans are billed monthly.
         Cancellation is immediate.
       </p>
+
     </div>
   );
 }
