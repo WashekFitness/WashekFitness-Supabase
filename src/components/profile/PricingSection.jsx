@@ -16,11 +16,10 @@ import { supabaseApi } from '@/lib/supabaseApi';
 import { toast } from 'sonner';
 
 /*
- * These are the Stripe Payment Links that were already
- * working before the recent checkout changes.
+ * These are the existing Stripe Payment Links.
  *
- * We are deliberately going back to these for upgrades.
- * No new checkout/session logic is used here.
+ * The upgrade flow intentionally uses these existing links
+ * because this was the payment flow that worked correctly.
  */
 const PAYMENT_LINKS = {
   progress:
@@ -117,10 +116,9 @@ export default function PricingSection() {
   const [canceling, setCanceling] = useState(false);
 
   /*
-   * Load the real current user here.
-   *
-   * This means PricingSection works even if Profile.jsx
-   * doesn't pass user props.
+   * Load the current user directly so this component
+   * knows the subscription status even if its parent
+   * does not pass the user object.
    */
   useEffect(() => {
     let mounted = true;
@@ -165,6 +163,9 @@ export default function PricingSection() {
       currentPlan
     );
 
+  /*
+   * Immediately cancel the current Stripe subscription.
+   */
   const handleCancel = async () => {
     if (
       !user?.id ||
@@ -189,9 +190,9 @@ export default function PricingSection() {
         await supabaseApi.subscription.cancel();
 
       /*
-       * Update the local component immediately.
+       * Update locally immediately.
        */
-      const updatedUser = {
+      setUser({
         ...(result?.user || user),
 
         subscription_plan:
@@ -202,19 +203,15 @@ export default function PricingSection() {
 
         stripe_subscription_id:
           null,
-      };
-
-      setUser(updatedUser);
+      });
 
       toast.success(
         'Your subscription has been cancelled. You are now on the Free Plan.'
       );
 
       /*
-       * Give the rest of the application the new state.
-       * A full reload is intentional here because other parts
-       * of Washek may be using the user's subscription state
-       * to gate paid features.
+       * Give the rest of the app the new
+       * subscription state.
        */
       setTimeout(() => {
         window.location.reload();
@@ -231,6 +228,46 @@ export default function PricingSection() {
       );
     } finally {
       setCanceling(false);
+    }
+  };
+
+  /*
+   * Open Stripe in a NEW TAB.
+   *
+   * The current Washek Fitness tab stays open,
+   * so the user can simply switch back to it
+   * after checkout.
+   */
+  const handleUpgrade = (
+    planKey
+  ) => {
+    const paymentLink =
+      PAYMENT_LINKS[planKey];
+
+    if (!paymentLink) {
+      toast.error(
+        'This subscription option is not currently available.'
+      );
+
+      return;
+    }
+
+    const newTab =
+      window.open(
+        paymentLink,
+        '_blank',
+        'noopener,noreferrer'
+      );
+
+    /*
+     * Some browsers block popups. Give the
+     * user a useful message rather than making
+     * the button appear broken.
+     */
+    if (!newTab) {
+      toast.error(
+        'Your browser blocked the Stripe checkout window. Please allow pop-ups for Washek Fitness and try again.'
+      );
     }
   };
 
@@ -267,7 +304,9 @@ export default function PricingSection() {
             type="button"
             variant="outline"
             className="w-full text-destructive border-destructive/30 hover:text-destructive hover:bg-destructive/5"
-            onClick={handleCancel}
+            onClick={
+              handleCancel
+            }
             disabled={
               canceling ||
               loadingUser
@@ -310,7 +349,8 @@ export default function PricingSection() {
       </p>
 
       {plans.map((plan) => {
-        const Icon = plan.icon;
+        const Icon =
+          plan.icon;
 
         const isCurrent =
           currentPlan ===
@@ -318,7 +358,9 @@ export default function PricingSection() {
 
         return (
           <Card
-            key={plan.planKey}
+            key={
+              plan.planKey
+            }
             className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
           >
 
@@ -363,14 +405,18 @@ export default function PricingSection() {
               {plan.features.map(
                 (feature) => (
                   <li
-                    key={feature}
+                    key={
+                      feature
+                    }
                     className="flex items-start gap-2 text-sm"
                   >
+
                     <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
 
                     <span>
                       {feature}
                     </span>
+
                   </li>
                 )
               )}
@@ -397,18 +443,15 @@ export default function PricingSection() {
                 type="button"
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
-                onClick={() => {
-                  /*
-                   * Restore the original working Stripe
-                   * Payment Link behavior.
-                   *
-                   * Same tab — no target="_blank".
-                   */
-                  window.location.href =
-                    PAYMENT_LINKS[
-                      plan.planKey
-                    ];
-                }}
+                onClick={() =>
+                  handleUpgrade(
+                    plan.planKey
+                  )
+                }
+                disabled={
+                  canceling ||
+                  loadingUser
+                }
               >
                 {isPaid
                   ? plan.planKey ===
