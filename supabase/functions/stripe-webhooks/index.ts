@@ -36,14 +36,80 @@ const PLAN_ORDER = [
   'elite',
 ];
 
-function planFromPrice(
-  priceId: string
-) {
-  const map: Record<
-    string,
-    string
-  > = {};
+/*
+ * Your Stripe Product IDs.
+ */
+const PRODUCT_IDS = {
+  progress:
+    Deno.env.get(
+      'STRIPE_PROGRESS_PRODUCT_ID'
+    ) ||
+    'prod_USTp1fOzf3aHsl',
 
+  performance:
+    Deno.env.get(
+      'STRIPE_PERFORMANCE_PRODUCT_ID'
+    ) ||
+    'prod_USTpsXJPgs7ccs',
+
+  elite:
+    Deno.env.get(
+      'STRIPE_ELITE_PRODUCT_ID'
+    ) ||
+    'prod_USTqn0bZsTVUkH',
+};
+
+function paidStatus(
+  status: string
+) {
+  return (
+    status === 'active' ||
+    status === 'trialing'
+  );
+}
+
+function planFromProduct(
+  productId: string | null
+) {
+  if (!productId) {
+    return null;
+  }
+
+  if (
+    productId ===
+    PRODUCT_IDS.progress
+  ) {
+    return 'progress';
+  }
+
+  if (
+    productId ===
+    PRODUCT_IDS.performance
+  ) {
+    return 'performance';
+  }
+
+  if (
+    productId ===
+    PRODUCT_IDS.elite
+  ) {
+    return 'elite';
+  }
+
+  return null;
+}
+
+function planFromPrice(
+  priceId: string | null
+) {
+  if (!priceId) {
+    return null;
+  }
+
+  /*
+   * Preserve compatibility with any existing
+   * Price ID environment variables.
+   */
   const progress =
     Deno.env.get(
       'STRIPE_PROGRESS_PRICE_ID'
@@ -59,36 +125,39 @@ function planFromPrice(
       'STRIPE_ELITE_PRICE_ID'
     );
 
-  if (progress) {
-    map[progress] =
-      'progress';
+  if (
+    progress &&
+    priceId === progress
+  ) {
+    return 'progress';
   }
 
-  if (performance) {
-    map[performance] =
-      'performance';
+  if (
+    performance &&
+    priceId === performance
+  ) {
+    return 'performance';
   }
 
-  if (elite) {
-    map[elite] =
-      'elite';
+  if (
+    elite &&
+    priceId === elite
+  ) {
+    return 'elite';
   }
 
-  return map[priceId] || null;
-}
-
-function paidStatus(
-  status: string
-) {
-  return (
-    status === 'active' ||
-    status === 'trialing'
-  );
+  return null;
 }
 
 async function stripe(
   path: string
 ) {
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error(
+      'STRIPE_SECRET_KEY is not configured.'
+    );
+  }
+
   const response =
     await fetch(
       `https://api.stripe.com/v1/${path}`,
@@ -114,11 +183,7 @@ async function stripe(
 }
 
 /*
- * Stripe signs the raw webhook payload.
- *
- * This implementation verifies the
- * Stripe-Signature header without requiring
- * the Stripe npm package.
+ * Verify Stripe webhook signatures.
  */
 async function verifySignature(
   payload: string,
@@ -133,8 +198,9 @@ async function verifySignature(
   }
 
   const pieces =
-    signatureHeader
-      .split(',');
+    signatureHeader.split(
+      ','
+    );
 
   const timestampPart =
     pieces.find((p) =>
@@ -152,7 +218,8 @@ async function verifySignature(
 
   if (
     !timestampPart ||
-    signatureParts.length === 0
+    signatureParts.length ===
+      0
   ) {
     throw new Error(
       'Invalid Stripe signature.'
@@ -165,7 +232,9 @@ async function verifySignature(
     );
 
   if (
-    !Number.isFinite(timestamp)
+    !Number.isFinite(
+      timestamp
+    )
   ) {
     throw new Error(
       'Invalid Stripe timestamp.'
@@ -173,7 +242,7 @@ async function verifySignature(
   }
 
   /*
-   * Reject signatures older than five minutes.
+   * Reject old webhook signatures.
    */
   const age =
     Math.abs(
@@ -203,8 +272,10 @@ async function verifySignature(
       'raw',
       keyData,
       {
-        name: 'HMAC',
-        hash: 'SHA-256',
+        name:
+          'HMAC',
+        hash:
+          'SHA-256',
       },
       false,
       ['sign']
@@ -228,7 +299,10 @@ async function verifySignature(
       .map((b) =>
         b
           .toString(16)
-          .padStart(2, '0')
+          .padStart(
+            2,
+            '0'
+          )
       )
       .join('');
 
@@ -247,15 +321,22 @@ async function verifySignature(
 
     for (
       let i = 0;
-      i < expected.length;
+      i <
+      expected.length;
       i += 1
     ) {
       difference |=
-        expected.charCodeAt(i) ^
-        candidate.charCodeAt(i);
+        expected.charCodeAt(
+          i
+        ) ^
+        candidate.charCodeAt(
+          i
+        );
     }
 
-    if (difference === 0) {
+    if (
+      difference === 0
+    ) {
       return true;
     }
   }
@@ -270,11 +351,16 @@ async function findProfile(
   customerId: string | null
 ) {
   if (userId) {
-    const { data } =
+    const {
+      data,
+    } =
       await supabaseAdmin
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq(
+          'id',
+          userId
+        )
         .maybeSingle();
 
     if (data) {
@@ -283,7 +369,9 @@ async function findProfile(
   }
 
   if (customerId) {
-    const { data } =
+    const {
+      data,
+    } =
       await supabaseAdmin
         .from('profiles')
         .select('*')
@@ -303,23 +391,85 @@ async function findProfile(
 
 async function updateProfile(
   userId: string,
-  patch: Record<string, unknown>
+  patch: Record<
+    string,
+    unknown
+  >
 ) {
-  const { error } =
+  const {
+    error,
+  } =
     await supabaseAdmin
       .from('profiles')
       .update({
         ...patch,
+
         subscription_updated_at:
           new Date().toISOString(),
+
         updated_at:
           new Date().toISOString(),
       })
-      .eq('id', userId);
+      .eq(
+        'id',
+        userId
+      );
 
   if (error) {
     throw error;
   }
+}
+
+/*
+ * Determine the plan from the subscription's
+ * price/product information.
+ */
+function determineSubscriptionPlan(
+  subscription: any,
+  fallbackPlan: string | null
+) {
+  const item =
+    subscription
+      ?.items
+      ?.data?.[0];
+
+  const priceId =
+    item?.price?.id ||
+    null;
+
+  const productId =
+    typeof item?.price?.product ===
+    'string'
+      ? item.price.product
+      : null;
+
+  /*
+   * Product ID is the strongest source
+   * because it is what Washek configured.
+   */
+  const productPlan =
+    planFromProduct(
+      productId
+    );
+
+  if (
+    productPlan
+  ) {
+    return productPlan;
+  }
+
+  const pricePlan =
+    planFromPrice(
+      priceId
+    );
+
+  if (
+    pricePlan
+  ) {
+    return pricePlan;
+  }
+
+  return fallbackPlan;
 }
 
 async function handleCheckoutCompleted(
@@ -330,7 +480,7 @@ async function handleCheckoutCompleted(
     session?.client_reference_id ||
     null;
 
-  const plan =
+  const metadataPlan =
     session?.metadata?.plan ||
     null;
 
@@ -351,10 +501,9 @@ async function handleCheckoutCompleted(
       'checkout.session.completed missing user_id',
       session?.id
     );
+
     return;
   }
-
-  let finalPlan = plan;
 
   let subscription =
     null;
@@ -368,46 +517,41 @@ async function handleCheckoutCompleted(
       );
   }
 
-  if (
-    subscription &&
-    subscription.items?.data?.length
-  ) {
-    const priceId =
-      subscription
-        .items
-        .data[0]
-        ?.price?.id;
-
-    const pricePlan =
-      planFromPrice(
-        priceId
-      );
-
-    if (pricePlan) {
-      finalPlan =
-        pricePlan;
-    }
-  }
+  const finalPlan =
+    determineSubscriptionPlan(
+      subscription,
+      metadataPlan
+    );
 
   if (
     !finalPlan ||
     !PLAN_ORDER.includes(
       finalPlan
     ) ||
-    finalPlan === 'free'
+    finalPlan ===
+      'free'
   ) {
     console.error(
       'Unable to determine paid plan.',
       {
         sessionId:
           session?.id,
+
         userId,
-        plan,
+
+        metadataPlan,
       }
     );
 
     return;
   }
+
+  const priceId =
+    subscription
+      ?.items
+      ?.data?.[0]
+      ?.price?.id ||
+    null;
 
   await updateProfile(
     userId,
@@ -426,11 +570,7 @@ async function handleCheckoutCompleted(
         subscriptionId,
 
       stripe_price_id:
-        subscription
-          ?.items
-          ?.data?.[0]
-          ?.price?.id ||
-        null,
+        priceId,
 
       subscription_cancelled_at:
         null,
@@ -467,7 +607,9 @@ async function handleSubscription(
       {
         subscriptionId:
           subscription?.id,
+
         userId,
+
         customerId,
       }
     );
@@ -483,20 +625,26 @@ async function handleSubscription(
     null;
 
   const plan =
-    planFromPrice(
-      priceId
-    ) ||
-    metadata.plan ||
-    profile.subscription_plan ||
-    'free';
+    determineSubscriptionPlan(
+      subscription,
+      metadata.plan ||
+        profile.subscription_plan ||
+        null
+    );
 
   const status =
     subscription?.status ||
     'inactive';
 
+  /*
+   * Canceled subscriptions immediately
+   * become Free.
+   */
   if (
-    status === 'canceled' ||
-    status === 'incomplete_expired'
+    status ===
+      'canceled' ||
+    status ===
+      'incomplete_expired'
   ) {
     await updateProfile(
       profile.id,
@@ -524,10 +672,20 @@ async function handleSubscription(
     return;
   }
 
+  /*
+   * Active/trialing paid subscriptions
+   * receive the appropriate plan.
+   */
   if (
-    paidStatus(status) &&
-    PLAN_ORDER.includes(plan) &&
-    plan !== 'free'
+    paidStatus(
+      status
+    ) &&
+    plan &&
+    PLAN_ORDER.includes(
+      plan
+    ) &&
+    plan !==
+      'free'
   ) {
     await updateProfile(
       profile.id,
@@ -556,7 +714,7 @@ async function handleSubscription(
   }
 
   /*
-   * Anything that is no longer an active
+   * Anything that no longer represents a
    * paid entitlement becomes Free.
    */
   await updateProfile(
@@ -648,11 +806,10 @@ async function handleInvoicePaymentFailed(
   }
 
   /*
-   * Do not automatically give a user Free
-   * just because one invoice failed.
+   * Record the Stripe status.
    *
-   * Store the status and let Stripe's
-   * subscription status determine access.
+   * We do not immediately revoke access
+   * solely because one invoice failed.
    */
   await updateProfile(
     profile.id,
@@ -665,7 +822,10 @@ async function handleInvoicePaymentFailed(
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') {
+  if (
+    req.method !==
+    'POST'
+  ) {
     return new Response(
       'Method not allowed.',
       {
@@ -698,7 +858,9 @@ Deno.serve(async (req) => {
     );
 
     const event =
-      JSON.parse(payload);
+      JSON.parse(
+        payload
+      );
 
     switch (
       event.type
@@ -731,18 +893,17 @@ Deno.serve(async (req) => {
         break;
 
       default:
-        /*
-         * Ignore events we do not need.
-         */
         break;
     }
 
     return new Response(
       JSON.stringify({
-        received: true,
+        received:
+          true,
       }),
       {
         status: 200,
+
         headers: {
           'Content-Type':
             'application/json',
@@ -757,7 +918,9 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        received: false,
+        received:
+          false,
+
         error:
           error instanceof Error
             ? error.message
@@ -765,6 +928,7 @@ Deno.serve(async (req) => {
       }),
       {
         status: 400,
+
         headers: {
           'Content-Type':
             'application/json',
