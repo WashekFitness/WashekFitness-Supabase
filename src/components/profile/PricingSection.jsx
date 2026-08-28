@@ -1,4 +1,5 @@
 import { useState } from 'react';
+
 import {
   Check,
   Zap,
@@ -7,11 +8,14 @@ import {
   Loader2,
   XCircle,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+
 import { supabaseApi } from '@/lib/supabaseApi';
 import { createStripeCheckout } from '@/lib/stripeCheckout';
+
 import { toast } from 'sonner';
 
 const plans = [
@@ -25,6 +29,7 @@ const plans = [
     borderColor: 'border-accent/30',
     bgColor: 'bg-accent/5',
     badge: null,
+
     features: [
       '300 Kael AI messages/month',
       'Smarter, faster AI responses',
@@ -34,6 +39,7 @@ const plans = [
       'Save & compare progress photos',
     ],
   },
+
   {
     name: 'Performance',
     planKey: 'performance',
@@ -44,6 +50,7 @@ const plans = [
     borderColor: 'border-primary/40',
     bgColor: 'bg-primary/5',
     badge: 'Most Popular',
+
     features: [
       '800 Kael AI messages/month',
       'Advanced coaching + progressive overload tracking',
@@ -52,9 +59,11 @@ const plans = [
       'Nutrition insights & suggestions',
       'Workout analytics dashboard',
     ],
+
     disclaimer:
       '* AI body fat estimates are approximations only and may not be fully accurate.',
   },
+
   {
     name: 'Elite',
     planKey: 'elite',
@@ -65,6 +74,7 @@ const plans = [
     borderColor: 'border-chart-4/40',
     bgColor: 'bg-chart-4/5',
     badge: 'Best',
+
     features: [
       '2,000 Kael AI messages/month',
       'Highest-level AI, fastest responses',
@@ -78,6 +88,42 @@ const plans = [
     ],
   },
 ];
+
+const PLAN_ORDER = {
+  free: 0,
+  progress: 1,
+  performance: 2,
+  elite: 3,
+};
+
+function getPlanLabel(plan) {
+  const labels = {
+    free: 'Free',
+    progress: 'Progress',
+    performance: 'Performance',
+    elite: 'Elite',
+  };
+
+  return labels[plan] || 'Free';
+}
+
+function getActionText(currentPlan, targetPlan) {
+  const currentLevel =
+    PLAN_ORDER[currentPlan] ?? 0;
+
+  const targetLevel =
+    PLAN_ORDER[targetPlan] ?? 0;
+
+  if (currentLevel === 0) {
+    return `Get ${getPlanLabel(targetPlan)}`;
+  }
+
+  if (targetLevel > currentLevel) {
+    return `Upgrade to ${getPlanLabel(targetPlan)}`;
+  }
+
+  return `Switch to ${getPlanLabel(targetPlan)}`;
+}
 
 export default function PricingSection({
   user,
@@ -93,17 +139,31 @@ export default function PricingSection({
     user?.subscription_plan ||
     'free';
 
-  const handleUpgrade = async (
+  /*
+   * Handles both:
+   *
+   * 1. Free -> paid
+   *    Opens Stripe Checkout.
+   *
+   * 2. Paid -> paid
+   *    Changes the existing Stripe subscription.
+   */
+  const handlePlanChange = async (
     planKey
   ) => {
     if (!user?.id) {
       toast.error(
         'Please sign in before choosing a subscription.'
       );
+
       return;
     }
 
     if (planKey === currentPlan) {
+      return;
+    }
+
+    if (checkoutPlan) {
       return;
     }
 
@@ -116,26 +176,71 @@ export default function PricingSection({
         );
 
       /*
-       * Same-tab redirect.
+       * FREE USER:
+       *
+       * Send them to Stripe Checkout.
        */
-      window.location.assign(
+      if (
+        result.action === 'checkout' &&
         result.url
+      ) {
+        window.location.assign(
+          result.url
+        );
+
+        return;
+      }
+
+      /*
+       * EXISTING PAID USER:
+       *
+       * Subscription was changed directly
+       * through Stripe.
+       */
+      if (
+        result.action === 'changed'
+      ) {
+        const refreshedUser =
+          await supabaseApi.auth.me();
+
+        onSubscriptionChanged?.(
+          refreshedUser
+        );
+
+        toast.success(
+          `Your subscription has been changed to the ${getPlanLabel(
+            planKey
+          )} Plan.`
+        );
+
+        return;
+      }
+
+      throw new Error(
+        'The subscription service did not complete the requested change.'
       );
     } catch (error) {
       console.error(
-        'Stripe checkout error:',
+        'Subscription change error:',
         error
       );
 
       toast.error(
         error?.message ||
-          'Unable to start checkout. Please try again.'
+          'Unable to change your subscription. Please try again.'
       );
-
+    } finally {
       setCheckoutPlan(null);
     }
   };
 
+  /*
+   * Immediately cancel the Stripe subscription.
+   *
+   * The backend cancels it in Stripe and
+   * immediately removes the paid entitlement
+   * from the Supabase profile.
+   */
   const handleCancel = async () => {
     if (
       !user?.id ||
@@ -148,7 +253,7 @@ export default function PricingSection({
       window.confirm(
         `Cancel your ${getPlanLabel(
           currentPlan
-        )} subscription immediately?\n\nYour account will switch to the Free Plan immediately and paid-only features will be removed.`
+        )} subscription immediately?\n\nYour account will immediately return to the Free Plan and paid-only features will be removed.`
       );
 
     if (!confirmed) {
@@ -161,22 +266,21 @@ export default function PricingSection({
       const result =
         await supabaseApi.subscription.cancel();
 
+      /*
+       * Refresh the authoritative profile
+       * from Supabase after cancellation.
+       */
+      const refreshedUser =
+        await supabaseApi.auth.me();
+
+      onSubscriptionChanged?.(
+        refreshedUser ||
+          result?.user
+      );
+
       toast.success(
         'Your subscription has been cancelled. You are now on the Free Plan.'
       );
-
-      if (result?.user) {
-        onSubscriptionChanged?.(
-          result.user
-        );
-      } else {
-        const refreshed =
-          await supabaseApi.auth.me();
-
-        onSubscriptionChanged?.(
-          refreshed
-        );
-      }
     } catch (error) {
       console.error(
         'Subscription cancellation error:',
@@ -185,7 +289,7 @@ export default function PricingSection({
 
       toast.error(
         error?.message ||
-          'Unable to cancel your subscription.'
+          'Unable to cancel your subscription. Please try again.'
       );
     } finally {
       setCanceling(false);
@@ -194,6 +298,10 @@ export default function PricingSection({
 
   return (
     <div className="space-y-4">
+      {/* =====================================================
+          CURRENT SUBSCRIPTION / CANCEL
+          ===================================================== */}
+
       {currentPlan !== 'free' && (
         <Card className="p-4 border-destructive/20 bg-destructive/5">
           <div className="flex items-center gap-2 mb-2">
@@ -205,17 +313,20 @@ export default function PricingSection({
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel immediately and return to
-            the Free Plan. Paid AI allowances
-            and paid-only features will be
-            removed immediately.
+            Cancel your subscription immediately.
+            Your account will return to the Free
+            Plan right away and paid-only features
+            will be removed.
           </p>
 
           <Button
             variant="outline"
             className="w-full text-destructive border-destructive/30 hover:text-destructive"
             onClick={handleCancel}
-            disabled={canceling}
+            disabled={
+              canceling ||
+              checkoutPlan !== null
+            }
           >
             {canceling ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -230,16 +341,24 @@ export default function PricingSection({
         </Card>
       )}
 
+      {/* =====================================================
+          PLANS
+          ===================================================== */}
+
       <div className="flex items-center gap-2 pt-2">
         <Crown className="w-4 h-4 text-chart-4" />
 
         <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
-          Upgrade Your Plan
+          {currentPlan === 'free'
+            ? 'Upgrade Your Plan'
+            : 'Change Your Plan'}
         </h3>
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        Unlock more of the Washek experience.
+        {currentPlan === 'free'
+          ? 'Unlock more of the Washek experience.'
+          : 'Change your plan whenever you want. Changes to paid plans are applied directly to your subscription.'}
       </p>
 
       {plans.map((plan) => {
@@ -249,7 +368,7 @@ export default function PricingSection({
           currentPlan ===
           plan.planKey;
 
-        const isCheckingOut =
+        const isProcessing =
           checkoutPlan ===
           plan.planKey;
 
@@ -324,21 +443,28 @@ export default function PricingSection({
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
                 onClick={() =>
-                  handleUpgrade(
+                  handlePlanChange(
                     plan.planKey
                   )
                 }
                 disabled={
-                  checkoutPlan !== null
+                  checkoutPlan !== null ||
+                  canceling
                 }
               >
-                {isCheckingOut ? (
+                {isProcessing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Opening Checkout…
+
+                    {currentPlan === 'free'
+                      ? 'Opening Checkout…'
+                      : 'Changing Plan…'}
                   </>
                 ) : (
-                  `Get ${plan.name}`
+                  getActionText(
+                    currentPlan,
+                    plan.planKey
+                  )
                 )}
               </Button>
             )}
@@ -351,21 +477,5 @@ export default function PricingSection({
         Cancellation is immediate.
       </p>
     </div>
-  );
-}
-
-function getPlanLabel(
-  plan
-) {
-  const labels = {
-    free: 'Free',
-    progress: 'Progress',
-    performance: 'Performance',
-    elite: 'Elite',
-  };
-
-  return (
-    labels[plan] ||
-    'paid'
   );
 }
