@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import {
+  useEffect,
+  useState,
+} from 'react';
 
 import {
   Check,
@@ -19,7 +22,8 @@ import { toast } from 'sonner';
 
 const plans = [
   {
-    name: 'Progress',
+    name:
+      'Progress',
 
     planKey:
       'progress',
@@ -56,7 +60,8 @@ const plans = [
   },
 
   {
-    name: 'Performance',
+    name:
+      'Performance',
 
     planKey:
       'performance',
@@ -96,7 +101,8 @@ const plans = [
   },
 
   {
-    name: 'Elite',
+    name:
+      'Elite',
 
     planKey:
       'elite',
@@ -151,20 +157,108 @@ const PLAN_LABELS = {
 };
 
 export default function PricingSection({
-  user,
+  user:
+    suppliedUser,
+
   onSubscriptionChanged,
 }) {
+  /*
+   * ==========================================================
+   * USER
+   * ==========================================================
+   *
+   * Profile.jsx now supplies the user.
+   *
+   * We still have a fallback loader so this component
+   * cannot silently fail if it is ever rendered elsewhere.
+   */
+
+  const [
+    localUser,
+    setLocalUser,
+  ] =
+    useState(
+      suppliedUser ||
+        null
+    );
+
+  useEffect(() => {
+    if (
+      suppliedUser
+    ) {
+      setLocalUser(
+        suppliedUser
+      );
+
+      return;
+    }
+
+    let mounted =
+      true;
+
+    const loadUser =
+      async () => {
+        try {
+          const currentUser =
+            await supabaseApi.auth.me();
+
+          if (
+            mounted
+          ) {
+            setLocalUser(
+              currentUser
+            );
+          }
+        } catch (
+          error
+        ) {
+          console.error(
+            'PricingSection could not load user:',
+            error
+          );
+        }
+      };
+
+    loadUser();
+
+    return () => {
+      mounted =
+        false;
+    };
+  }, [
+    suppliedUser,
+  ]);
+
+  const user =
+    localUser;
+
+  /*
+   * ==========================================================
+   * STATE
+   * ==========================================================
+   */
+
   const [
     checkoutPlan,
     setCheckoutPlan,
   ] =
-    useState(null);
+    useState(
+      null
+    );
 
   const [
     canceling,
     setCanceling,
   ] =
-    useState(false);
+    useState(
+      false
+    );
+
+  /*
+   * ==========================================================
+   * CURRENT PLAN
+   * ==========================================================
+   */
 
   const currentPlan =
     user?.subscription_plan ||
@@ -181,16 +275,14 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * START CHECKOUT
+   * CHECKOUT
    * ==========================================================
    *
-   * IMPORTANT:
-   *
-   * window.open() happens BEFORE any await.
-   *
-   * This keeps the new tab associated with the user's
-   * actual click and prevents popup blocking.
+   * The browser tab is opened IMMEDIATELY during the click.
+   * The async Supabase request happens afterward.
+   * ==========================================================
    */
+
   const handleUpgrade =
     async (
       planKey
@@ -199,7 +291,23 @@ export default function PricingSection({
         !user?.id
       ) {
         toast.error(
-          'Please sign in before choosing a subscription.'
+          'Your account is still loading. Please try again in a moment.'
+        );
+
+        return;
+      }
+
+      if (
+        ![
+          'progress',
+          'performance',
+          'elite',
+        ].includes(
+          planKey
+        )
+      ) {
+        toast.error(
+          'Invalid subscription plan.'
         );
 
         return;
@@ -219,15 +327,14 @@ export default function PricingSection({
       }
 
       /*
-       * --------------------------------------------------------
-       * STEP 1:
-       * OPEN THE NEW TAB IMMEDIATELY.
-       * --------------------------------------------------------
+       * ========================================================
+       * OPEN TAB IMMEDIATELY
+       * ========================================================
        */
 
       const checkoutTab =
         window.open(
-          'about:blank',
+          '',
           '_blank'
         );
 
@@ -242,10 +349,9 @@ export default function PricingSection({
       }
 
       /*
-       * --------------------------------------------------------
-       * STEP 2:
-       * SHOW TEMPORARY CONTENT.
-       * --------------------------------------------------------
+       * ========================================================
+       * TEMPORARY LOADING PAGE
+       * ========================================================
        */
 
       try {
@@ -257,27 +363,33 @@ export default function PricingSection({
           <html>
 
             <head>
+
               <meta charset="utf-8" />
 
+              <meta
+                name="viewport"
+                content="width=device-width, initial-scale=1"
+              />
+
               <title>
-                Washek Fitness — Connecting to Stripe
+                Washek Fitness — Stripe Checkout
               </title>
 
               <style>
+
                 html,
                 body {
                   margin: 0;
                   padding: 0;
-                  width: 100%;
                   min-height: 100%;
+                  background: #ffffff;
+                  color: #111827;
                   font-family:
                     system-ui,
                     -apple-system,
                     BlinkMacSystemFont,
                     "Segoe UI",
                     sans-serif;
-                  background: #ffffff;
-                  color: #111827;
                 }
 
                 body {
@@ -293,9 +405,8 @@ export default function PricingSection({
                 }
 
                 .spinner {
-                  width: 38px;
-                  height: 38px;
-                  margin: 0 auto 20px;
+                  width: 36px;
+                  height: 36px;
                   border: 4px solid #e5e7eb;
                   border-top-color: #111827;
                   border-radius: 50%;
@@ -304,12 +415,14 @@ export default function PricingSection({
                     0.8s
                     linear
                     infinite;
+                  margin:
+                    0 auto 18px;
                 }
 
                 h1 {
-                  margin: 0 0 8px;
-                  font-size: 20px;
-                  line-height: 1.3;
+                  margin:
+                    0 0 8px;
+                  font-size: 19px;
                 }
 
                 p {
@@ -319,15 +432,21 @@ export default function PricingSection({
                 }
 
                 @keyframes washek-spin {
+
                   from {
-                    transform: rotate(0deg);
+                    transform:
+                      rotate(0deg);
                   }
 
                   to {
-                    transform: rotate(360deg);
+                    transform:
+                      rotate(360deg);
                   }
+
                 }
+
               </style>
+
             </head>
 
             <body>
@@ -354,9 +473,8 @@ export default function PricingSection({
         checkoutTab.document.close();
       } catch {
         /*
-         * We don't need to access the document for the
-         * checkout to work. Some browser configurations
-         * restrict this.
+         * The checkout still works if the browser doesn't
+         * permit us to modify the temporary document.
          */
       }
 
@@ -364,62 +482,60 @@ export default function PricingSection({
         planKey
       );
 
-      /*
-       * --------------------------------------------------------
-       * STEP 3:
-       * ASK SUPABASE FOR THE STRIPE CHECKOUT URL.
-       * --------------------------------------------------------
-       */
-
       try {
+        /*
+         * ======================================================
+         * CALL BACKEND
+         * ======================================================
+         */
+
         const result =
           await createStripeCheckout(
             planKey
           );
 
         console.log(
-          '[PricingSection] Checkout result:',
+          '[PricingSection] Stripe checkout result:',
           result
         );
 
         /*
-         * ------------------------------------------------------
-         * NEW CHECKOUT
-         * ------------------------------------------------------
+         * ======================================================
+         * NEW SUBSCRIPTION
+         * ======================================================
          */
 
         if (
+          result?.success ===
+            true &&
           result?.action ===
             'checkout' &&
-          result?.url
+          typeof result?.url ===
+            'string' &&
+          result.url.length >
+            0
         ) {
           /*
            * Navigate the already-open tab.
-           *
-           * DO NOT use window.location here.
-           * That would replace Washek Fitness.
            */
-          checkoutTab.location.replace(
-            result.url
-          );
+          checkoutTab.location.href =
+            result.url;
 
           return;
         }
 
         /*
-         * ------------------------------------------------------
-         * EXISTING SUBSCRIPTION CHANGED
-         * ------------------------------------------------------
+         * ======================================================
+         * EXISTING SUBSCRIPTION CHANGE
+         * ======================================================
          */
 
         if (
+          result?.success ===
+            true &&
           result?.action ===
-          'changed'
+            'changed'
         ) {
-          /*
-           * There is no Stripe Checkout page in this case.
-           * Close the temporary tab.
-           */
           try {
             checkoutTab.close();
           } catch {
@@ -427,19 +543,23 @@ export default function PricingSection({
           }
 
           /*
-           * Ask the parent application for fresh user data.
+           * Refresh the account state.
            */
           try {
-            const refreshedUser =
+            const freshUser =
               await supabaseApi.auth.me();
 
+            setLocalUser(
+              freshUser
+            );
+
             onSubscriptionChanged?.(
-              refreshedUser
+              freshUser
             );
           } catch {
-            /*
-             * Parent refresh is optional.
-             */
+            onSubscriptionChanged?.(
+              result
+            );
           }
 
           toast.success(
@@ -455,7 +575,8 @@ export default function PricingSection({
         }
 
         throw new Error(
-          'The checkout service did not return a usable Stripe Checkout result.'
+          result?.error ||
+            'Stripe did not return a valid Checkout URL.'
         );
       } catch (
         error
@@ -465,11 +586,6 @@ export default function PricingSection({
           error
         );
 
-        /*
-         * Close only the blank temporary tab.
-         * The original Washek tab stays exactly where
-         * the user was.
-         */
         try {
           checkoutTab.close();
         } catch {
@@ -489,7 +605,7 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * CANCEL SUBSCRIPTION
+   * CANCEL
    * ==========================================================
    */
 
@@ -526,8 +642,9 @@ export default function PricingSection({
           await supabaseApi.subscription.cancel();
 
         const updatedUser =
-          result?.user || {
-            ...user,
+          {
+            ...(result?.user ||
+              user),
 
             subscription_plan:
               'free',
@@ -542,6 +659,10 @@ export default function PricingSection({
               null,
           };
 
+        setLocalUser(
+          updatedUser
+        );
+
         onSubscriptionChanged?.(
           updatedUser
         );
@@ -553,7 +674,7 @@ export default function PricingSection({
         error
       ) {
         console.error(
-          '[PricingSection] Cancel failed:',
+          '[PricingSection] Cancellation failed:',
           error
         );
 
@@ -567,6 +688,12 @@ export default function PricingSection({
         );
       }
     };
+
+  /*
+   * ==========================================================
+   * RENDER
+   * ==========================================================
+   */
 
   return (
     <div className="space-y-4">
@@ -589,9 +716,10 @@ export default function PricingSection({
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel immediately and return to
-            the Free Plan. Paid-only features
-            will be removed immediately.
+            Cancel immediately and return
+            to the Free Plan. Paid-only
+            features will be removed
+            immediately.
           </p>
 
           <Button
@@ -622,7 +750,7 @@ export default function PricingSection({
       )}
 
       {/* =====================================================
-          PLAN HEADER
+          HEADER
           ===================================================== */}
 
       <div className="flex items-center gap-2 pt-2">
@@ -656,7 +784,7 @@ export default function PricingSection({
             currentPlan ===
             plan.planKey;
 
-          const isLoading =
+          const loading =
             checkoutPlan ===
             plan.planKey;
 
@@ -707,7 +835,9 @@ export default function PricingSection({
               <ul className="space-y-1.5 mb-3">
 
                 {plan.features.map(
-                  (feature) => (
+                  (
+                    feature
+                  ) => (
                     <li
                       key={
                         feature
@@ -718,7 +848,9 @@ export default function PricingSection({
                       <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
 
                       <span>
-                        {feature}
+                        {
+                          feature
+                        }
                       </span>
 
                     </li>
@@ -729,7 +861,9 @@ export default function PricingSection({
 
               {plan.disclaimer && (
                 <p className="text-[10px] text-muted-foreground italic mb-3">
-                  {plan.disclaimer}
+                  {
+                    plan.disclaimer
+                  }
                 </p>
               )}
 
@@ -758,7 +892,7 @@ export default function PricingSection({
                     canceling
                   }
                 >
-                  {isLoading ? (
+                  {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Opening Checkout…
