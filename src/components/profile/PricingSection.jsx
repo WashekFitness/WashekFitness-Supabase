@@ -1,8 +1,4 @@
-import {
-  useEffect,
-  useState,
-} from 'react';
-
+import { useEffect, useState } from 'react';
 import {
   Check,
   Zap,
@@ -17,25 +13,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 import { supabaseApi } from '@/lib/supabaseApi';
+import { createStripeCheckout } from '@/lib/stripeCheckout';
 import { toast } from 'sonner';
-
-/*
- * EXISTING STRIPE PAYMENT LINKS
- *
- * These are intentionally preserved.
- * We are NOT replacing your working checkout
- * system with another checkout implementation.
- */
-const PAYMENT_LINKS = {
-  progress:
-    'https://buy.stripe.com/test_9B67sN50m2Qu3N19j1g3600',
-
-  performance:
-    'https://buy.stripe.com/test_7sY14p1Oa9eS97l0Mvg3601',
-
-  elite:
-    'https://buy.stripe.com/test_dRm00l9gC62G0AP7aTg3602',
-};
 
 const plans = [
   {
@@ -45,10 +24,8 @@ const plans = [
     period: '/mo',
     icon: Flame,
     color: 'text-accent',
-    borderColor:
-      'border-accent/30',
-    bgColor:
-      'bg-accent/5',
+    borderColor: 'border-accent/30',
+    bgColor: 'bg-accent/5',
     badge: null,
 
     features: [
@@ -68,12 +45,9 @@ const plans = [
     period: '/mo',
     icon: Zap,
     color: 'text-primary',
-    borderColor:
-      'border-primary/40',
-    bgColor:
-      'bg-primary/5',
-    badge:
-      'Most Popular',
+    borderColor: 'border-primary/40',
+    bgColor: 'bg-primary/5',
+    badge: 'Most Popular',
 
     features: [
       '800 Kael AI messages/month',
@@ -95,10 +69,8 @@ const plans = [
     period: '/mo',
     icon: Crown,
     color: 'text-chart-4',
-    borderColor:
-      'border-chart-4/40',
-    bgColor:
-      'bg-chart-4/5',
+    borderColor: 'border-chart-4/40',
+    bgColor: 'bg-chart-4/5',
     badge: 'Best',
 
     features: [
@@ -123,54 +95,39 @@ const PLAN_LABELS = {
 };
 
 export default function PricingSection() {
-  const [
-    user,
-    setUser,
-  ] = useState(null);
+  const [user, setUser] = useState(null);
 
-  const [
-    loadingUser,
-    setLoadingUser,
-  ] = useState(true);
+  const [loadingUser, setLoadingUser] =
+    useState(true);
 
-  const [
-    canceling,
-    setCanceling,
-  ] = useState(false);
+  const [changingPlan, setChangingPlan] =
+    useState(null);
 
-  /*
-   * Load the authenticated user directly.
-   *
-   * This makes the subscription section
-   * independent of Profile.jsx props.
-   */
+  const [canceling, setCanceling] =
+    useState(false);
+
   useEffect(() => {
     let mounted = true;
 
-    const loadUser =
-      async () => {
-        try {
-          const currentUser =
-            await supabaseApi.auth.me();
+    const loadUser = async () => {
+      try {
+        const currentUser =
+          await supabaseApi.auth.me();
 
-          if (mounted) {
-            setUser(
-              currentUser
-            );
-          }
-        } catch (error) {
-          console.error(
-            'Unable to load subscription state:',
-            error
-          );
-        } finally {
-          if (mounted) {
-            setLoadingUser(
-              false
-            );
-          }
+        if (mounted) {
+          setUser(currentUser);
         }
-      };
+      } catch (error) {
+        console.error(
+          'Unable to load subscription user:',
+          error
+        );
+      } finally {
+        if (mounted) {
+          setLoadingUser(false);
+        }
+      }
+    };
 
     loadUser();
 
@@ -183,51 +140,108 @@ export default function PricingSection() {
     user?.subscription_plan ||
     'free';
 
-  const isPaidPlan =
+  const isPaid =
     [
       'progress',
       'performance',
       'elite',
-    ].includes(
-      currentPlan
+    ].includes(currentPlan);
+
+  const handlePlanChange = async (
+    planKey
+  ) => {
+    if (!user?.id) {
+      toast.error(
+        'Please sign in before choosing a subscription.'
+      );
+      return;
+    }
+
+    if (
+      changingPlan ||
+      planKey === currentPlan
+    ) {
+      return;
+    }
+
+    setChangingPlan(
+      planKey
     );
 
-  /*
-   * Open the existing Stripe Payment Link
-   * in a NEW tab.
-   */
-  const handleUpgrade =
-    (planKey) => {
-      const paymentLink =
-        PAYMENT_LINKS[
+    try {
+      const result =
+        await createStripeCheckout(
           planKey
-        ];
+        );
 
-      if (!paymentLink) {
-        toast.error(
-          'This subscription option is unavailable right now.'
+      /*
+       * New subscription:
+       * open Stripe Checkout in a new tab.
+       */
+      if (
+        result?.action ===
+          'checkout' &&
+        result?.url
+      ) {
+        const checkoutWindow =
+          window.open(
+            result.url,
+            '_blank',
+            'noopener,noreferrer'
+          );
+
+        if (!checkoutWindow) {
+          throw new Error(
+            'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
+          );
+        }
+
+        return;
+      }
+
+      /*
+       * Existing paid subscription:
+       * the backend changes the subscription
+       * directly without making another subscription.
+       */
+      if (
+        result?.action ===
+        'changed'
+      ) {
+        const freshUser =
+          await supabaseApi.auth.me();
+
+        setUser(
+          freshUser
+        );
+
+        toast.success(
+          `Your plan is now ${PLAN_LABELS[planKey]}.`
         );
 
         return;
       }
 
-      const checkoutWindow =
-        window.open(
-          paymentLink,
-          '_blank',
-          'noopener,noreferrer'
-        );
+      throw new Error(
+        'The subscription service returned an unexpected response.'
+      );
+    } catch (error) {
+      console.error(
+        'Subscription change failed:',
+        error
+      );
 
-      if (!checkoutWindow) {
-        toast.error(
-          'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
-        );
-      }
-    };
+      toast.error(
+        error?.message ||
+          'Unable to change your subscription.'
+      );
+    } finally {
+      setChangingPlan(
+        null
+      );
+    }
+  };
 
-  /*
-   * Immediately cancel the Stripe subscription.
-   */
   const handleCancel =
     async () => {
       if (
@@ -243,7 +257,7 @@ export default function PricingSection() {
             PLAN_LABELS[
               currentPlan
             ] || 'paid'
-          } subscription immediately?\n\nYour subscription will be cancelled now and your Washek account will return to the Free Plan immediately.`
+          } subscription immediately?\n\nYou will immediately return to the Free Plan and paid-only features will be removed.`
         );
 
       if (!confirmed) {
@@ -258,10 +272,6 @@ export default function PricingSection() {
         const result =
           await supabaseApi.subscription.cancel();
 
-        /*
-         * The backend is authoritative.
-         * Update this component immediately.
-         */
         const updatedUser =
           {
             ...(result?.user ||
@@ -275,6 +285,9 @@ export default function PricingSection() {
 
             stripe_subscription_id:
               null,
+
+            stripe_price_id:
+              null,
           };
 
         setUser(
@@ -286,15 +299,12 @@ export default function PricingSection() {
         );
 
         /*
-         * Make sure every feature gate throughout
-         * the application sees the new Free status.
+         * Refresh the whole app so every feature gate
+         * immediately receives the new Free state.
          */
-        window.setTimeout(
-          () => {
-            window.location.reload();
-          },
-          700
-        );
+        setTimeout(() => {
+          window.location.reload();
+        }, 700);
       } catch (error) {
         console.error(
           'Subscription cancellation failed:',
@@ -303,33 +313,29 @@ export default function PricingSection() {
 
         toast.error(
           error?.message ||
-            'Unable to cancel your subscription. Please try again.'
+            'Unable to cancel your subscription.'
         );
       } finally {
-        setCanceling(
-          false
-        );
+        setCanceling(false);
       }
     };
 
   return (
     <div className="space-y-4">
 
-      {/* ======================================================
-          CURRENT PAID PLAN / CANCELLATION
-          ====================================================== */}
+      {/* =====================================================
+          CANCEL
+          ===================================================== */}
 
-      {isPaidPlan && (
+      {isPaid && (
         <Card className="p-4 border-destructive/25 bg-destructive/5">
 
           <div className="flex items-center gap-2 mb-2">
-
             <XCircle className="w-4 h-4 text-destructive" />
 
             <span className="font-heading font-bold text-sm">
               Cancel Subscription
             </span>
-
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
@@ -340,9 +346,8 @@ export default function PricingSection() {
               ]}
             </span>{' '}
             subscription immediately.
-            Your account will return to
-            the Free Plan and paid-only
-            features will be removed right away.
+            Your account returns to the Free
+            Plan right away.
           </p>
 
           <Button
@@ -354,7 +359,7 @@ export default function PricingSection() {
             }
             disabled={
               canceling ||
-              loadingUser
+              changingPlan !== null
             }
           >
             {canceling ? (
@@ -371,16 +376,16 @@ export default function PricingSection() {
         </Card>
       )}
 
-      {/* ======================================================
-          PLAN OPTIONS
-          ====================================================== */}
+      {/* =====================================================
+          PLANS
+          ===================================================== */}
 
       <div className="flex items-center gap-2 pt-2">
 
         <Crown className="w-4 h-4 text-chart-4" />
 
         <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
-          {isPaidPlan
+          {isPaid
             ? 'Change Your Plan'
             : 'Upgrade Your Plan'}
         </h3>
@@ -388,133 +393,148 @@ export default function PricingSection() {
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        {isPaidPlan
-          ? 'Choose another plan to change your subscription.'
+        {isPaid
+          ? 'Change your subscription whenever you need to.'
           : 'Unlock more of the Washek experience.'}
       </p>
 
-      {plans.map(
-        (plan) => {
-          const Icon =
-            plan.icon;
+      {plans.map((plan) => {
+        const Icon =
+          plan.icon;
 
-          const isCurrent =
-            currentPlan ===
-            plan.planKey;
+        const isCurrent =
+          currentPlan ===
+          plan.planKey;
 
-          return (
-            <Card
-              key={
-                plan.planKey
-              }
-              className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
-            >
+        const processing =
+          changingPlan ===
+          plan.planKey;
 
-              {plan.badge && (
-                <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
-                  {plan.badge}
-                </Badge>
-              )}
+        return (
+          <Card
+            key={
+              plan.planKey
+            }
+            className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
+          >
 
-              <div className="flex items-center justify-between mb-3">
+            {plan.badge && (
+              <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
+                {plan.badge}
+              </Badge>
+            )}
 
-                <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between mb-3">
 
-                  <Icon
-                    className={`w-5 h-5 ${plan.color}`}
-                  />
+              <div className="flex items-center gap-2">
 
-                  <span className="font-heading font-bold text-base">
-                    {plan.name}
-                  </span>
+                <Icon
+                  className={`w-5 h-5 ${plan.color}`}
+                />
 
-                </div>
-
-                <div className="flex items-baseline gap-0.5">
-
-                  <span
-                    className={`font-heading font-bold text-xl ${plan.color}`}
-                  >
-                    {plan.price}
-                  </span>
-
-                  <span className="text-xs text-muted-foreground">
-                    {plan.period}
-                  </span>
-
-                </div>
+                <span className="font-heading font-bold text-base">
+                  {plan.name}
+                </span>
 
               </div>
 
-              <ul className="space-y-1.5 mb-3">
+              <div className="flex items-baseline gap-0.5">
 
-                {plan.features.map(
-                  (feature) => (
-                    <li
-                      key={
-                        feature
-                      }
-                      className="flex items-start gap-2 text-sm"
-                    >
+                <span
+                  className={`font-heading font-bold text-xl ${plan.color}`}
+                >
+                  {plan.price}
+                </span>
 
-                      <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+                <span className="text-xs text-muted-foreground">
+                  {plan.period}
+                </span>
 
-                      <span>
-                        {feature}
-                      </span>
+              </div>
 
-                    </li>
+            </div>
+
+            <ul className="space-y-1.5 mb-3">
+
+              {plan.features.map(
+                (feature) => (
+                  <li
+                    key={
+                      feature
+                    }
+                    className="flex items-start gap-2 text-sm"
+                  >
+
+                    <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+
+                    <span>
+                      {feature}
+                    </span>
+
+                  </li>
+                )
+              )}
+
+            </ul>
+
+            {plan.disclaimer && (
+              <p className="text-[10px] text-muted-foreground italic mb-3">
+                {plan.disclaimer}
+              </p>
+            )}
+
+            {isCurrent ? (
+              <Button
+                type="button"
+                className="w-full h-10 font-heading font-semibold"
+                variant="secondary"
+                disabled
+              >
+                Current Plan
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="w-full h-10 font-heading font-semibold"
+                variant="outline"
+                onClick={() =>
+                  handlePlanChange(
+                    plan.planKey
                   )
+                }
+                disabled={
+                  loadingUser ||
+                  canceling ||
+                  changingPlan !==
+                    null
+                }
+              >
+                {processing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {currentPlan ===
+                    'free'
+                      ? 'Opening Checkout…'
+                      : 'Changing Plan…'}
+                  </>
+                ) : currentPlan ===
+                  'free' ? (
+                  `Get ${plan.name}`
+                ) : plan.planKey ===
+                  'progress' ? (
+                  'Switch to Progress'
+                ) : plan.planKey ===
+                  'performance' ? (
+                  'Switch to Performance'
+                ) : (
+                  'Switch to Elite'
                 )}
+              </Button>
+            )}
 
-              </ul>
-
-              {plan.disclaimer && (
-                <p className="text-[10px] text-muted-foreground italic mb-3">
-                  {plan.disclaimer}
-                </p>
-              )}
-
-              {isCurrent ? (
-                <Button
-                  type="button"
-                  className="w-full h-10 font-heading font-semibold"
-                  variant="secondary"
-                  disabled
-                >
-                  Current Plan
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  className="w-full h-10 font-heading font-semibold"
-                  variant="outline"
-                  onClick={() =>
-                    handleUpgrade(
-                      plan.planKey
-                    )
-                  }
-                  disabled={
-                    loadingUser ||
-                    canceling
-                  }
-                >
-                  {isPaidPlan
-                    ? plan.planKey ===
-                      'progress'
-                      ? 'Switch to Progress'
-                      : plan.planKey ===
-                        'performance'
-                        ? 'Switch to Performance'
-                        : 'Switch to Elite'
-                    : `Get ${plan.name}`}
-                </Button>
-              )}
-
-            </Card>
-          );
-        }
-      )}
+          </Card>
+        );
+      })}
 
       <p className="text-[10px] text-muted-foreground text-center">
         Paid plans are billed monthly.
