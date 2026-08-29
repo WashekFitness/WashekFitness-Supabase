@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 
 import {
@@ -26,8 +25,10 @@ const plans = [
     period: '/mo',
     icon: Flame,
     color: 'text-accent',
-    borderColor: 'border-accent/30',
-    bgColor: 'bg-accent/5',
+    borderColor:
+      'border-accent/30',
+    bgColor:
+      'bg-accent/5',
     badge: null,
 
     features: [
@@ -47,9 +48,12 @@ const plans = [
     period: '/mo',
     icon: Zap,
     color: 'text-primary',
-    borderColor: 'border-primary/40',
-    bgColor: 'bg-primary/5',
-    badge: 'Most Popular',
+    borderColor:
+      'border-primary/40',
+    bgColor:
+      'bg-primary/5',
+    badge:
+      'Most Popular',
 
     features: [
       '800 Kael AI messages/month',
@@ -71,8 +75,10 @@ const plans = [
     period: '/mo',
     icon: Crown,
     color: 'text-chart-4',
-    borderColor: 'border-chart-4/40',
-    bgColor: 'bg-chart-4/5',
+    borderColor:
+      'border-chart-4/40',
+    bgColor:
+      'bg-chart-4/5',
     badge: 'Best',
 
     features: [
@@ -90,10 +96,17 @@ const plans = [
 ];
 
 const PLAN_LABELS = {
-  free: 'Free',
-  progress: 'Progress',
-  performance: 'Performance',
-  elite: 'Elite',
+  free:
+    'Free',
+
+  progress:
+    'Progress',
+
+  performance:
+    'Performance',
+
+  elite:
+    'Elite',
 };
 
 export default function PricingSection({
@@ -116,182 +129,196 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * START STRIPE CHECKOUT
+   * START CHECKOUT
    * ==========================================================
    *
-   * IMPORTANT:
+   * The blank tab MUST be opened synchronously
+   * while the button click is still happening.
    *
-   * We open the new tab IMMEDIATELY inside the
-   * actual button click.
-   *
-   * Then we wait for Supabase to give us the
-   * Stripe URL and put that URL into the already
-   * opened tab.
-   *
-   * This avoids popup blockers.
-   * ==========================================================
+   * Otherwise the browser may treat window.open()
+   * as an unwanted popup and block it.
    */
-  const handleUpgrade = async (
-    planKey
-  ) => {
-    if (!user?.id) {
-      toast.error(
-        'Please sign in before choosing a subscription.'
-      );
-
-      return;
-    }
-
-    if (
-      planKey ===
-      currentPlan
-    ) {
-      return;
-    }
-
-    /*
-     * Open the tab synchronously as part of the
-     * user's click.
-     */
-    const checkoutWindow =
-      window.open(
-        'about:blank',
-        '_blank'
-      );
-
-    /*
-     * If the browser blocked it, stop here.
-     */
-    if (!checkoutWindow) {
-      toast.error(
-        'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
-      );
-
-      return;
-    }
-
-    /*
-     * Give the blank tab a useful temporary title/message
-     * while the Stripe checkout URL is being generated.
-     */
-    try {
-      checkoutWindow.document.title =
-        'Opening Stripe Checkout…';
-
-      checkoutWindow.document.body.innerHTML = `
-        <div style="
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          display: flex;
-          min-height: 100vh;
-          align-items: center;
-          justify-content: center;
-          margin: 0;
-          background: #ffffff;
-          color: #111827;
-        ">
-          <div style="
-            text-align: center;
-            padding: 32px;
-          ">
-            <div style="
-              width: 32px;
-              height: 32px;
-              border: 3px solid #e5e7eb;
-              border-top-color: #111827;
-              border-radius: 50%;
-              animation: spin 0.8s linear infinite;
-              margin: 0 auto 16px;
-            "></div>
-
-            <div style="
-              font-size: 18px;
-              font-weight: 700;
-              margin-bottom: 8px;
-            ">
-              Opening Stripe Checkout…
-            </div>
-
-            <div style="
-              font-size: 14px;
-              color: #6b7280;
-            ">
-              Please wait.
-            </div>
-          </div>
-        </div>
-
-        <style>
-          @keyframes spin {
-            to {
-              transform: rotate(360deg);
-            }
-          }
-        </style>
-      `;
-    } catch {
-      /*
-       * Some browsers may restrict access to the
-       * newly opened window's document. That's okay.
-       */
-    }
-
-    setCheckoutPlan(
+  const handleUpgrade =
+    async (
       planKey
-    );
-
-    try {
-      const result =
-        await createStripeCheckout(
-          planKey
+    ) => {
+      if (
+        !user?.id
+      ) {
+        toast.error(
+          'Please sign in before choosing a subscription.'
         );
+
+        return;
+      }
 
       if (
-        !result?.url
+        planKey ===
+        currentPlan
       ) {
-        throw new Error(
-          'Stripe did not return a checkout URL.'
-        );
+        return;
       }
 
       /*
-       * Put the Stripe Checkout URL into the tab
-       * that was already opened by the user click.
+       * Open the tab FIRST.
        */
-      checkoutWindow.location.href =
-        result.url;
+      const checkoutWindow =
+        window.open(
+          'about:blank',
+          '_blank'
+        );
 
       /*
-       * Clear the loading state because the user
-       * now has Stripe open.
+       * Browser blocked the popup.
        */
-      setCheckoutPlan(
-        null
-      );
-    } catch (error) {
-      console.error(
-        'Stripe checkout error:',
-        error
-      );
+      if (
+        !checkoutWindow
+      ) {
+        toast.error(
+          'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
+        );
+
+        return;
+      }
 
       /*
-       * Close the blank tab because checkout failed.
+       * Show a loading message inside that tab.
        */
       try {
-        checkoutWindow.close();
+        checkoutWindow.document.title =
+          'Opening Stripe Checkout…';
+
+        checkoutWindow.document.body.innerHTML = `
+          <div style="
+            font-family:
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              'Segoe UI',
+              sans-serif;
+
+            min-height: 100vh;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            margin: 0;
+
+            background: #ffffff;
+
+            color: #111827;
+          ">
+            <div style="
+              text-align: center;
+              padding: 32px;
+            ">
+              <div style="
+                width: 32px;
+                height: 32px;
+                border: 3px solid #e5e7eb;
+                border-top-color: #111827;
+                border-radius: 50%;
+                animation: washek-spin 0.8s linear infinite;
+                margin: 0 auto 16px;
+              "></div>
+
+              <div style="
+                font-size: 18px;
+                font-weight: 700;
+                margin-bottom: 8px;
+              ">
+                Connecting to Stripe Checkout…
+              </div>
+
+              <div style="
+                font-size: 14px;
+                color: #6b7280;
+              ">
+                Please wait.
+              </div>
+            </div>
+          </div>
+
+          <style>
+            @keyframes washek-spin {
+              from {
+                transform: rotate(0deg);
+              }
+
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          </style>
+        `;
       } catch {
-        // Ignore browser close restrictions.
+        /*
+         * Access to the new tab's document may be
+         * restricted by some browsers.
+         */
       }
 
-      toast.error(
-        error?.message ||
-          'Unable to start Stripe checkout. Please try again.'
+      setCheckoutPlan(
+        planKey
       );
 
-      setCheckoutPlan(
-        null
-      );
-    }
-  };
+      try {
+        /*
+         * Now contact the backend.
+         */
+        const result =
+          await createStripeCheckout(
+            planKey
+          );
+
+        if (
+          !result?.url
+        ) {
+          throw new Error(
+            'Stripe did not return a checkout URL.'
+          );
+        }
+
+        /*
+         * Load Checkout into the already-open tab.
+         */
+        checkoutWindow.location.href =
+          result.url;
+
+        /*
+         * Keep Washek open in this tab.
+         */
+      } catch (
+        error
+      ) {
+        console.error(
+          'Stripe checkout error:',
+          error
+        );
+
+        /*
+         * Close the temporary tab if checkout
+         * could not be created.
+         */
+        try {
+          checkoutWindow.close();
+        } catch {
+          // Ignore browser restrictions.
+        }
+
+        toast.error(
+          error?.message ||
+            'Unable to start Stripe checkout. Please try again.'
+        );
+      } finally {
+        setCheckoutPlan(
+          null
+        );
+      }
+    };
 
   /*
    * ==========================================================
@@ -356,18 +383,9 @@ export default function PricingSection({
         toast.success(
           'Your subscription has been cancelled. You are now on the Free Plan.'
         );
-
-        /*
-         * Refresh so every subscription gate
-         * throughout the application sees Free.
-         */
-        window.setTimeout(
-          () => {
-            window.location.reload();
-          },
-          700
-        );
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           'Subscription cancellation error:',
           error
@@ -375,7 +393,7 @@ export default function PricingSection({
 
         toast.error(
           error?.message ||
-            'Unable to cancel your subscription. Please try again.'
+            'Unable to cancel your subscription.'
         );
       } finally {
         setCanceling(
@@ -415,9 +433,9 @@ export default function PricingSection({
 
           <p className="text-xs text-muted-foreground mb-3">
             Cancel immediately and return
-            to the Free Plan. Paid AI
-            allowances and paid-only features
-            will be removed immediately.
+            to the Free Plan. Paid AI allowances
+            and paid-only features will be
+            removed immediately.
           </p>
 
           <Button
