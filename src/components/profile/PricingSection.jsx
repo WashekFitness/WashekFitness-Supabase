@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+
+import { useState } from 'react';
+
 import {
   Check,
   Zap,
   Crown,
   Flame,
-  XCircle,
   Loader2,
+  XCircle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -94,77 +96,146 @@ const PLAN_LABELS = {
   elite: 'Elite',
 };
 
-export default function PricingSection() {
-  const [user, setUser] = useState(null);
+export default function PricingSection({
+  user,
+  onSubscriptionChanged,
+}) {
+  const [
+    checkoutPlan,
+    setCheckoutPlan,
+  ] = useState(null);
 
-  const [loadingUser, setLoadingUser] =
-    useState(true);
-
-  const [changingPlan, setChangingPlan] =
-    useState(null);
-
-  const [canceling, setCanceling] =
-    useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadUser = async () => {
-      try {
-        const currentUser =
-          await supabaseApi.auth.me();
-
-        if (mounted) {
-          setUser(currentUser);
-        }
-      } catch (error) {
-        console.error(
-          'Unable to load subscription user:',
-          error
-        );
-      } finally {
-        if (mounted) {
-          setLoadingUser(false);
-        }
-      }
-    };
-
-    loadUser();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const [
+    canceling,
+    setCanceling,
+  ] = useState(false);
 
   const currentPlan =
     user?.subscription_plan ||
     'free';
 
-  const isPaid =
-    [
-      'progress',
-      'performance',
-      'elite',
-    ].includes(currentPlan);
-
-  const handlePlanChange = async (
+  /*
+   * ==========================================================
+   * START STRIPE CHECKOUT
+   * ==========================================================
+   *
+   * IMPORTANT:
+   *
+   * We open the new tab IMMEDIATELY inside the
+   * actual button click.
+   *
+   * Then we wait for Supabase to give us the
+   * Stripe URL and put that URL into the already
+   * opened tab.
+   *
+   * This avoids popup blockers.
+   * ==========================================================
+   */
+  const handleUpgrade = async (
     planKey
   ) => {
     if (!user?.id) {
       toast.error(
         'Please sign in before choosing a subscription.'
       );
+
       return;
     }
 
     if (
-      changingPlan ||
-      planKey === currentPlan
+      planKey ===
+      currentPlan
     ) {
       return;
     }
 
-    setChangingPlan(
+    /*
+     * Open the tab synchronously as part of the
+     * user's click.
+     */
+    const checkoutWindow =
+      window.open(
+        'about:blank',
+        '_blank'
+      );
+
+    /*
+     * If the browser blocked it, stop here.
+     */
+    if (!checkoutWindow) {
+      toast.error(
+        'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
+      );
+
+      return;
+    }
+
+    /*
+     * Give the blank tab a useful temporary title/message
+     * while the Stripe checkout URL is being generated.
+     */
+    try {
+      checkoutWindow.document.title =
+        'Opening Stripe Checkout…';
+
+      checkoutWindow.document.body.innerHTML = `
+        <div style="
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          display: flex;
+          min-height: 100vh;
+          align-items: center;
+          justify-content: center;
+          margin: 0;
+          background: #ffffff;
+          color: #111827;
+        ">
+          <div style="
+            text-align: center;
+            padding: 32px;
+          ">
+            <div style="
+              width: 32px;
+              height: 32px;
+              border: 3px solid #e5e7eb;
+              border-top-color: #111827;
+              border-radius: 50%;
+              animation: spin 0.8s linear infinite;
+              margin: 0 auto 16px;
+            "></div>
+
+            <div style="
+              font-size: 18px;
+              font-weight: 700;
+              margin-bottom: 8px;
+            ">
+              Opening Stripe Checkout…
+            </div>
+
+            <div style="
+              font-size: 14px;
+              color: #6b7280;
+            ">
+              Please wait.
+            </div>
+          </div>
+        </div>
+
+        <style>
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        </style>
+      `;
+    } catch {
+      /*
+       * Some browsers may restrict access to the
+       * newly opened window's document. That's okay.
+       */
+    }
+
+    setCheckoutPlan(
       planKey
     );
 
@@ -174,73 +245,59 @@ export default function PricingSection() {
           planKey
         );
 
-      /*
-       * New subscription:
-       * open Stripe Checkout in a new tab.
-       */
       if (
-        result?.action ===
-          'checkout' &&
-        result?.url
+        !result?.url
       ) {
-        const checkoutWindow =
-          window.open(
-            result.url,
-            '_blank',
-            'noopener,noreferrer'
-          );
-
-        if (!checkoutWindow) {
-          throw new Error(
-            'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
-          );
-        }
-
-        return;
+        throw new Error(
+          'Stripe did not return a checkout URL.'
+        );
       }
 
       /*
-       * Existing paid subscription:
-       * the backend changes the subscription
-       * directly without making another subscription.
+       * Put the Stripe Checkout URL into the tab
+       * that was already opened by the user click.
        */
-      if (
-        result?.action ===
-        'changed'
-      ) {
-        const freshUser =
-          await supabaseApi.auth.me();
+      checkoutWindow.location.href =
+        result.url;
 
-        setUser(
-          freshUser
-        );
-
-        toast.success(
-          `Your plan is now ${PLAN_LABELS[planKey]}.`
-        );
-
-        return;
-      }
-
-      throw new Error(
-        'The subscription service returned an unexpected response.'
+      /*
+       * Clear the loading state because the user
+       * now has Stripe open.
+       */
+      setCheckoutPlan(
+        null
       );
     } catch (error) {
       console.error(
-        'Subscription change failed:',
+        'Stripe checkout error:',
         error
       );
 
+      /*
+       * Close the blank tab because checkout failed.
+       */
+      try {
+        checkoutWindow.close();
+      } catch {
+        // Ignore browser close restrictions.
+      }
+
       toast.error(
         error?.message ||
-          'Unable to change your subscription.'
+          'Unable to start Stripe checkout. Please try again.'
       );
-    } finally {
-      setChangingPlan(
+
+      setCheckoutPlan(
         null
       );
     }
   };
+
+  /*
+   * ==========================================================
+   * CANCEL SUBSCRIPTION
+   * ==========================================================
+   */
 
   const handleCancel =
     async () => {
@@ -257,10 +314,12 @@ export default function PricingSection() {
             PLAN_LABELS[
               currentPlan
             ] || 'paid'
-          } subscription immediately?\n\nYou will immediately return to the Free Plan and paid-only features will be removed.`
+          } subscription immediately?\n\nYour account will switch to the Free Plan immediately and paid-only features will be removed.`
         );
 
-      if (!confirmed) {
+      if (
+        !confirmed
+      ) {
         return;
       }
 
@@ -290,7 +349,7 @@ export default function PricingSection() {
               null,
           };
 
-        setUser(
+        onSubscriptionChanged?.(
           updatedUser
         );
 
@@ -299,67 +358,79 @@ export default function PricingSection() {
         );
 
         /*
-         * Refresh the whole app so every feature gate
-         * immediately receives the new Free state.
+         * Refresh so every subscription gate
+         * throughout the application sees Free.
          */
-        setTimeout(() => {
-          window.location.reload();
-        }, 700);
+        window.setTimeout(
+          () => {
+            window.location.reload();
+          },
+          700
+        );
       } catch (error) {
         console.error(
-          'Subscription cancellation failed:',
+          'Subscription cancellation error:',
           error
         );
 
         toast.error(
           error?.message ||
-            'Unable to cancel your subscription.'
+            'Unable to cancel your subscription. Please try again.'
         );
       } finally {
-        setCanceling(false);
+        setCanceling(
+          false
+        );
       }
     };
+
+  const isPaid =
+    [
+      'progress',
+      'performance',
+      'elite',
+    ].includes(
+      currentPlan
+    );
 
   return (
     <div className="space-y-4">
 
       {/* =====================================================
-          CANCEL
+          CANCEL SUBSCRIPTION
           ===================================================== */}
 
       {isPaid && (
-        <Card className="p-4 border-destructive/25 bg-destructive/5">
+        <Card className="p-4 border-destructive/20 bg-destructive/5">
 
           <div className="flex items-center gap-2 mb-2">
+
             <XCircle className="w-4 h-4 text-destructive" />
 
             <span className="font-heading font-bold text-sm">
               Cancel Subscription
             </span>
+
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel your{' '}
-            <span className="font-semibold text-foreground">
-              {PLAN_LABELS[
-                currentPlan
-              ]}
-            </span>{' '}
-            subscription immediately.
-            Your account returns to the Free
-            Plan right away.
+            Cancel immediately and return
+            to the Free Plan. Paid AI
+            allowances and paid-only features
+            will be removed immediately.
           </p>
 
           <Button
             type="button"
             variant="outline"
-            className="w-full text-destructive border-destructive/30 hover:text-destructive hover:bg-destructive/5"
+            className="w-full text-destructive border-destructive/30 hover:text-destructive"
             onClick={
               handleCancel
             }
             disabled={
               canceling ||
-              changingPlan !== null
+              checkoutPlan !==
+                null
             }
           >
             {canceling ? (
@@ -377,7 +448,7 @@ export default function PricingSection() {
       )}
 
       {/* =====================================================
-          PLANS
+          PLAN HEADER
           ===================================================== */}
 
       <div className="flex items-center gap-2 pt-2">
@@ -394,147 +465,151 @@ export default function PricingSection() {
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
         {isPaid
-          ? 'Change your subscription whenever you need to.'
+          ? 'Choose another plan to change your subscription.'
           : 'Unlock more of the Washek experience.'}
       </p>
 
-      {plans.map((plan) => {
-        const Icon =
-          plan.icon;
+      {/* =====================================================
+          PLANS
+          ===================================================== */}
 
-        const isCurrent =
-          currentPlan ===
-          plan.planKey;
+      {plans.map(
+        (plan) => {
+          const Icon =
+            plan.icon;
 
-        const processing =
-          changingPlan ===
-          plan.planKey;
+          const isCurrent =
+            currentPlan ===
+            plan.planKey;
 
-        return (
-          <Card
-            key={
-              plan.planKey
-            }
-            className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
-          >
+          const isCheckingOut =
+            checkoutPlan ===
+            plan.planKey;
 
-            {plan.badge && (
-              <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
-                {plan.badge}
-              </Badge>
-            )}
+          return (
+            <Card
+              key={
+                plan.planKey
+              }
+              className={`p-4 border-2 ${plan.borderColor} ${plan.bgColor} relative`}
+            >
 
-            <div className="flex items-center justify-between mb-3">
-
-              <div className="flex items-center gap-2">
-
-                <Icon
-                  className={`w-5 h-5 ${plan.color}`}
-                />
-
-                <span className="font-heading font-bold text-base">
-                  {plan.name}
-                </span>
-
-              </div>
-
-              <div className="flex items-baseline gap-0.5">
-
-                <span
-                  className={`font-heading font-bold text-xl ${plan.color}`}
-                >
-                  {plan.price}
-                </span>
-
-                <span className="text-xs text-muted-foreground">
-                  {plan.period}
-                </span>
-
-              </div>
-
-            </div>
-
-            <ul className="space-y-1.5 mb-3">
-
-              {plan.features.map(
-                (feature) => (
-                  <li
-                    key={
-                      feature
-                    }
-                    className="flex items-start gap-2 text-sm"
-                  >
-
-                    <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
-
-                    <span>
-                      {feature}
-                    </span>
-
-                  </li>
-                )
+              {plan.badge && (
+                <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
+                  {plan.badge}
+                </Badge>
               )}
 
-            </ul>
+              <div className="flex items-center justify-between mb-3">
 
-            {plan.disclaimer && (
-              <p className="text-[10px] text-muted-foreground italic mb-3">
-                {plan.disclaimer}
-              </p>
-            )}
+                <div className="flex items-center gap-2">
 
-            {isCurrent ? (
-              <Button
-                type="button"
-                className="w-full h-10 font-heading font-semibold"
-                variant="secondary"
-                disabled
-              >
-                Current Plan
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                className="w-full h-10 font-heading font-semibold"
-                variant="outline"
-                onClick={() =>
-                  handlePlanChange(
-                    plan.planKey
+                  <Icon
+                    className={`w-5 h-5 ${plan.color}`}
+                  />
+
+                  <span className="font-heading font-bold text-base">
+                    {plan.name}
+                  </span>
+
+                </div>
+
+                <div className="flex items-baseline gap-0.5">
+
+                  <span
+                    className={`font-heading font-bold text-xl ${plan.color}`}
+                  >
+                    {plan.price}
+                  </span>
+
+                  <span className="text-xs text-muted-foreground">
+                    {plan.period}
+                  </span>
+
+                </div>
+
+              </div>
+
+              <ul className="space-y-1.5 mb-3">
+
+                {plan.features.map(
+                  (feature) => (
+                    <li
+                      key={
+                        feature
+                      }
+                      className="flex items-start gap-2 text-sm"
+                    >
+
+                      <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+
+                      <span>
+                        {feature}
+                      </span>
+
+                    </li>
                   )
-                }
-                disabled={
-                  loadingUser ||
-                  canceling ||
-                  changingPlan !==
-                    null
-                }
-              >
-                {processing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {currentPlan ===
-                    'free'
-                      ? 'Opening Checkout…'
-                      : 'Changing Plan…'}
-                  </>
-                ) : currentPlan ===
-                  'free' ? (
-                  `Get ${plan.name}`
-                ) : plan.planKey ===
-                  'progress' ? (
-                  'Switch to Progress'
-                ) : plan.planKey ===
-                  'performance' ? (
-                  'Switch to Performance'
-                ) : (
-                  'Switch to Elite'
                 )}
-              </Button>
-            )}
 
-          </Card>
-        );
-      })}
+              </ul>
+
+              {plan.disclaimer && (
+                <p className="text-[10px] text-muted-foreground italic mb-3">
+                  {plan.disclaimer}
+                </p>
+              )}
+
+              {isCurrent ? (
+                <Button
+                  type="button"
+                  className="w-full h-10 font-heading font-semibold"
+                  variant="secondary"
+                  disabled
+                >
+                  Current Plan
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  className="w-full h-10 font-heading font-semibold"
+                  variant="outline"
+                  onClick={() =>
+                    handleUpgrade(
+                      plan.planKey
+                    )
+                  }
+                  disabled={
+                    checkoutPlan !==
+                      null ||
+                    canceling
+                  }
+                >
+                  {isCheckingOut ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+
+                      Opening Checkout…
+                    </>
+                  ) : isPaid ? (
+                    plan.planKey ===
+                    'progress' ? (
+                      'Switch to Progress'
+                    ) : plan.planKey ===
+                      'performance' ? (
+                      'Switch to Performance'
+                    ) : (
+                      'Switch to Elite'
+                    )
+                  ) : (
+                    `Get ${plan.name}`
+                  )}
+                </Button>
+              )}
+
+            </Card>
+          );
+        }
+      )}
 
       <p className="text-[10px] text-muted-foreground text-center">
         Paid plans are billed monthly.
