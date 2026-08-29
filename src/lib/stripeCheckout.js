@@ -18,12 +18,13 @@ export async function createStripeCheckout(
     )
   ) {
     throw new Error(
-      `Invalid subscription plan: ${plan}`
+      'Invalid subscription plan.'
     );
   }
 
   /*
-   * Confirm there is an authenticated session.
+   * Make sure the browser has an authenticated
+   * Supabase session.
    */
   const {
     data: sessionData,
@@ -47,12 +48,15 @@ export async function createStripeCheckout(
     !session?.access_token
   ) {
     throw new Error(
-      'You are not currently signed in. Please sign in again.'
+      'You must be signed in before upgrading.'
     );
   }
 
   /*
    * Call the existing Supabase Edge Function.
+   *
+   * supabase.functions.invoke() automatically includes
+   * the current Supabase session credentials.
    */
   const {
     data,
@@ -67,42 +71,68 @@ export async function createStripeCheckout(
       }
     );
 
+  console.log(
+    '[Stripe Checkout] Edge Function data:',
+    data
+  );
+
+  console.log(
+    '[Stripe Checkout] Edge Function error:',
+    error
+  );
+
   /*
-   * A Supabase invocation error means the function
-   * itself could not be reached or returned a non-2xx
-   * response.
+   * Supabase transport/function errors.
    */
   if (
     error
   ) {
-    console.error(
-      '[STRIPE CHECKOUT] Supabase invocation error:',
-      error
-    );
+    /*
+     * Supabase can sometimes put the function response
+     * body inside the error context. Try to surface it.
+     */
+    let message =
+      error.message ||
+      'The Stripe checkout service could not be reached.';
+
+    try {
+      const context =
+        error.context;
+
+      if (
+        context &&
+        typeof context.json ===
+          'function'
+      ) {
+        const contextData =
+          await context.json();
+
+        if (
+          contextData?.error
+        ) {
+          message =
+            contextData.error;
+        }
+      }
+    } catch {
+      // Keep the normal error message.
+    }
 
     throw new Error(
-      error.message ||
-        'The Stripe checkout service could not be reached.'
+      message
     );
   }
-
-  console.log(
-    '[STRIPE CHECKOUT] Supabase response:',
-    data
-  );
 
   if (
     !data
   ) {
     throw new Error(
-      'The checkout service returned no data.'
+      'The Stripe checkout service returned no response.'
     );
   }
 
   /*
-   * Our Edge Function intentionally returns
-   * success:false for application errors while still
-   * using a successful HTTP response.
+   * Backend explicitly reported an application error.
    */
   if (
     data.success ===
@@ -110,12 +140,12 @@ export async function createStripeCheckout(
   ) {
     throw new Error(
       data.error ||
-        'The checkout service rejected the request.'
+        'The Stripe checkout service could not create a checkout session.'
     );
   }
 
   /*
-   * Normal FREE -> PAID checkout.
+   * Normal new-subscription checkout.
    */
   if (
     data.success ===
@@ -124,8 +154,7 @@ export async function createStripeCheckout(
       'checkout' &&
     typeof data.url ===
       'string' &&
-    data.url.length >
-      0
+    data.url.trim()
   ) {
     return {
       success:
@@ -156,7 +185,7 @@ export async function createStripeCheckout(
   }
 
   /*
-   * Existing subscription changed directly.
+   * Existing paid subscription was changed directly.
    */
   if (
     data.success ===
@@ -186,14 +215,12 @@ export async function createStripeCheckout(
   }
 
   /*
-   * Defensive fallback in case the backend returns
-   * a URL without the expected action field.
+   * Defensive fallback.
    */
   if (
     typeof data.url ===
       'string' &&
-    data.url.length >
-      0
+    data.url.trim()
   ) {
     return {
       success:
@@ -216,6 +243,6 @@ export async function createStripeCheckout(
   }
 
   throw new Error(
-    'Stripe did not return a valid Checkout URL.'
+    'Stripe returned a response, but no Checkout URL was provided.'
   );
 }
