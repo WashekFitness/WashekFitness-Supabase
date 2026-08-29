@@ -1,8 +1,6 @@
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-
 import {
   createClient,
-} from 'jsr:@supabase/supabase-js@2';
+} from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':
@@ -28,7 +26,7 @@ const SUPABASE_URL =
     'SUPABASE_URL'
   ) || '';
 
-const SERVICE_ROLE_KEY =
+const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get(
     'SUPABASE_SERVICE_ROLE_KEY'
   ) || '';
@@ -36,7 +34,7 @@ const SERVICE_ROLE_KEY =
 const supabaseAdmin =
   createClient(
     SUPABASE_URL,
-    SERVICE_ROLE_KEY,
+    SUPABASE_SERVICE_ROLE_KEY,
     {
       auth: {
         persistSession:
@@ -111,107 +109,20 @@ async function stripe(
 function canCancel(
   status: string
 ) {
-  return (
-    status === 'active' ||
-    status === 'trialing' ||
-    status === 'past_due' ||
-    status === 'unpaid'
-  );
+  return [
+    'active',
+    'trialing',
+    'past_due',
+    'unpaid',
+  ].includes(status);
 }
 
-async function findBySubscriptionId(
-  subscriptionId: string
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq(
-        'stripe_subscription_id',
-        subscriptionId
-      )
-      .maybeSingle();
-
-  if (
-    error
-  ) {
-    throw error;
-  }
-
-  return data;
-}
-
-async function findByCustomerId(
-  customerId: string
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq(
-        'stripe_customer_id',
-        customerId
-      )
-      .maybeSingle();
-
-  if (
-    error
-  ) {
-    throw error;
-  }
-
-  return data;
-}
-
-async function findByEmail(
-  email: string
-) {
-  if (
-    !email
-  ) {
-    return null;
-  }
-
-  const normalized =
-    email
-      .trim()
-      .toLowerCase();
-
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .ilike(
-        'email',
-        normalized
-      )
-      .limit(1)
-      .maybeSingle();
-
-  if (
-    error
-  ) {
-    throw error;
-  }
-
-  return data;
-}
-
-async function findStripeSubscription(
+async function findSubscription(
   profile: any,
   email: string
 ) {
   /*
-   * 1. Saved subscription ID.
+   * Saved subscription ID.
    */
   if (
     profile?.stripe_subscription_id
@@ -238,7 +149,7 @@ async function findStripeSubscription(
   }
 
   /*
-   * 2. Saved Stripe customer ID.
+   * Saved customer ID.
    */
   if (
     profile?.stripe_customer_id
@@ -251,12 +162,13 @@ async function findStripeSubscription(
       );
 
     const subscription =
-      (result?.data || []).find(
-        (item: any) =>
-          canCancel(
-            item.status
-          )
-      );
+      (result?.data || [])
+        .find(
+          (item: any) =>
+            canCancel(
+              item.status
+            )
+        );
 
     if (
       subscription
@@ -266,7 +178,7 @@ async function findStripeSubscription(
   }
 
   /*
-   * 3. Recover the Stripe customer by email.
+   * Recover using the authenticated user's email.
    */
   if (
     email
@@ -280,7 +192,8 @@ async function findStripeSubscription(
 
     for (
       const customer of
-      customers?.data || []
+      customers?.data ||
+      []
     ) {
       const result =
         await stripe(
@@ -290,12 +203,13 @@ async function findStripeSubscription(
         );
 
       const subscription =
-        (result?.data || []).find(
-          (item: any) =>
-            canCancel(
-              item.status
-            )
-        );
+        (result?.data || [])
+          .find(
+            (item: any) =>
+              canCancel(
+                item.status
+              )
+          );
 
       if (
         subscription
@@ -306,57 +220,6 @@ async function findStripeSubscription(
   }
 
   return null;
-}
-
-async function setFree(
-  userId: string,
-  customerId: string | null
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .update({
-        subscription_plan:
-          'free',
-
-        subscription_status:
-          'canceled',
-
-        stripe_customer_id:
-          customerId,
-
-        stripe_subscription_id:
-          null,
-
-        stripe_price_id:
-          null,
-
-        subscription_cancelled_at:
-          new Date().toISOString(),
-
-        subscription_updated_at:
-          new Date().toISOString(),
-
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        'id',
-        userId
-      )
-      .select()
-      .single();
-
-  if (
-    error
-  ) {
-    throw error;
-  }
-
-  return data;
 }
 
 Deno.serve(
@@ -392,9 +255,9 @@ Deno.serve(
 
     try {
       /*
-       * -------------------------------------------------------
-       * AUTHENTICATE USER
-       * -------------------------------------------------------
+       * =====================================================
+       * AUTH
+       * =====================================================
        */
 
       const authHeader =
@@ -411,7 +274,7 @@ Deno.serve(
               false,
 
             error:
-              'You must be signed in to cancel your subscription.',
+              'You must be signed in.',
           },
           401
         );
@@ -424,8 +287,10 @@ Deno.serve(
         );
 
       const {
-        data: authData,
-        error: authError,
+        data:
+          authData,
+        error:
+          authError,
       } =
         await supabaseAdmin.auth.getUser(
           token
@@ -451,9 +316,9 @@ Deno.serve(
         authData.user;
 
       /*
-       * -------------------------------------------------------
-       * GET PROFILE
-       * -------------------------------------------------------
+       * =====================================================
+       * PROFILE
+       * =====================================================
        */
 
       const {
@@ -484,73 +349,81 @@ Deno.serve(
         '';
 
       /*
-       * -------------------------------------------------------
-       * FIND THE ACTUAL STRIPE SUBSCRIPTION
-       *
-       * NOTICE:
-       *
-       * We deliberately DO NOT check
-       * profile.subscription_plan first.
-       *
-       * Stripe is checked directly.
-       * -------------------------------------------------------
+       * =====================================================
+       * FIND THE REAL STRIPE SUBSCRIPTION
+       * =====================================================
        */
 
       const subscription =
-        await findStripeSubscription(
+        await findSubscription(
           profile,
           email
         );
 
       /*
-       * -------------------------------------------------------
-       * NO STRIPE SUBSCRIPTION
-       *
-       * Clean up any stale local paid state.
-       * -------------------------------------------------------
+       * No active subscription.
+       * Make the profile Free anyway so stale
+       * data cannot keep paid features enabled.
        */
-
       if (
         !subscription
       ) {
-        const updated =
-          await setFree(
-            user.id,
+        const {
+          data:
+            updated,
+          error:
+            updateError,
+        } =
+          await supabaseAdmin
+            .from('profiles')
+            .update({
+              subscription_plan:
+                'free',
 
-            profile?.stripe_customer_id ||
-              null
-          );
+              subscription_status:
+                'canceled',
+
+              stripe_subscription_id:
+                null,
+
+              stripe_price_id:
+                null,
+
+              subscription_updated_at:
+                new Date().toISOString(),
+
+              updated_at:
+                new Date().toISOString(),
+            })
+            .eq(
+              'id',
+              user.id
+            )
+            .select()
+            .single();
+
+        if (
+          updateError
+        ) {
+          throw updateError;
+        }
 
         return json({
           success:
             true,
 
-          alreadyFree:
+          alreadyCanceled:
             true,
-
-          message:
-            'No active Stripe subscription was found. Your Washek account is now on the Free Plan.',
 
           user:
             updated,
         });
       }
 
-      const customerId =
-        typeof subscription.customer ===
-        'string'
-          ? subscription.customer
-          : profile?.stripe_customer_id ||
-            null;
-
       /*
-       * -------------------------------------------------------
+       * =====================================================
        * IMMEDIATE STRIPE CANCELLATION
-       *
-       * No cancel_at_period_end.
-       *
-       * The subscription is terminated now.
-       * -------------------------------------------------------
+       * =====================================================
        */
 
       let canceled =
@@ -573,17 +446,61 @@ Deno.serve(
           );
       }
 
+      const customerId =
+        typeof subscription.customer ===
+        'string'
+          ? subscription.customer
+          : profile?.stripe_customer_id ||
+            null;
+
       /*
-       * -------------------------------------------------------
-       * IMMEDIATELY REMOVE PAID ACCESS
-       * -------------------------------------------------------
+       * =====================================================
+       * REMOVE PAID ACCESS IMMEDIATELY
+       * =====================================================
        */
 
-      const updated =
-        await setFree(
-          user.id,
-          customerId
-        );
+      const {
+        data:
+          updated,
+        error:
+          updateError,
+      } =
+        await supabaseAdmin
+          .from('profiles')
+          .update({
+            subscription_plan:
+              'free',
+
+            subscription_status:
+              'canceled',
+
+            stripe_customer_id:
+              customerId,
+
+            stripe_subscription_id:
+              null,
+
+            stripe_price_id:
+              null,
+
+            subscription_updated_at:
+              new Date().toISOString(),
+
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            'id',
+            user.id
+          )
+          .select()
+          .single();
+
+      if (
+        updateError
+      ) {
+        throw updateError;
+      }
 
       return json({
         success:
