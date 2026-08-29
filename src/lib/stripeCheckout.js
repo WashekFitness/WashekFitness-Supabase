@@ -24,7 +24,7 @@ export async function createStripeCheckout(
   }
 
   /*
-   * Confirm the user is actually logged in.
+   * Make sure the user has a current session.
    */
   const {
     data: sessionData,
@@ -41,12 +41,9 @@ export async function createStripeCheckout(
     );
   }
 
-  const accessToken =
-    sessionData?.session
-      ?.access_token;
-
   if (
-    !accessToken
+    !sessionData?.session
+      ?.access_token
   ) {
     throw new Error(
       'You must be signed in before upgrading.'
@@ -54,8 +51,7 @@ export async function createStripeCheckout(
   }
 
   /*
-   * Ask Supabase to create the Stripe Checkout
-   * session.
+   * Call the Supabase Edge Function.
    */
   const {
     data,
@@ -70,55 +66,64 @@ export async function createStripeCheckout(
       }
     );
 
+  /*
+   * Supabase function invocation errors.
+   */
   if (
     error
   ) {
     console.error(
-      'create-checkout-session invocation failed:',
+      'Checkout function invocation failed:',
       error
     );
 
     throw new Error(
       error.message ||
-        'Unable to contact the Stripe checkout service.'
+        'The checkout service could not be reached.'
     );
   }
 
+  /*
+   * Backend explicitly reported failure.
+   */
   if (
-    !data
-  ) {
-    throw new Error(
-      'The Stripe checkout service returned no response.'
-    );
-  }
-
-  if (
-    data.success ===
+    data?.success ===
     false
   ) {
     throw new Error(
       data.error ||
-        'Unable to create Stripe Checkout.'
+        'The checkout service rejected the request.'
     );
   }
 
+  /*
+   * Normal new-subscription flow.
+   */
   if (
-    data.action ===
+    data?.success &&
+    data?.action ===
       'checkout' &&
-    data.url
+    data?.url
   ) {
     return data;
   }
 
+  /*
+   * Existing subscription changed directly.
+   */
   if (
-    data.action ===
+    data?.success &&
+    data?.action ===
       'changed'
   ) {
     return data;
   }
 
+  /*
+   * Defensive fallback.
+   */
   if (
-    data.url
+    data?.url
   ) {
     return {
       ...data,
@@ -132,6 +137,6 @@ export async function createStripeCheckout(
   }
 
   throw new Error(
-    'Stripe did not return a Checkout URL.'
+    'The checkout service did not return a Stripe Checkout URL.'
   );
 }
