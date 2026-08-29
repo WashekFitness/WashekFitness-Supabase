@@ -1,10 +1,7 @@
-import {
-  createClient,
-} from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin':
-    '*',
+  'Access-Control-Allow-Origin': '*',
 
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
@@ -17,14 +14,10 @@ const corsHeaders = {
 };
 
 const STRIPE_SECRET_KEY =
-  Deno.env.get(
-    'STRIPE_SECRET_KEY'
-  ) || '';
+  Deno.env.get('STRIPE_SECRET_KEY') || '';
 
 const SUPABASE_URL =
-  Deno.env.get(
-    'SUPABASE_URL'
-  ) || '';
+  Deno.env.get('SUPABASE_URL') || '';
 
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get(
@@ -32,11 +25,15 @@ const SUPABASE_SERVICE_ROLE_KEY =
   ) || '';
 
 const APP_URL =
-  Deno.env.get(
-    'APP_URL'
-  ) ||
+  Deno.env.get('APP_URL') ||
   'https://washekfitness.com';
 
+/*
+ * YOUR ACTUAL STRIPE PRODUCT IDS
+ *
+ * We use these directly so you do not need
+ * to configure three separate Price ID secrets.
+ */
 const PRODUCTS = {
   progress:
     'prod_USTp1fOzf3aHsl',
@@ -60,11 +57,8 @@ const supabaseAdmin =
     SUPABASE_SERVICE_ROLE_KEY,
     {
       auth: {
-        persistSession:
-          false,
-
-        autoRefreshToken:
-          false,
+        persistSession: false,
+        autoRefreshToken: false,
       },
     }
   );
@@ -77,11 +71,18 @@ function json(
     JSON.stringify(body),
     {
       status,
+
       headers:
         corsHeaders,
     }
   );
 }
+
+/*
+ * ==========================================================
+ * STRIPE API HELPER
+ * ==========================================================
+ */
 
 async function stripe(
   path: string,
@@ -115,7 +116,11 @@ async function stripe(
     );
 
   const data =
-    await response.json();
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
 
   if (
     !response.ok
@@ -129,7 +134,33 @@ async function stripe(
   return data;
 }
 
-async function getMonthlyPrice(
+/*
+ * ==========================================================
+ * PRODUCT / PRICE HELPERS
+ * ==========================================================
+ */
+
+function getProductId(
+  plan: string
+) {
+  if (
+    !PAID_PLANS.includes(
+      plan
+    )
+  ) {
+    throw new Error(
+      'Invalid subscription plan.'
+    );
+  }
+
+  return (
+    PRODUCTS[
+      plan as keyof typeof PRODUCTS
+    ]
+  );
+}
+
+async function getActiveRecurringPrice(
   productId: string
 ) {
   const params =
@@ -169,10 +200,13 @@ async function getMonthlyPrice(
     0
   ) {
     throw new Error(
-      `No active recurring price was found for Stripe product ${productId}.`
+      `No active recurring Stripe Price was found for product ${productId}.`
     );
   }
 
+  /*
+   * Prefer a monthly recurring price.
+   */
   const monthly =
     prices.find(
       (price: any) =>
@@ -181,17 +215,27 @@ async function getMonthlyPrice(
         'month'
     );
 
+  /*
+   * Otherwise use the first active recurring
+   * price Stripe returned.
+   */
   return (
     monthly ||
     prices[0]
   );
 }
 
-async function findActiveSubscription(
+/*
+ * ==========================================================
+ * PROFILE / EXISTING SUBSCRIPTION
+ * ==========================================================
+ */
+
+async function findExistingSubscription(
   profile: any
 ) {
   /*
-   * Saved subscription ID.
+   * First try the saved subscription ID.
    */
   if (
     profile?.stripe_subscription_id
@@ -212,18 +256,22 @@ async function findActiveSubscription(
           subscription.status ===
             'trialing' ||
           subscription.status ===
-            'past_due'
+            'past_due' ||
+          subscription.status ===
+            'unpaid'
         )
       ) {
         return subscription;
       }
     } catch {
-      // Continue.
+      /*
+       * Continue to the customer lookup.
+       */
     }
   }
 
   /*
-   * Saved customer ID.
+   * Next try the saved customer ID.
    */
   if (
     profile?.stripe_customer_id
@@ -235,30 +283,32 @@ async function findActiveSubscription(
         )}&status=all&limit=50`
       );
 
-    const subscription =
-      (result?.data ||
-        []).find(
-        (item: any) =>
-          item.status ===
+    const active =
+      (
+        result?.data ||
+        []
+      ).find(
+        (subscription: any) =>
+          subscription.status ===
             'active' ||
-          item.status ===
+          subscription.status ===
             'trialing' ||
-          item.status ===
-            'past_due'
-        );
+          subscription.status ===
+            'past_due' ||
+          subscription.status ===
+            'unpaid'
+      );
 
     if (
-      subscription
+      active
     ) {
-      return subscription;
+      return active;
     }
   }
 
   /*
-   * Last-resort customer lookup by email.
-   *
-   * This is important for your existing
-   * Stripe test subscription.
+   * Finally, try to recover the Stripe customer
+   * from the Washek account email.
    */
   const email =
     profile?.email ||
@@ -286,22 +336,26 @@ async function findActiveSubscription(
           )}&status=all&limit=50`
         );
 
-      const subscription =
-        (result?.data ||
-          []).find(
-            (item: any) =>
-              item.status ===
-                'active' ||
-              item.status ===
-                'trialing' ||
-              item.status ===
-                'past_due'
-          );
+      const active =
+        (
+          result?.data ||
+          []
+        ).find(
+          (subscription: any) =>
+            subscription.status ===
+              'active' ||
+            subscription.status ===
+              'trialing' ||
+            subscription.status ===
+              'past_due' ||
+            subscription.status ===
+              'unpaid'
+        );
 
       if (
-        subscription
+        active
       ) {
-        return subscription;
+        return active;
       }
     }
   }
@@ -309,9 +363,15 @@ async function findActiveSubscription(
   return null;
 }
 
+/*
+ * ==========================================================
+ * PROFILE UPDATE
+ * ==========================================================
+ */
+
 async function updateProfile(
   userId: string,
-  values: Record<string, unknown>
+  patch: Record<string, unknown>
 ) {
   const {
     error,
@@ -319,7 +379,7 @@ async function updateProfile(
     await supabaseAdmin
       .from('profiles')
       .update({
-        ...values,
+        ...patch,
 
         subscription_updated_at:
           new Date().toISOString(),
@@ -339,28 +399,17 @@ async function updateProfile(
   }
 }
 
-function getProductForPlan(
-  plan: string
-) {
-  if (
-    !PAID_PLANS.includes(
-      plan
-    )
-  ) {
-    throw new Error(
-      'Invalid subscription plan.'
-    );
-  }
-
-  return (
-    PRODUCTS[
-      plan as keyof typeof PRODUCTS
-    ]
-  );
-}
+/*
+ * ==========================================================
+ * EDGE FUNCTION
+ * ==========================================================
+ */
 
 Deno.serve(
   async (req) => {
+    /*
+     * CORS.
+     */
     if (
       req.method ===
       'OPTIONS'
@@ -392,9 +441,9 @@ Deno.serve(
 
     try {
       /*
-       * =====================================================
-       * AUTH
-       * =====================================================
+       * ======================================================
+       * AUTHENTICATE USER
+       * ======================================================
        */
 
       const authHeader =
@@ -449,13 +498,13 @@ Deno.serve(
         );
       }
 
-      const user =
+      const authUser =
         authData.user;
 
       /*
-       * =====================================================
-       * REQUEST
-       * =====================================================
+       * ======================================================
+       * READ REQUEST
+       * ======================================================
        */
 
       const body =
@@ -474,14 +523,14 @@ Deno.serve(
           .toLowerCase();
 
       const productId =
-        getProductForPlan(
+        getProductId(
           plan
         );
 
       /*
-       * =====================================================
-       * PROFILE
-       * =====================================================
+       * ======================================================
+       * GET WASHEK PROFILE
+       * ======================================================
        */
 
       const {
@@ -505,7 +554,7 @@ Deno.serve(
           )
           .eq(
             'id',
-            user.id
+            authUser.id
           )
           .single();
 
@@ -518,33 +567,35 @@ Deno.serve(
       }
 
       /*
-       * =====================================================
-       * FIND TARGET PRICE
-       * =====================================================
+       * ======================================================
+       * GET THE STRIPE PRICE ATTACHED TO THE PRODUCT
+       * ======================================================
        */
 
       const targetPrice =
-        await getMonthlyPrice(
+        await getActiveRecurringPrice(
           productId
         );
 
       /*
-       * =====================================================
-       * CHECK FOR AN EXISTING STRIPE SUBSCRIPTION
-       * =====================================================
+       * ======================================================
+       * CHECK FOR EXISTING SUBSCRIPTION
+       * ======================================================
        */
 
       const existingSubscription =
-        await findActiveSubscription(
+        await findExistingSubscription(
           profile
         );
 
       /*
-       * =====================================================
+       * ======================================================
        * PAID -> PAID
-       * =====================================================
+       * ======================================================
        *
-       * Don't create a second subscription.
+       * Do not create two subscriptions.
+       *
+       * Change the existing subscription item instead.
        */
 
       if (
@@ -557,20 +608,20 @@ Deno.serve(
 
         if (!item) {
           throw new Error(
-            'Your Stripe subscription has no subscription item to update.'
+            'Your Stripe subscription has no subscription item to change.'
           );
         }
 
         /*
-         * If already using the target price,
-         * don't do anything.
+         * If they already have this exact price,
+         * update our local record and finish.
          */
         if (
           item?.price?.id ===
           targetPrice.id
         ) {
           await updateProfile(
-            user.id,
+            authUser.id,
             {
               subscription_plan:
                 plan,
@@ -602,11 +653,20 @@ Deno.serve(
 
             plan,
 
-            user:
-              profile,
+            subscription_id:
+              existingSubscription.id,
+
+            price_id:
+              targetPrice.id,
           });
         }
 
+        /*
+         * Change the subscription item.
+         *
+         * proration_behavior=none prevents an
+         * unexpected immediate prorated charge.
+         */
         const itemParams =
           new URLSearchParams();
 
@@ -623,11 +683,6 @@ Deno.serve(
           )
         );
 
-        /*
-         * Change takes effect immediately.
-         *
-         * No surprise mid-cycle prorated charge.
-         */
         itemParams.set(
           'proration_behavior',
           'none'
@@ -647,19 +702,19 @@ Deno.serve(
         );
 
         /*
-         * Update subscription metadata too.
+         * Keep Stripe metadata synchronized.
          */
         const subscriptionParams =
           new URLSearchParams();
 
         subscriptionParams.set(
-          'metadata[plan]',
-          plan
+          'metadata[user_id]',
+          authUser.id
         );
 
         subscriptionParams.set(
-          'metadata[user_id]',
-          user.id
+          'metadata[plan]',
+          plan
         );
 
         subscriptionParams.set(
@@ -692,8 +747,12 @@ Deno.serve(
             : profile?.stripe_customer_id ||
               null;
 
+        /*
+         * Update Washek immediately rather than waiting
+         * for a webhook.
+         */
         await updateProfile(
-          user.id,
+          authUser.id,
           {
             subscription_plan:
               plan,
@@ -730,9 +789,9 @@ Deno.serve(
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * FREE -> PAID
-       * =====================================================
+       * ======================================================
        */
 
       const params =
@@ -753,6 +812,9 @@ Deno.serve(
         '1'
       );
 
+      /*
+       * Return to Washek after checkout.
+       */
       params.set(
         'success_url',
         `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
@@ -766,16 +828,17 @@ Deno.serve(
       );
 
       /*
-       * Authenticated Washek user association.
+       * Associate checkout session with
+       * authenticated Washek user.
        */
       params.set(
         'client_reference_id',
-        user.id
+        authUser.id
       );
 
       params.set(
         'metadata[user_id]',
-        user.id
+        authUser.id
       );
 
       params.set(
@@ -794,12 +857,12 @@ Deno.serve(
       );
 
       /*
-       * Put the same metadata on the actual
-       * Stripe Subscription.
+       * Associate the actual Stripe Subscription
+       * with the Washek user too.
        */
       params.set(
         'subscription_data[metadata][user_id]',
-        user.id
+        authUser.id
       );
 
       params.set(
@@ -818,7 +881,7 @@ Deno.serve(
       );
 
       /*
-       * Reuse Stripe Customer when possible.
+       * Reuse existing Stripe Customer.
        */
       if (
         profile?.stripe_customer_id
@@ -827,17 +890,27 @@ Deno.serve(
           'customer',
           profile.stripe_customer_id
         );
-      } else if (
-        profile?.email ||
-        user.email
-      ) {
-        params.set(
-          'customer_email',
+      } else {
+        const email =
           profile?.email ||
-            user.email ||
-            ''
-        );
+          authUser.email ||
+          '';
+
+        if (
+          email
+        ) {
+          params.set(
+            'customer_email',
+            email
+          );
+        }
       }
+
+      /*
+       * ======================================================
+       * CREATE STRIPE CHECKOUT SESSION
+       * ======================================================
+       */
 
       const session =
         await stripe(
