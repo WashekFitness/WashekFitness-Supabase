@@ -10,27 +10,39 @@ const VALID_PLANS = [
   'elite',
 ];
 
-export async function createStripeCheckout(plan) {
-  if (!VALID_PLANS.includes(plan)) {
-    throw new Error('Invalid subscription plan.');
+export async function createStripeCheckout(
+  plan
+) {
+  if (
+    !VALID_PLANS.includes(
+      plan
+    )
+  ) {
+    throw new Error(
+      'Invalid subscription plan.'
+    );
   }
 
   const {
     data: sessionData,
     error: sessionError,
-  } = await supabase.auth.getSession();
+  } =
+    await supabase.auth.getSession();
 
-  if (sessionError) {
+  if (
+    sessionError
+  ) {
     throw new Error(
       sessionError.message ||
         'Unable to verify your login session.'
     );
   }
 
-  const accessToken =
-    sessionData?.session?.access_token;
+  const token =
+    sessionData?.session
+      ?.access_token;
 
-  if (!accessToken) {
+  if (!token) {
     throw new Error(
       'You must be signed in before changing your subscription.'
     );
@@ -39,71 +51,67 @@ export async function createStripeCheckout(plan) {
   const {
     data,
     error,
-  } = await supabase.functions.invoke(
-    CHECKOUT_FUNCTION,
-    {
-      body: {
-        plan,
-      },
-    }
-  );
+  } =
+    await supabase.functions.invoke(
+      CHECKOUT_FUNCTION,
+      {
+        body: {
+          plan,
+        },
+      }
+    );
 
   if (error) {
     console.error(
-      'Supabase checkout function error:',
+      'Checkout Edge Function error:',
       error
     );
 
     throw new Error(
       error.message ||
-        'Unable to start subscription checkout.'
+        'Unable to contact the subscription service.'
     );
   }
 
-  if (!data) {
+  if (
+    !data
+  ) {
     throw new Error(
-      'No response was received from the subscription service.'
+      'The subscription service returned no response.'
     );
   }
 
-  if (!data.success) {
+  if (
+    data.success ===
+    false
+  ) {
     throw new Error(
       data.error ||
         'Unable to change your subscription.'
     );
   }
 
-  /*
-   * When a free user purchases a plan,
-   * Stripe gives us a Checkout URL.
-   */
-  if (data.action === 'checkout') {
+  if (
+    data.action ===
+    'checkout'
+  ) {
     if (!data.url) {
       throw new Error(
         'Stripe did not return a checkout URL.'
       );
     }
 
-    return {
-      ...data,
-      action: 'checkout',
-      url: data.url,
-    };
+    return data;
   }
 
-  /*
-   * When an existing paid user switches
-   * plans, Stripe changes the subscription
-   * directly and no checkout page is needed.
-   */
-  if (data.action === 'changed') {
-    return {
-      ...data,
-      action: 'changed',
-    };
+  if (
+    data.action ===
+    'changed'
+  ) {
+    return data;
   }
 
   throw new Error(
-    'The subscription service returned an unexpected response.'
+    'The subscription service returned an invalid response.'
   );
 }
