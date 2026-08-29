@@ -1,56 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-/*
- * ============================================================
- * WASHEK FITNESS — STRIPE WEBHOOKS
- * ============================================================
- *
- * Handles:
- *
- * - checkout.session.completed
- * - checkout.session.async_payment_succeeded
- * - customer.subscription.created
- * - customer.subscription.updated
- * - customer.subscription.deleted
- * - invoice.paid
- * - invoice.payment_failed
- *
- * The plan mapping uses the exact Stripe Price IDs provided
- * for the Washek Fitness Sandbox.
- */
-
-/*
- * ============================================================
- * ENVIRONMENT
- * ============================================================
- */
-
 const STRIPE_SECRET_KEY =
   Deno.env.get('STRIPE_SECRET_KEY') || '';
 
 const STRIPE_WEBHOOK_SECRET =
-  Deno.env.get(
-    'STRIPE_WEBHOOK_SECRET'
-  ) || '';
+  Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
 
 const SUPABASE_URL =
   Deno.env.get('SUPABASE_URL') || '';
 
 const SUPABASE_SERVICE_ROLE_KEY =
-  Deno.env.get(
-    'SUPABASE_SERVICE_ROLE_KEY'
-  ) || '';
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
-/*
- * ============================================================
- * EXACT STRIPE PRICE -> WASHEK PLAN MAPPING
- * ============================================================
- */
-
-const PRICE_TO_PLAN: Record<
-  string,
-  string
-> = {
+const PRICE_TO_PLAN = {
   'price_1TTYrbRuQpZftYKRoSyLbQ0c':
     'progress',
 
@@ -61,27 +23,16 @@ const PRICE_TO_PLAN: Record<
     'elite',
 };
 
-const PAID_PLANS = [
-  'progress',
-  'performance',
-  'elite',
-];
+const PRODUCT_TO_PLAN = {
+  'prod_USTp1fOzf3aHsl':
+    'progress',
 
-const PAID_STATUSES = [
-  'active',
-  'trialing',
-];
+  'prod_USTpsXJPgs7ccs':
+    'performance',
 
-const NON_PAID_STATUSES = [
-  'canceled',
-  'incomplete_expired',
-];
-
-/*
- * ============================================================
- * SUPABASE ADMIN CLIENT
- * ============================================================
- */
+  'prod_USTqn0bZsTVUkH':
+    'elite',
+};
 
 const supabaseAdmin =
   createClient(
@@ -89,28 +40,32 @@ const supabaseAdmin =
     SUPABASE_SERVICE_ROLE_KEY,
     {
       auth: {
-        persistSession:
-          false,
-
-        autoRefreshToken:
-          false,
+        persistSession: false,
+        autoRefreshToken: false,
       },
     }
   );
 
-/*
- * ============================================================
- * STRIPE API
- * ============================================================
- */
+function json(
+  body: unknown,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: {
+        'Content-Type':
+          'application/json',
+      },
+    }
+  );
+}
 
 async function stripe(
-  path: string,
-  options: RequestInit = {}
+  path: string
 ) {
-  if (
-    !STRIPE_SECRET_KEY
-  ) {
+  if (!STRIPE_SECRET_KEY) {
     throw new Error(
       'STRIPE_SECRET_KEY is not configured.'
     );
@@ -120,105 +75,81 @@ async function stripe(
     await fetch(
       `https://api.stripe.com/v1/${path}`,
       {
-        ...options,
-
         headers: {
           Authorization:
             `Bearer ${STRIPE_SECRET_KEY}`,
-
-          'Content-Type':
-            'application/x-www-form-urlencoded',
-
-          ...(options.headers ||
-            {}),
         },
       }
     );
 
-  const rawText =
+  const text =
     await response.text();
 
   let data: any = {};
 
   try {
     data =
-      JSON.parse(
-        rawText
-      );
+      JSON.parse(text);
   } catch {
     data = {
-      raw:
-        rawText,
+      raw: text,
     };
   }
 
-  if (
-    !response.ok
-  ) {
+  if (!response.ok) {
     throw new Error(
       data?.error?.message ||
-        `Stripe returned HTTP ${response.status}.`
+        `Stripe API returned HTTP ${response.status}.`
     );
   }
 
   return data;
 }
 
-/*
- * ============================================================
- * STRIPE SIGNATURE VERIFICATION
- * ============================================================
- */
-
 async function verifySignature(
   payload: string,
-  signatureHeader: string
+  header: string
 ) {
-  if (
-    !STRIPE_WEBHOOK_SECRET
-  ) {
+  if (!STRIPE_WEBHOOK_SECRET) {
     throw new Error(
       'STRIPE_WEBHOOK_SECRET is not configured.'
     );
   }
 
-  const pieces =
-    signatureHeader.split(',');
+  const parts =
+    header.split(',');
 
   const timestampPart =
-    pieces.find(
+    parts.find(
       (part) =>
-        part.startsWith(
-          't='
-        )
+        part.trim().startsWith('t=')
     );
 
   const signatures =
-    pieces
+    parts
       .filter(
         (part) =>
-          part.startsWith(
-            'v1='
-          )
+          part.trim().startsWith('v1=')
       )
       .map(
         (part) =>
-          part.slice(3)
+          part.trim().slice(3)
       );
 
   if (
     !timestampPart ||
-    signatures.length ===
-      0
+    signatures.length === 0
   ) {
     throw new Error(
-      'Invalid Stripe signature.'
+      'Invalid Stripe signature header.'
     );
   }
 
   const timestamp =
     Number(
-      timestampPart.slice(2)
+      timestampPart
+        .trim()
+        .slice(2)
     );
 
   if (
@@ -227,21 +158,15 @@ async function verifySignature(
     )
   ) {
     throw new Error(
-      'Invalid Stripe timestamp.'
+      'Invalid Stripe webhook timestamp.'
     );
   }
 
-  /*
-   * Five-minute replay protection.
-   */
-  const age =
+  if (
     Math.abs(
       Date.now() / 1000 -
         timestamp
-    );
-
-  if (
-    age >
+    ) >
     300
   ) {
     throw new Error(
@@ -252,37 +177,25 @@ async function verifySignature(
   const signedPayload =
     `${timestamp}.${payload}`;
 
-  const encoder =
-    new TextEncoder();
-
-  const cryptoKey =
+  const key =
     await crypto.subtle.importKey(
       'raw',
-
-      encoder.encode(
+      new TextEncoder().encode(
         STRIPE_WEBHOOK_SECRET
       ),
-
       {
-        name:
-          'HMAC',
-
-        hash:
-          'SHA-256',
+        name: 'HMAC',
+        hash: 'SHA-256',
       },
-
       false,
-
       ['sign']
     );
 
   const digest =
     await crypto.subtle.sign(
       'HMAC',
-
-      cryptoKey,
-
-      encoder.encode(
+      key,
+      new TextEncoder().encode(
         signedPayload
       )
     );
@@ -297,16 +210,12 @@ async function verifySignature(
         (byte) =>
           byte
             .toString(16)
-            .padStart(
-              2,
-              '0'
-            )
+            .padStart(2, '0')
       )
       .join('');
 
   for (
-    const candidate of
-    signatures
+    const candidate of signatures
   ) {
     if (
       candidate.length !==
@@ -318,25 +227,19 @@ async function verifySignature(
     let difference = 0;
 
     for (
-      let index = 0;
-      index <
-      expected.length;
-      index += 1
+      let i = 0;
+      i < expected.length;
+      i++
     ) {
       difference |=
-        expected.charCodeAt(
-          index
-        ) ^
-        candidate.charCodeAt(
-          index
-        );
+        expected.charCodeAt(i) ^
+        candidate.charCodeAt(i);
     }
 
     if (
-      difference ===
-      0
+      difference === 0
     ) {
-      return true;
+      return;
     }
   }
 
@@ -345,34 +248,33 @@ async function verifySignature(
   );
 }
 
-/*
- * ============================================================
- * PLAN DETECTION
- * ============================================================
- */
-
-function planFromPrice(
+function getPlanFromPrice(
   priceId: string | null
 ) {
-  if (
-    !priceId
-  ) {
+  if (!priceId) {
     return null;
   }
 
   return (
     PRICE_TO_PLAN[
       priceId
-    ] ||
-    null
+    ] || null
   );
 }
 
-/*
- * ============================================================
- * GET SUBSCRIPTION PRICE
- * ============================================================
- */
+function getPlanFromProduct(
+  productId: string | null
+) {
+  if (!productId) {
+    return null;
+  }
+
+  return (
+    PRODUCT_TO_PLAN[
+      productId
+    ] || null
+  );
+}
 
 function getSubscriptionPriceId(
   subscription: any
@@ -387,49 +289,64 @@ function getSubscriptionPriceId(
   );
 }
 
-/*
- * ============================================================
- * FIND PROFILE BY USER ID
- * ============================================================
- */
-
-async function findProfileByUserId(
-  userId: string
+function getSubscriptionPlan(
+  subscription: any,
+  fallbackPlan: string | null = null
 ) {
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq(
-        'id',
-        userId
-      )
-      .maybeSingle();
+  const price =
+    subscription
+      ?.items
+      ?.data?.[0]
+      ?.price;
 
-  if (
-    error
-  ) {
-    throw error;
+  const priceId =
+    typeof price?.id === 'string'
+      ? price.id
+      : null;
+
+  const productId =
+    typeof price?.product === 'string'
+      ? price.product
+      : null;
+
+  const pricePlan =
+    getPlanFromPrice(
+      priceId
+    );
+
+  if (pricePlan) {
+    return pricePlan;
   }
 
-  return data || null;
+  const productPlan =
+    getPlanFromProduct(
+      productId
+    );
+
+  if (productPlan) {
+    return productPlan;
+  }
+
+  const metadataPlan =
+    subscription
+      ?.metadata
+      ?.plan;
+
+  if (
+    metadataPlan === 'progress' ||
+    metadataPlan === 'performance' ||
+    metadataPlan === 'elite'
+  ) {
+    return metadataPlan;
+  }
+
+  return fallbackPlan;
 }
 
-/*
- * ============================================================
- * FIND PROFILE BY STRIPE CUSTOMER
- * ============================================================
- */
-
-async function findProfileByCustomerId(
-  customerId: string
+async function findProfile(
+  userId: string | null
 ) {
-  if (
-    !customerId
-  ) {
+  if (!userId) {
     return null;
   }
 
@@ -440,130 +357,104 @@ async function findProfileByCustomerId(
     await supabaseAdmin
       .from('profiles')
       .select('*')
-      .eq(
-        'stripe_customer_id',
-        customerId
-      )
+      .eq('id', userId)
       .maybeSingle();
 
-  if (
-    error
-  ) {
-    throw error;
+  if (error) {
+    throw new Error(
+      `Unable to find profile ${userId}: ${error.message}`
+    );
   }
 
   return data || null;
 }
 
-/*
- * ============================================================
- * FIND PROFILE
- * ============================================================
- */
-
-async function findProfile(
-  userId: string | null,
-  customerId: string | null
-) {
-  /*
-   * User ID is the strongest identifier because the checkout
-   * session contains it in metadata/client_reference_id.
-   */
-  if (
-    userId
-  ) {
-    const profile =
-      await findProfileByUserId(
-        userId
-      );
-
-    if (
-      profile
-    ) {
-      return profile;
-    }
-  }
-
-  /*
-   * Fallback to Stripe customer ID.
-   */
-  if (
-    customerId
-  ) {
-    const profile =
-      await findProfileByCustomerId(
-        customerId
-      );
-
-    if (
-      profile
-    ) {
-      return profile;
-    }
-  }
-
-  return null;
-}
-
-/*
- * ============================================================
- * UPDATE PROFILE
- * ============================================================
- */
-
 async function updateProfile(
-  profileId: string,
-  patch: Record<
+  userId: string,
+  values: Record<
     string,
     unknown
   >
 ) {
+  const now =
+    new Date().toISOString();
+
   const {
+    data,
     error,
   } =
     await supabaseAdmin
       .from('profiles')
       .update({
-        ...patch,
+        ...values,
 
         subscription_updated_at:
-          new Date().toISOString(),
+          now,
 
         updated_at:
-          new Date().toISOString(),
+          now,
       })
       .eq(
         'id',
-        profileId
-      );
+        userId
+      )
+      .select('*')
+      .maybeSingle();
 
-  if (
-    error
-  ) {
-    throw error;
+  if (error) {
+    throw new Error(
+      `Unable to update profile ${userId}: ${error.message}`
+    );
   }
+
+  if (!data) {
+    throw new Error(
+      `Profile ${userId} could not be updated.`
+    );
+  }
+
+  return data;
 }
 
-/*
- * ============================================================
- * WRITE PAID SUBSCRIPTION
- * ============================================================
- */
-
-async function writePaidSubscription(
-  profile: any,
+async function activateSubscription(
+  userId: string,
   subscription: any,
-  plan: string
+  fallbackPlan: string | null
 ) {
+  const profile =
+    await findProfile(
+      userId
+    );
+
+  if (!profile) {
+    throw new Error(
+      `No Washek profile exists for user ${userId}.`
+    );
+  }
+
+  const plan =
+    getSubscriptionPlan(
+      subscription,
+      fallbackPlan
+    );
+
+  if (
+    plan !== 'progress' &&
+    plan !== 'performance' &&
+    plan !== 'elite'
+  ) {
+    throw new Error(
+      `Could not determine Washek plan for subscription ${subscription?.id || 'unknown'}.`
+    );
+  }
+
   const customerId =
-    typeof subscription?.customer ===
-    'string'
+    typeof subscription?.customer === 'string'
       ? subscription.customer
       : null;
 
   const subscriptionId =
-    typeof subscription?.id ===
-    'string'
+    typeof subscription?.id === 'string'
       ? subscription.id
       : null;
 
@@ -572,15 +463,18 @@ async function writePaidSubscription(
       subscription
     );
 
+  const status =
+    subscription?.status ||
+    'active';
+
   await updateProfile(
-    profile.id,
+    userId,
     {
       subscription_plan:
         plan,
 
       subscription_status:
-        subscription?.status ||
-        'active',
+        status,
 
       stripe_customer_id:
         customerId,
@@ -597,290 +491,45 @@ async function writePaidSubscription(
   );
 
   console.log(
-    '[WEBHOOK] Paid subscription written:',
+    '[WEBHOOK] SUBSCRIPTION ACTIVATED',
     {
-      profileId:
-        profile.id,
-
-      userId:
-        profile.id,
-
+      userId,
       plan,
-
-      status:
-        subscription?.status,
-
+      status,
       subscriptionId,
-
       priceId,
     }
   );
 }
 
-/*
- * ============================================================
- * HANDLE CHECKOUT COMPLETED
- * ============================================================
- */
-
-async function handleCheckoutCompleted(
-  session: any
-) {
-  const userId =
-    session?.metadata
-      ?.user_id ||
-    session?.client_reference_id ||
-    null;
-
-  const customerId =
-    typeof session?.customer ===
-    'string'
-      ? session.customer
-      : null;
-
-  const subscriptionId =
-    typeof session?.subscription ===
-    'string'
-      ? session.subscription
-      : null;
-
-  if (
-    !userId
-  ) {
-    throw new Error(
-      `Checkout Session ${session?.id || 'unknown'} does not contain the Washek user ID.`
-    );
-  }
-
-  if (
-    !subscriptionId
-  ) {
-    throw new Error(
-      `Checkout Session ${session?.id || 'unknown'} does not contain a subscription ID.`
-    );
-  }
-
-  /*
-   * Retrieve the actual Stripe subscription.
-   */
-  const subscription =
-    await stripe(
-      `subscriptions/${encodeURIComponent(
-        subscriptionId
-      )}`
-    );
-
-  const priceId =
-    getSubscriptionPriceId(
-      subscription
-    );
-
-  const plan =
-    planFromPrice(
-      priceId
-    );
-
-  if (
-    !plan
-  ) {
-    throw new Error(
-      `Stripe Price ${priceId || 'unknown'} is not mapped to a Washek Fitness plan.`
-    );
-  }
-
-  const profile =
-    await findProfile(
-      userId,
-      customerId
-    );
-
-  if (
-    !profile
-  ) {
-    throw new Error(
-      `No Washek profile was found for user ${userId}.`
-    );
-  }
-
-  await writePaidSubscription(
-    profile,
-    subscription,
-    plan
-  );
-}
-
-/*
- * ============================================================
- * HANDLE SUBSCRIPTION EVENT
- * ============================================================
- */
-
-async function handleSubscription(
+async function cancelSubscription(
+  userId: string,
   subscription: any
 ) {
-  const userId =
-    subscription?.metadata
-      ?.user_id ||
-    null;
+  const profile =
+    await findProfile(
+      userId
+    );
+
+  if (!profile) {
+    throw new Error(
+      `No Washek profile exists for user ${userId}.`
+    );
+  }
 
   const customerId =
-    typeof subscription?.customer ===
-    'string'
+    typeof subscription?.customer === 'string'
       ? subscription.customer
       : null;
 
-  const profile =
-    await findProfile(
-      userId,
-      customerId
-    );
-
-  if (
-    !profile
-  ) {
-    throw new Error(
-      `No Washek profile found for Stripe subscription ${subscription?.id || 'unknown'}.`
-    );
-  }
-
-  const status =
-    subscription?.status ||
-    'inactive';
-
-  const priceId =
-    getSubscriptionPriceId(
-      subscription
-    );
-
-  const plan =
-    planFromPrice(
-      priceId
-    ) ||
-    subscription
-      ?.metadata
-      ?.plan ||
-    null;
-
-  /*
-   * ----------------------------------------------------------
-   * CANCELED
-   * ----------------------------------------------------------
-   */
-
-  if (
-    NON_PAID_STATUSES.includes(
-      status
-    )
-  ) {
-    await updateProfile(
-      profile.id,
-      {
-        subscription_plan:
-          'free',
-
-        subscription_status:
-          'canceled',
-
-        stripe_customer_id:
-          customerId,
-
-        stripe_subscription_id:
-          null,
-
-        stripe_price_id:
-          null,
-
-        subscription_cancelled_at:
-          new Date().toISOString(),
-      }
-    );
-
-    console.log(
-      '[WEBHOOK] Subscription canceled:',
-      {
-        profileId:
-          profile.id,
-
-        subscriptionId:
-          subscription.id,
-      }
-    );
-
-    return;
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * ACTIVE / TRIALING
-   * ----------------------------------------------------------
-   */
-
-  if (
-    PAID_STATUSES.includes(
-      status
-    ) &&
-    plan &&
-    PAID_PLANS.includes(
-      plan
-    )
-  ) {
-    await updateProfile(
-      profile.id,
-      {
-        subscription_plan:
-          plan,
-
-        subscription_status:
-          status,
-
-        stripe_customer_id:
-          customerId,
-
-        stripe_subscription_id:
-          subscription.id,
-
-        stripe_price_id:
-          priceId,
-
-        subscription_cancelled_at:
-          null,
-      }
-    );
-
-    console.log(
-      '[WEBHOOK] Subscription active:',
-      {
-        profileId:
-          profile.id,
-
-        plan,
-
-        status,
-
-        subscriptionId:
-          subscription.id,
-
-        priceId,
-      }
-    );
-
-    return;
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * NON-ACTIVE / UNUSABLE PAID STATE
-   * ----------------------------------------------------------
-   */
-
   await updateProfile(
-    profile.id,
+    userId,
     {
       subscription_plan:
         'free',
 
       subscription_status:
-        status,
+        'canceled',
 
       stripe_customer_id:
         customerId,
@@ -897,37 +546,137 @@ async function handleSubscription(
   );
 
   console.log(
-    '[WEBHOOK] Subscription has no active paid entitlement:',
+    '[WEBHOOK] SUBSCRIPTION CANCELED',
     {
-      profileId:
-        profile.id,
-
-      status,
+      userId,
 
       subscriptionId:
-        subscription.id,
+        subscription?.id ||
+        null,
     }
   );
 }
 
-/*
- * ============================================================
- * INVOICE PAID
- * ============================================================
- */
+async function handleCheckoutCompleted(
+  session: any
+) {
+  const userId =
+    session
+      ?.metadata
+      ?.user_id ||
+    session
+      ?.client_reference_id ||
+    null;
+
+  const fallbackPlan =
+    session
+      ?.metadata
+      ?.plan ||
+    null;
+
+  const subscriptionId =
+    typeof session?.subscription === 'string'
+      ? session.subscription
+      : null;
+
+  if (!userId) {
+    throw new Error(
+      `Checkout ${session?.id || 'unknown'} is missing metadata.user_id.`
+    );
+  }
+
+  if (!subscriptionId) {
+    throw new Error(
+      `Checkout ${session?.id || 'unknown'} is missing its subscription ID.`
+    );
+  }
+
+  console.log(
+    '[WEBHOOK] CHECKOUT COMPLETED',
+    {
+      sessionId:
+        session?.id,
+
+      userId,
+
+      fallbackPlan,
+
+      subscriptionId,
+    }
+  );
+
+  const subscription =
+    await stripe(
+      `subscriptions/${encodeURIComponent(
+        subscriptionId
+      )}`
+    );
+
+  await activateSubscription(
+    userId,
+    subscription,
+    fallbackPlan
+  );
+}
+
+async function handleSubscriptionCreatedOrUpdated(
+  subscription: any
+) {
+  const userId =
+    subscription
+      ?.metadata
+      ?.user_id ||
+    null;
+
+  const fallbackPlan =
+    subscription
+      ?.metadata
+      ?.plan ||
+    null;
+
+  if (!userId) {
+    throw new Error(
+      `Subscription ${subscription?.id || 'unknown'} is missing metadata.user_id.`
+    );
+  }
+
+  await activateSubscription(
+    userId,
+    subscription,
+    fallbackPlan
+  );
+}
+
+async function handleSubscriptionDeleted(
+  subscription: any
+) {
+  const userId =
+    subscription
+      ?.metadata
+      ?.user_id ||
+    null;
+
+  if (!userId) {
+    throw new Error(
+      `Canceled subscription ${subscription?.id || 'unknown'} is missing metadata.user_id.`
+    );
+  }
+
+  await cancelSubscription(
+    userId,
+    subscription
+  );
+}
 
 async function handleInvoicePaid(
   invoice: any
 ) {
   const subscriptionId =
-    typeof invoice?.subscription ===
-    'string'
+    typeof invoice?.subscription === 'string'
       ? invoice.subscription
       : null;
 
-  if (
-    !subscriptionId
-  ) {
+  if (!subscriptionId) {
     return;
   }
 
@@ -938,29 +687,20 @@ async function handleInvoicePaid(
       )}`
     );
 
-  await handleSubscription(
+  await handleSubscriptionCreatedOrUpdated(
     subscription
   );
 }
-
-/*
- * ============================================================
- * INVOICE PAYMENT FAILED
- * ============================================================
- */
 
 async function handleInvoicePaymentFailed(
   invoice: any
 ) {
   const subscriptionId =
-    typeof invoice?.subscription ===
-    'string'
+    typeof invoice?.subscription === 'string'
       ? invoice.subscription
       : null;
 
-  if (
-    !subscriptionId
-  ) {
+  if (!subscriptionId) {
     return;
   }
 
@@ -977,44 +717,38 @@ async function handleInvoicePaymentFailed(
       ?.user_id ||
     null;
 
-  const customerId =
-    typeof subscription?.customer ===
-    'string'
-      ? subscription.customer
-      : null;
-
-  const profile =
-    await findProfile(
-      userId,
-      customerId
-    );
-
-  if (
-    !profile
-  ) {
+  if (!userId) {
     throw new Error(
-      `No Washek profile found for failed-payment subscription ${subscription.id}.`
+      `Failed-payment subscription ${subscription?.id || 'unknown'} is missing metadata.user_id.`
     );
   }
 
-  /*
-   * Record Stripe's actual subscription status.
-   *
-   * Do not blindly revoke access merely because one invoice
-   * failed; Stripe may still retry payment.
-   */
+  const profile =
+    await findProfile(
+      userId
+    );
+
+  if (!profile) {
+    throw new Error(
+      `No Washek profile exists for user ${userId}.`
+    );
+  }
+
   await updateProfile(
-    profile.id,
+    userId,
     {
       subscription_status:
         subscription?.status ||
         'past_due',
 
       stripe_customer_id:
-        customerId,
+        typeof subscription?.customer === 'string'
+          ? subscription.customer
+          : null,
 
       stripe_subscription_id:
-        subscription.id,
+        subscription?.id ||
+        null,
 
       stripe_price_id:
         getSubscriptionPriceId(
@@ -1024,13 +758,12 @@ async function handleInvoicePaymentFailed(
   );
 
   console.log(
-    '[WEBHOOK] Invoice payment failed:',
+    '[WEBHOOK] PAYMENT FAILED',
     {
-      profileId:
-        profile.id,
+      userId,
 
       subscriptionId:
-        subscription.id,
+        subscription?.id,
 
       status:
         subscription?.status,
@@ -1038,32 +771,31 @@ async function handleInvoicePaymentFailed(
   );
 }
 
-/*
- * ============================================================
- * EDGE FUNCTION
- * ============================================================
- */
-
 Deno.serve(
-  async (req) => {
+  async (
+    req
+  ) => {
+    /*
+     * Stripe only needs POST.
+     */
+
     if (
-      req.method !==
-      'POST'
+      req.method !== 'POST'
     ) {
       return new Response(
         'Method not allowed.',
         {
-          status:
-            405,
+          status: 405,
         }
       );
     }
 
     try {
       /*
-       * Read the RAW request body.
-       * Stripe signature verification requires the raw payload.
+       * IMPORTANT:
+       * Read the raw body before parsing JSON.
        */
+
       const payload =
         await req.text();
 
@@ -1072,22 +804,31 @@ Deno.serve(
           'stripe-signature'
         );
 
-      if (
-        !signature
-      ) {
-        return new Response(
-          'Missing Stripe signature.',
+      if (!signature) {
+        return json(
           {
-            status:
-              400,
-          }
+            received:
+              false,
+
+            error:
+              'Missing Stripe-Signature header.',
+          },
+          400
         );
       }
+
+      /*
+       * Verify Stripe's signature.
+       */
 
       await verifySignature(
         payload,
         signature
       );
+
+      /*
+       * Parse event.
+       */
 
       const event =
         JSON.parse(
@@ -1095,12 +836,16 @@ Deno.serve(
         );
 
       console.log(
-        '[WEBHOOK] Stripe event received:',
-        event.type
+        '[WEBHOOK] RECEIVED EVENT:',
+        event?.type
       );
 
+      /*
+       * Handle event.
+       */
+
       switch (
-        event.type
+        event?.type
       ) {
         case 'checkout.session.completed':
           await handleCheckoutCompleted(
@@ -1115,19 +860,19 @@ Deno.serve(
           break;
 
         case 'customer.subscription.created':
-          await handleSubscription(
+          await handleSubscriptionCreatedOrUpdated(
             event.data.object
           );
           break;
 
         case 'customer.subscription.updated':
-          await handleSubscription(
+          await handleSubscriptionCreatedOrUpdated(
             event.data.object
           );
           break;
 
         case 'customer.subscription.deleted':
-          await handleSubscription(
+          await handleSubscriptionDeleted(
             event.data.object
           );
           break;
@@ -1146,25 +891,17 @@ Deno.serve(
 
         default:
           console.log(
-            '[WEBHOOK] Ignoring event:',
-            event.type
+            '[WEBHOOK] Ignored event:',
+            event?.type
           );
       }
 
-      return new Response(
-        JSON.stringify({
+      return json(
+        {
           received:
             true,
-        }),
-        {
-          status:
-            200,
-
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-        }
+        },
+        200
       );
     } catch (
       error
@@ -1184,23 +921,15 @@ Deno.serve(
         }
       );
 
-      return new Response(
-        JSON.stringify({
+      return json(
+        {
           received:
             false,
 
           error:
             message,
-        }),
-        {
-          status:
-            400,
-
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-        }
+        },
+        400
       );
     }
   }
