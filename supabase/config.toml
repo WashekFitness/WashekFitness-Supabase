@@ -4,5 +4,11 @@ verify_jwt = true
 [functions.cancel-subscription]
 verify_jwt = true
 
+[functions.ai-generate]
+verify_jwt = true
+
+[functions.send-contact-email]
+verify_jwt = true
+
 [functions.stripe-webhooks]
 verify_jwt = false
