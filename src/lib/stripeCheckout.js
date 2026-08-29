@@ -23,6 +23,9 @@ export async function createStripeCheckout(
     );
   }
 
+  /*
+   * Confirm the user is actually logged in.
+   */
   const {
     data: sessionData,
     error: sessionError,
@@ -38,16 +41,22 @@ export async function createStripeCheckout(
     );
   }
 
-  const token =
+  const accessToken =
     sessionData?.session
       ?.access_token;
 
-  if (!token) {
+  if (
+    !accessToken
+  ) {
     throw new Error(
-      'You must be signed in before changing your subscription.'
+      'You must be signed in before upgrading.'
     );
   }
 
+  /*
+   * Ask Supabase to create the Stripe Checkout
+   * session.
+   */
   const {
     data,
     error,
@@ -61,15 +70,17 @@ export async function createStripeCheckout(
       }
     );
 
-  if (error) {
+  if (
+    error
+  ) {
     console.error(
-      'Checkout Edge Function error:',
+      'create-checkout-session invocation failed:',
       error
     );
 
     throw new Error(
       error.message ||
-        'Unable to contact the subscription service.'
+        'Unable to contact the Stripe checkout service.'
     );
   }
 
@@ -77,7 +88,7 @@ export async function createStripeCheckout(
     !data
   ) {
     throw new Error(
-      'The subscription service returned no response.'
+      'The Stripe checkout service returned no response.'
     );
   }
 
@@ -87,31 +98,40 @@ export async function createStripeCheckout(
   ) {
     throw new Error(
       data.error ||
-        'Unable to change your subscription.'
+        'Unable to create Stripe Checkout.'
     );
   }
 
   if (
     data.action ===
-    'checkout'
+      'checkout' &&
+    data.url
   ) {
-    if (!data.url) {
-      throw new Error(
-        'Stripe did not return a checkout URL.'
-      );
-    }
-
     return data;
   }
 
   if (
     data.action ===
-    'changed'
+      'changed'
   ) {
     return data;
   }
 
+  if (
+    data.url
+  ) {
+    return {
+      ...data,
+
+      success:
+        true,
+
+      action:
+        'checkout',
+    };
+  }
+
   throw new Error(
-    'The subscription service returned an invalid response.'
+    'Stripe did not return a Checkout URL.'
   );
 }
