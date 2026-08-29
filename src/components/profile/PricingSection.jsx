@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useState,
 } from 'react';
 
@@ -12,13 +11,29 @@ import {
   XCircle,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import {
+  Button,
+} from '@/components/ui/button';
 
-import { supabaseApi } from '@/lib/supabaseApi';
-import { createStripeCheckout } from '@/lib/stripeCheckout';
-import { toast } from 'sonner';
+import {
+  Card,
+} from '@/components/ui/card';
+
+import {
+  Badge,
+} from '@/components/ui/badge';
+
+import {
+  supabaseApi,
+} from '@/lib/supabaseApi';
+
+import {
+  createStripeCheckout,
+} from '@/lib/stripeCheckout';
+
+import {
+  toast,
+} from 'sonner';
 
 const plans = [
   {
@@ -156,109 +171,32 @@ const PLAN_LABELS = {
     'Elite',
 };
 
-export default function PricingSection({
-  user:
-    suppliedUser,
+function getPlanLabel(
+  plan
+) {
+  return (
+    PLAN_LABELS[
+      plan
+    ] ||
+    'Paid'
+  );
+}
 
+export default function PricingSection({
+  user,
   onSubscriptionChanged,
 }) {
-  /*
-   * ==========================================================
-   * USER
-   * ==========================================================
-   *
-   * Profile.jsx now supplies the user.
-   *
-   * We still have a fallback loader so this component
-   * cannot silently fail if it is ever rendered elsewhere.
-   */
-
-  const [
-    localUser,
-    setLocalUser,
-  ] =
-    useState(
-      suppliedUser ||
-        null
-    );
-
-  useEffect(() => {
-    if (
-      suppliedUser
-    ) {
-      setLocalUser(
-        suppliedUser
-      );
-
-      return;
-    }
-
-    let mounted =
-      true;
-
-    const loadUser =
-      async () => {
-        try {
-          const currentUser =
-            await supabaseApi.auth.me();
-
-          if (
-            mounted
-          ) {
-            setLocalUser(
-              currentUser
-            );
-          }
-        } catch (
-          error
-        ) {
-          console.error(
-            'PricingSection could not load user:',
-            error
-          );
-        }
-      };
-
-    loadUser();
-
-    return () => {
-      mounted =
-        false;
-    };
-  }, [
-    suppliedUser,
-  ]);
-
-  const user =
-    localUser;
-
-  /*
-   * ==========================================================
-   * STATE
-   * ==========================================================
-   */
-
   const [
     checkoutPlan,
     setCheckoutPlan,
   ] =
-    useState(
-      null
-    );
+    useState(null);
 
   const [
     canceling,
     setCanceling,
   ] =
-    useState(
-      false
-    );
-
-  /*
-   * ==========================================================
-   * CURRENT PLAN
-   * ==========================================================
-   */
+    useState(false);
 
   const currentPlan =
     user?.subscription_plan ||
@@ -277,10 +215,6 @@ export default function PricingSection({
    * ==========================================================
    * CHECKOUT
    * ==========================================================
-   *
-   * The browser tab is opened IMMEDIATELY during the click.
-   * The async Supabase request happens afterward.
-   * ==========================================================
    */
 
   const handleUpgrade =
@@ -292,22 +226,6 @@ export default function PricingSection({
       ) {
         toast.error(
           'Your account is still loading. Please try again in a moment.'
-        );
-
-        return;
-      }
-
-      if (
-        ![
-          'progress',
-          'performance',
-          'elite',
-        ].includes(
-          planKey
-        )
-      ) {
-        toast.error(
-          'Invalid subscription plan.'
         );
 
         return;
@@ -328,13 +246,13 @@ export default function PricingSection({
 
       /*
        * ========================================================
-       * OPEN TAB IMMEDIATELY
+       * OPEN NEW TAB DURING THE CLICK EVENT
        * ========================================================
        */
 
       const checkoutTab =
         window.open(
-          '',
+          'about:blank',
           '_blank'
         );
 
@@ -342,18 +260,15 @@ export default function PricingSection({
         !checkoutTab
       ) {
         toast.error(
-          'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
+          'Your browser blocked the checkout tab. Please allow pop-ups for Washek Fitness and try again.'
         );
 
         return;
       }
 
       /*
-       * ========================================================
-       * TEMPORARY LOADING PAGE
-       * ========================================================
+       * Temporary loading page.
        */
-
       try {
         checkoutTab.document.open();
 
@@ -361,22 +276,19 @@ export default function PricingSection({
           <!doctype html>
 
           <html>
-
             <head>
-
-              <meta charset="utf-8" />
+              <meta charset="utf-8">
 
               <meta
                 name="viewport"
                 content="width=device-width, initial-scale=1"
-              />
+              >
 
               <title>
                 Washek Fitness — Stripe Checkout
               </title>
 
               <style>
-
                 html,
                 body {
                   margin: 0;
@@ -399,40 +311,63 @@ export default function PricingSection({
                   justify-content: center;
                 }
 
-                .container {
+                .box {
+                  width: min(90vw, 520px);
                   text-align: center;
                   padding: 32px;
                 }
 
                 .spinner {
-                  width: 36px;
-                  height: 36px;
-                  border: 4px solid #e5e7eb;
-                  border-top-color: #111827;
+                  width: 38px;
+                  height: 38px;
+                  border:
+                    4px solid
+                    #e5e7eb;
+                  border-top-color:
+                    #111827;
                   border-radius: 50%;
                   animation:
-                    washek-spin
-                    0.8s
+                    spin
+                    .8s
                     linear
                     infinite;
                   margin:
-                    0 auto 18px;
+                    0 auto
+                    18px;
                 }
 
                 h1 {
                   margin:
                     0 0 8px;
-                  font-size: 19px;
+                  font-size:
+                    19px;
                 }
 
                 p {
                   margin: 0;
                   color: #6b7280;
-                  font-size: 14px;
+                  font-size:
+                    14px;
                 }
 
-                @keyframes washek-spin {
+                .error {
+                  display: none;
+                  margin-top: 18px;
+                  padding: 14px;
+                  border-radius: 10px;
+                  background:
+                    #fef2f2;
+                  color:
+                    #991b1b;
+                  font-size:
+                    14px;
+                  line-height:
+                    1.5;
+                  text-align:
+                    left;
+                }
 
+                @keyframes spin {
                   from {
                     transform:
                       rotate(0deg);
@@ -442,16 +377,16 @@ export default function PricingSection({
                     transform:
                       rotate(360deg);
                   }
-
                 }
-
               </style>
-
             </head>
 
             <body>
 
-              <div class="container">
+              <div
+                class="box"
+                id="loading"
+              >
 
                 <div class="spinner"></div>
 
@@ -463,6 +398,11 @@ export default function PricingSection({
                   Please wait.
                 </p>
 
+                <div
+                  class="error"
+                  id="error"
+                ></div>
+
               </div>
 
             </body>
@@ -473,8 +413,8 @@ export default function PricingSection({
         checkoutTab.document.close();
       } catch {
         /*
-         * The checkout still works if the browser doesn't
-         * permit us to modify the temporary document.
+         * The checkout does not depend on access to the
+         * new tab's document.
          */
       }
 
@@ -485,7 +425,7 @@ export default function PricingSection({
       try {
         /*
          * ======================================================
-         * CALL BACKEND
+         * GET STRIPE CHECKOUT URL
          * ======================================================
          */
 
@@ -495,7 +435,7 @@ export default function PricingSection({
           );
 
         console.log(
-          '[PricingSection] Stripe checkout result:',
+          '[PricingSection] Checkout result:',
           result
         );
 
@@ -506,17 +446,14 @@ export default function PricingSection({
          */
 
         if (
-          result?.success ===
-            true &&
           result?.action ===
             'checkout' &&
-          typeof result?.url ===
-            'string' &&
-          result.url.length >
-            0
+          result?.url
         ) {
           /*
-           * Navigate the already-open tab.
+           * This is the ONLY navigation that should happen.
+           *
+           * The original Washek tab remains untouched.
            */
           checkoutTab.location.href =
             result.url;
@@ -531,70 +468,226 @@ export default function PricingSection({
          */
 
         if (
-          result?.success ===
-            true &&
           result?.action ===
-            'changed'
+          'changed'
         ) {
+          /*
+           * There is no Checkout page in this case.
+           */
           try {
             checkoutTab.close();
           } catch {
             // Ignore browser restrictions.
           }
 
-          /*
-           * Refresh the account state.
-           */
+          toast.success(
+            `Your plan is now ${getPlanLabel(
+              result.plan ||
+                planKey
+            )}.`
+          );
+
           try {
             const freshUser =
               await supabaseApi.auth.me();
-
-            setLocalUser(
-              freshUser
-            );
 
             onSubscriptionChanged?.(
               freshUser
             );
           } catch {
             onSubscriptionChanged?.(
-              result
+              {
+                ...user,
+
+                subscription_plan:
+                  result.plan ||
+                  planKey,
+              }
             );
           }
-
-          toast.success(
-            `Your plan is now ${
-              PLAN_LABELS[
-                result.plan ||
-                  planKey
-              ]
-            }.`
-          );
 
           return;
         }
 
-        throw new Error(
+        /*
+         * ======================================================
+         * UNEXPECTED RESPONSE
+         * ======================================================
+         *
+         * Do NOT close the tab.
+         * Show the actual problem in it.
+         */
+
+        const message =
           result?.error ||
-            'Stripe did not return a valid Checkout URL.'
+          'Stripe did not return a Checkout URL.';
+
+        try {
+          checkoutTab.document.open();
+
+          checkoutTab.document.write(`
+            <!doctype html>
+
+            <html>
+
+              <head>
+
+                <meta charset="utf-8">
+
+                <meta
+                  name="viewport"
+                  content="width=device-width, initial-scale=1"
+                >
+
+                <title>
+                  Washek Fitness — Checkout Error
+                </title>
+
+                <style>
+
+                  html,
+                  body {
+                    margin: 0;
+                    padding: 0;
+                    min-height: 100%;
+                    background: #ffffff;
+                    color: #111827;
+                    font-family:
+                      system-ui,
+                      -apple-system,
+                      BlinkMacSystemFont,
+                      "Segoe UI",
+                      sans-serif;
+                  }
+
+                  body {
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                  }
+
+                  .box {
+                    width: min(90vw, 560px);
+                    padding: 32px;
+                  }
+
+                  h1 {
+                    margin:
+                      0 0 12px;
+                    font-size:
+                      22px;
+                  }
+
+                  p {
+                    margin:
+                      0;
+                    line-height:
+                      1.6;
+                  }
+
+                  .error {
+                    margin-top:
+                      18px;
+                    padding:
+                      16px;
+                    border-radius:
+                      12px;
+                    background:
+                      #fef2f2;
+                    color:
+                      #991b1b;
+                    border:
+                      1px solid
+                      #fecaca;
+                    white-space:
+                      pre-wrap;
+                    word-break:
+                      break-word;
+                  }
+
+                  .hint {
+                    margin-top:
+                      18px;
+                    color:
+                      #6b7280;
+                    font-size:
+                      13px;
+                  }
+
+                </style>
+
+              </head>
+
+              <body>
+
+                <div
+                  class="box"
+                >
+
+                  <h1>
+                    Stripe Checkout could not be opened
+                  </h1>
+
+                  <p>
+                    Washek Fitness reached the checkout service, but it did not receive a usable Stripe Checkout URL.
+                  </p>
+
+                  <div
+                    class="error"
+                  >
+                    ${String(
+                      message
+                    )
+                      .replace(
+                        /&/g,
+                        '&amp;'
+                      )
+                      .replace(
+                        /</g,
+                        '&lt;'
+                      )
+                      .replace(
+                        />/g,
+                        '&gt;'
+                      )
+                  }</div>
+
+                  <p
+                    class="hint"
+                  >
+                    Keep this tab open while troubleshooting. Your original Washek Fitness tab is still safe.
+
+                  </p>
+
+                </div>
+
+              </body>
+
+            </html>
+          `);
+
+          checkoutTab.document.close();
+        } catch {
+          /*
+           * The original tab still gets the error notification.
+           */
+        }
+
+        throw new Error(
+          message
         );
       } catch (
         error
       ) {
         console.error(
-          '[PricingSection] Checkout failed:',
+          '[PricingSection] Stripe checkout failed:',
           error
         );
 
-        try {
-          checkoutTab.close();
-        } catch {
-          // Ignore browser restrictions.
-        }
-
         toast.error(
           error?.message ||
-            'Unable to open Stripe Checkout. Please try again.'
+            'Unable to open Stripe Checkout.'
         );
       } finally {
         setCheckoutPlan(
@@ -620,11 +713,9 @@ export default function PricingSection({
 
       const confirmed =
         window.confirm(
-          `Cancel your ${
-            PLAN_LABELS[
-              currentPlan
-            ] || 'paid'
-          } subscription immediately?\n\nYour account will return to the Free Plan immediately and paid-only features will be removed.`
+          `Cancel your ${getPlanLabel(
+            currentPlan
+          )} subscription immediately?\n\nYour account will return to the Free Plan immediately and paid-only features will be removed.`
         );
 
       if (
@@ -658,10 +749,6 @@ export default function PricingSection({
             stripe_price_id:
               null,
           };
-
-        setLocalUser(
-          updatedUser
-        );
 
         onSubscriptionChanged?.(
           updatedUser
@@ -697,10 +784,6 @@ export default function PricingSection({
 
   return (
     <div className="space-y-4">
-
-      {/* =====================================================
-          CANCEL SUBSCRIPTION
-          ===================================================== */}
 
       {isPaid && (
         <Card className="p-4 border-destructive/20 bg-destructive/5">
@@ -749,10 +832,6 @@ export default function PricingSection({
         </Card>
       )}
 
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
-
       <div className="flex items-center gap-2 pt-2">
 
         <Crown className="w-4 h-4 text-chart-4" />
@@ -771,12 +850,10 @@ export default function PricingSection({
           : 'Unlock more of the Washek experience.'}
       </p>
 
-      {/* =====================================================
-          PLANS
-          ===================================================== */}
-
       {plans.map(
-        (plan) => {
+        (
+          plan
+        ) => {
           const Icon =
             plan.icon;
 
@@ -784,7 +861,7 @@ export default function PricingSection({
             currentPlan ===
             plan.planKey;
 
-          const loading =
+          const isLoading =
             checkoutPlan ===
             plan.planKey;
 
@@ -798,7 +875,9 @@ export default function PricingSection({
 
               {plan.badge && (
                 <Badge className="absolute -top-2.5 right-4 bg-primary text-primary-foreground text-[10px] px-2 py-0.5">
-                  {plan.badge}
+                  {
+                    plan.badge
+                  }
                 </Badge>
               )}
 
@@ -811,7 +890,9 @@ export default function PricingSection({
                   />
 
                   <span className="font-heading font-bold text-base">
-                    {plan.name}
+                    {
+                      plan.name
+                    }
                   </span>
 
                 </div>
@@ -821,11 +902,15 @@ export default function PricingSection({
                   <span
                     className={`font-heading font-bold text-xl ${plan.color}`}
                   >
-                    {plan.price}
+                    {
+                      plan.price
+                    }
                   </span>
 
                   <span className="text-xs text-muted-foreground">
-                    {plan.period}
+                    {
+                      plan.period
+                    }
                   </span>
 
                 </div>
@@ -892,9 +977,11 @@ export default function PricingSection({
                     canceling
                   }
                 >
-                  {loading ? (
+
+                  {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+
                       Opening Checkout…
                     </>
                   ) : isPaid ? (
@@ -910,6 +997,7 @@ export default function PricingSection({
                   ) : (
                     `Get ${plan.name}`
                   )}
+
                 </Button>
               )}
 
