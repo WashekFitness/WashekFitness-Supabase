@@ -1,268 +1,290 @@
-```typescript
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
+
+  'Content-Type':
+    'application/json',
 };
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-    },
-  });
+function json(
+  body: unknown,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers:
+        corsHeaders,
+    }
+  );
 }
 
-function escapeHtml(value: string) {
+function escapeHtml(
+  value: string
+) {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(
+      /&/g,
+      '&amp;'
+    )
+    .replace(
+      /</g,
+      '&lt;'
+    )
+    .replace(
+      />/g,
+      '&gt;'
+    )
+    .replace(
+      /"/g,
+      '&quot;'
+    )
+    .replace(
+      /'/g,
+      '&#039;'
+    );
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
+Deno.serve(
+  async (req) => {
+    if (
+      req.method ===
+      'OPTIONS'
+    ) {
+      return new Response(
+        'ok',
+        {
+          status: 200,
+          headers:
+            corsHeaders,
+        }
+      );
+    }
 
-  if (req.method !== 'POST') {
-    return json(
-      {
-        success: false,
-        error: 'Method not allowed.',
-      },
-      405
-    );
-  }
+    if (
+      req.method !==
+      'POST'
+    ) {
+      return json(
+        {
+          success:
+            false,
 
-  try {
-    const resendApiKey =
-      Deno.env.get('RESEND_API_KEY');
+          error:
+            'Method not allowed.',
+        },
+        405
+      );
+    }
 
-    if (!resendApiKey) {
+    try {
+      const resendApiKey =
+        Deno.env.get(
+          'RESEND_API_KEY'
+        );
+
+      if (
+        !resendApiKey
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              'RESEND_API_KEY is not configured in Supabase.',
+          },
+          500
+        );
+      }
+
+      const body =
+        await req.json();
+
+      const to =
+        typeof body?.to ===
+        'string'
+          ? body.to.trim()
+          : 'washekfitness@gmail.com';
+
+      const subject =
+        typeof body?.subject ===
+        'string'
+          ? body.subject.trim()
+          : '';
+
+      const message =
+        typeof body?.body ===
+        'string'
+          ? body.body.trim()
+          : '';
+
+      if (
+        !subject
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              'Email subject is required.',
+          },
+          400
+        );
+      }
+
+      if (
+        !message
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              'Email message is required.',
+          },
+          400
+        );
+      }
+
+      /*
+       * Always deliver Contact messages to
+       * your Washek Fitness inbox.
+       */
+      const destination =
+        'washekfitness@gmail.com';
+
+      /*
+       * Resend's testing sender works without
+       * requiring you to verify your own domain.
+       *
+       * Once you verify a Washek domain in Resend,
+       * you can change this to your own address.
+       */
+      const fromAddress =
+        Deno.env.get(
+          'CONTACT_EMAIL_FROM'
+        ) ||
+        'Washek Fitness <onboarding@resend.dev>';
+
+      const safeSubject =
+        escapeHtml(
+          subject
+        );
+
+      const safeMessage =
+        escapeHtml(
+          message
+        ).replace(
+          /\n/g,
+          '<br />'
+        );
+
+      const response =
+        await fetch(
+          'https://api.resend.com/emails',
+          {
+            method:
+              'POST',
+
+            headers: {
+              Authorization:
+                `Bearer ${resendApiKey}`,
+
+              'Content-Type':
+                'application/json',
+            },
+
+            body:
+              JSON.stringify({
+                from:
+                  fromAddress,
+
+                to: [
+                  destination,
+                ],
+
+                subject:
+                  safeSubject,
+
+                text:
+                  message,
+
+                html: `
+                  <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                    <h2>Washek Fitness Contact Message</h2>
+                    <p>${safeMessage}</p>
+                  </div>
+                `,
+              }),
+          }
+        );
+
+      const result =
+        await response
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (
+        !response.ok
+      ) {
+        console.error(
+          'Resend error:',
+          result
+        );
+
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              result?.message ||
+              result?.error ||
+              'Resend rejected the email.',
+          },
+          502
+        );
+      }
+
+      return json({
+        success:
+          true,
+
+        id:
+          result?.id ||
+          null,
+      });
+    } catch (
+      error
+    ) {
       console.error(
-        '[CONTACT EMAIL] RESEND_API_KEY is not configured.'
+        'send-contact-email error:',
+        error
       );
 
       return json(
         {
-          success: false,
+          success:
+            false,
+
           error:
-            'Email service is not configured on the server.',
+            error instanceof Error
+              ? error.message
+              : 'Unable to send contact email.',
         },
         500
       );
     }
-
-    const body = await req.json();
-
-    const name =
-      typeof body?.name === 'string'
-        ? body.name.trim()
-        : '';
-
-    const email =
-      typeof body?.email === 'string'
-        ? body.email.trim()
-        : '';
-
-    const message =
-      typeof body?.message === 'string'
-        ? body.message.trim()
-        : '';
-
-    if (!name) {
-      return json(
-        {
-          success: false,
-          error: 'Your name is required.',
-        },
-        400
-      );
-    }
-
-    if (!email) {
-      return json(
-        {
-          success: false,
-          error: 'Your email address is required.',
-        },
-        400
-      );
-    }
-
-    if (!message) {
-      return json(
-        {
-          success: false,
-          error: 'Your message is required.',
-        },
-        400
-      );
-    }
-
-    if (name.length > 200) {
-      return json(
-        {
-          success: false,
-          error: 'Name is too long.',
-        },
-        400
-      );
-    }
-
-    if (email.length > 320) {
-      return json(
-        {
-          success: false,
-          error: 'Email address is too long.',
-        },
-        400
-      );
-    }
-
-    if (message.length > 10000) {
-      return json(
-        {
-          success: false,
-          error: 'Message is too long.',
-        },
-        400
-      );
-    }
-
-    const emailPattern =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailPattern.test(email)) {
-      return json(
-        {
-          success: false,
-          error: 'Please enter a valid email address.',
-        },
-        400
-      );
-    }
-
-    const destination =
-      Deno.env.get('CONTACT_EMAIL_TO') ||
-      'washekfitness@gmail.com';
-
-    const fromAddress =
-      Deno.env.get('CONTACT_EMAIL_FROM') ||
-      'Washek Fitness <onboarding@resend.dev>';
-
-    const safeName = escapeHtml(name);
-    const safeEmail = escapeHtml(email);
-    const safeMessage = escapeHtml(message).replace(
-      /\n/g,
-      '<br />'
-    );
-
-    const resendResponse = await fetch(
-      'https://api.resend.com/emails',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: fromAddress,
-          to: [destination],
-          reply_to: email,
-          subject: `New contact message from ${name}`,
-          text:
-            `New Washek Fitness contact message\n\n` +
-            `Name: ${name}\n` +
-            `Email: ${email}\n\n` +
-            `Message:\n${message}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-              <h2>New Washek Fitness Contact Message</h2>
-
-              <p>
-                <strong>Name:</strong>
-                ${safeName}
-              </p>
-
-              <p>
-                <strong>Email:</strong>
-                ${safeEmail}
-              </p>
-
-              <hr />
-
-              <p>
-                <strong>Message:</strong>
-              </p>
-
-              <p>
-                ${safeMessage}
-              </p>
-            </div>
-          `,
-        }),
-      }
-    );
-
-    const resendData =
-      await resendResponse.json().catch(() => ({}));
-
-    if (!resendResponse.ok) {
-      console.error(
-        '[CONTACT EMAIL] Resend error:',
-        {
-          status: resendResponse.status,
-          response: resendData,
-        }
-      );
-
-      return json(
-        {
-          success: false,
-          error:
-            resendData?.message ||
-            resendData?.error?.message ||
-            'The email service rejected the message.',
-        },
-        502
-      );
-    }
-
-    console.log(
-      '[CONTACT EMAIL] Email sent successfully:',
-      resendData
-    );
-
-    return json({
-      success: true,
-      id: resendData?.id || null,
-    });
-  } catch (error) {
-    console.error(
-      '[CONTACT EMAIL] Unexpected error:',
-      error
-    );
-
-    return json(
-      {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unable to send email.',
-      },
-      500
-    );
   }
-});
-```
+);
