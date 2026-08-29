@@ -20,16 +20,30 @@ import { toast } from 'sonner';
 const plans = [
   {
     name: 'Progress',
-    planKey: 'progress',
-    price: '$7.99',
-    period: '/mo',
-    icon: Flame,
-    color: 'text-accent',
+
+    planKey:
+      'progress',
+
+    price:
+      '$7.99',
+
+    period:
+      '/mo',
+
+    icon:
+      Flame,
+
+    color:
+      'text-accent',
+
     borderColor:
       'border-accent/30',
+
     bgColor:
       'bg-accent/5',
-    badge: null,
+
+    badge:
+      null,
 
     features: [
       '300 Kael AI messages/month',
@@ -43,15 +57,28 @@ const plans = [
 
   {
     name: 'Performance',
-    planKey: 'performance',
-    price: '$14.99',
-    period: '/mo',
-    icon: Zap,
-    color: 'text-primary',
+
+    planKey:
+      'performance',
+
+    price:
+      '$14.99',
+
+    period:
+      '/mo',
+
+    icon:
+      Zap,
+
+    color:
+      'text-primary',
+
     borderColor:
       'border-primary/40',
+
     bgColor:
       'bg-primary/5',
+
     badge:
       'Most Popular',
 
@@ -70,15 +97,28 @@ const plans = [
 
   {
     name: 'Elite',
-    planKey: 'elite',
-    price: '$24.99',
-    period: '/mo',
-    icon: Crown,
-    color: 'text-chart-4',
+
+    planKey:
+      'elite',
+
+    price:
+      '$24.99',
+
+    period:
+      '/mo',
+
+    icon:
+      Crown,
+
+    color:
+      'text-chart-4',
+
     borderColor:
       'border-chart-4/40',
+
     bgColor:
       'bg-chart-4/5',
+
     badge:
       'Best',
 
@@ -117,23 +157,40 @@ export default function PricingSection({
   const [
     checkoutPlan,
     setCheckoutPlan,
-  ] = useState(null);
+  ] =
+    useState(null);
 
   const [
     canceling,
     setCanceling,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const currentPlan =
     user?.subscription_plan ||
     'free';
 
+  const isPaid =
+    [
+      'progress',
+      'performance',
+      'elite',
+    ].includes(
+      currentPlan
+    );
+
   /*
    * ==========================================================
-   * UPGRADE / PLAN CHANGE
+   * START CHECKOUT
    * ==========================================================
+   *
+   * IMPORTANT:
+   *
+   * window.open() happens BEFORE any await.
+   *
+   * This keeps the new tab associated with the user's
+   * actual click and prevents popup blocking.
    */
-
   const handleUpgrade =
     async (
       planKey
@@ -155,20 +212,27 @@ export default function PricingSection({
         return;
       }
 
+      if (
+        checkoutPlan
+      ) {
+        return;
+      }
+
       /*
-       * Open the new tab FIRST.
-       *
-       * This must happen directly inside the
-       * click event so browsers do not block it.
+       * --------------------------------------------------------
+       * STEP 1:
+       * OPEN THE NEW TAB IMMEDIATELY.
+       * --------------------------------------------------------
        */
-      const checkoutWindow =
+
+      const checkoutTab =
         window.open(
           'about:blank',
           '_blank'
         );
 
       if (
-        !checkoutWindow
+        !checkoutTab
       ) {
         toast.error(
           'Your browser blocked the Stripe checkout tab. Please allow pop-ups for Washek Fitness and try again.'
@@ -178,71 +242,121 @@ export default function PricingSection({
       }
 
       /*
-       * Show a simple loading page in the newly
-       * opened tab.
+       * --------------------------------------------------------
+       * STEP 2:
+       * SHOW TEMPORARY CONTENT.
+       * --------------------------------------------------------
        */
+
       try {
-        checkoutWindow.document.title =
-          'Washek Fitness — Stripe Checkout';
+        checkoutTab.document.open();
 
-        checkoutWindow.document.body.innerHTML = `
-          <div style="
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #ffffff;
-            color: #111827;
-          ">
-            <div style="
-              text-align: center;
-              padding: 32px;
-            ">
-              <div style="
-                width: 36px;
-                height: 36px;
-                border: 3px solid #e5e7eb;
-                border-top-color: #111827;
-                border-radius: 50%;
-                animation: washek-spin 0.8s linear infinite;
-                margin: 0 auto 18px;
-              "></div>
+        checkoutTab.document.write(`
+          <!doctype html>
 
-              <div style="
-                font-size: 18px;
-                font-weight: 700;
-                margin-bottom: 8px;
-              ">
-                Connecting to Stripe Checkout…
+          <html>
+
+            <head>
+              <meta charset="utf-8" />
+
+              <title>
+                Washek Fitness — Connecting to Stripe
+              </title>
+
+              <style>
+                html,
+                body {
+                  margin: 0;
+                  padding: 0;
+                  width: 100%;
+                  min-height: 100%;
+                  font-family:
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+                  background: #ffffff;
+                  color: #111827;
+                }
+
+                body {
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                }
+
+                .container {
+                  text-align: center;
+                  padding: 32px;
+                }
+
+                .spinner {
+                  width: 38px;
+                  height: 38px;
+                  margin: 0 auto 20px;
+                  border: 4px solid #e5e7eb;
+                  border-top-color: #111827;
+                  border-radius: 50%;
+                  animation:
+                    washek-spin
+                    0.8s
+                    linear
+                    infinite;
+                }
+
+                h1 {
+                  margin: 0 0 8px;
+                  font-size: 20px;
+                  line-height: 1.3;
+                }
+
+                p {
+                  margin: 0;
+                  color: #6b7280;
+                  font-size: 14px;
+                }
+
+                @keyframes washek-spin {
+                  from {
+                    transform: rotate(0deg);
+                  }
+
+                  to {
+                    transform: rotate(360deg);
+                  }
+                }
+              </style>
+            </head>
+
+            <body>
+
+              <div class="container">
+
+                <div class="spinner"></div>
+
+                <h1>
+                  Connecting to Stripe Checkout…
+                </h1>
+
+                <p>
+                  Please wait.
+                </p>
+
               </div>
 
-              <div style="
-                font-size: 14px;
-                color: #6b7280;
-              ">
-                Please wait.
-              </div>
-            </div>
-          </div>
+            </body>
 
-          <style>
-            @keyframes washek-spin {
-              from {
-                transform: rotate(0deg);
-              }
+          </html>
+        `);
 
-              to {
-                transform: rotate(360deg);
-              }
-            }
-          </style>
-        `;
+        checkoutTab.document.close();
       } catch {
         /*
-         * Some browsers restrict access to the
-         * new window's document. That's okay.
+         * We don't need to access the document for the
+         * checkout to work. Some browser configurations
+         * restrict this.
          */
       }
 
@@ -250,19 +364,28 @@ export default function PricingSection({
         planKey
       );
 
+      /*
+       * --------------------------------------------------------
+       * STEP 3:
+       * ASK SUPABASE FOR THE STRIPE CHECKOUT URL.
+       * --------------------------------------------------------
+       */
+
       try {
-        /*
-         * Now ask Supabase for the Stripe Checkout URL.
-         */
         const result =
           await createStripeCheckout(
             planKey
           );
 
+        console.log(
+          '[PricingSection] Checkout result:',
+          result
+        );
+
         /*
-         * ====================================================
-         * NEW SUBSCRIPTION
-         * ====================================================
+         * ------------------------------------------------------
+         * NEW CHECKOUT
+         * ------------------------------------------------------
          */
 
         if (
@@ -270,16 +393,23 @@ export default function PricingSection({
             'checkout' &&
           result?.url
         ) {
-          checkoutWindow.location.href =
-            result.url;
+          /*
+           * Navigate the already-open tab.
+           *
+           * DO NOT use window.location here.
+           * That would replace Washek Fitness.
+           */
+          checkoutTab.location.replace(
+            result.url
+          );
 
           return;
         }
 
         /*
-         * ====================================================
+         * ------------------------------------------------------
          * EXISTING SUBSCRIPTION CHANGED
-         * ====================================================
+         * ------------------------------------------------------
          */
 
         if (
@@ -287,63 +417,68 @@ export default function PricingSection({
           'changed'
         ) {
           /*
-           * The new plan was changed directly through
-           * Stripe. Refresh our user state.
+           * There is no Stripe Checkout page in this case.
+           * Close the temporary tab.
            */
           try {
-            const refreshed =
-              await supabaseApi.auth.me();
-
-            onSubscriptionChanged?.(
-              refreshed
-            );
+            checkoutTab.close();
           } catch {
-            /*
-             * Parent state refresh is optional.
-             */
+            // Ignore browser restrictions.
           }
 
           /*
-           * Close the temporary tab because there
-           * was no Checkout page to navigate to.
+           * Ask the parent application for fresh user data.
            */
           try {
-            checkoutWindow.close();
+            const refreshedUser =
+              await supabaseApi.auth.me();
+
+            onSubscriptionChanged?.(
+              refreshedUser
+            );
           } catch {
-            // Ignore browser close restrictions.
+            /*
+             * Parent refresh is optional.
+             */
           }
 
           toast.success(
-            `Your plan is now ${PLAN_LABELS[planKey]}.`
+            `Your plan is now ${
+              PLAN_LABELS[
+                result.plan ||
+                  planKey
+              ]
+            }.`
           );
 
           return;
         }
 
         throw new Error(
-          'Stripe did not provide a valid checkout response.'
+          'The checkout service did not return a usable Stripe Checkout result.'
         );
       } catch (
         error
       ) {
         console.error(
-          'Stripe checkout error:',
+          '[PricingSection] Checkout failed:',
           error
         );
 
         /*
-         * Close only the temporary tab created by
-         * this failed request.
+         * Close only the blank temporary tab.
+         * The original Washek tab stays exactly where
+         * the user was.
          */
         try {
-          checkoutWindow.close();
+          checkoutTab.close();
         } catch {
           // Ignore browser restrictions.
         }
 
         toast.error(
           error?.message ||
-            'Unable to start Stripe Checkout. Please try again.'
+            'Unable to open Stripe Checkout. Please try again.'
         );
       } finally {
         setCheckoutPlan(
@@ -354,7 +489,7 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * CANCEL
+   * CANCEL SUBSCRIPTION
    * ==========================================================
    */
 
@@ -418,7 +553,7 @@ export default function PricingSection({
         error
       ) {
         console.error(
-          'Subscription cancellation error:',
+          '[PricingSection] Cancel failed:',
           error
         );
 
@@ -433,20 +568,11 @@ export default function PricingSection({
       }
     };
 
-  const isPaid =
-    [
-      'progress',
-      'performance',
-      'elite',
-    ].includes(
-      currentPlan
-    );
-
   return (
     <div className="space-y-4">
 
       {/* =====================================================
-          CANCEL
+          CANCEL SUBSCRIPTION
           ===================================================== */}
 
       {isPaid && (
@@ -464,9 +590,8 @@ export default function PricingSection({
 
           <p className="text-xs text-muted-foreground mb-3">
             Cancel immediately and return to
-            the Free Plan. Paid AI allowances
-            and paid-only features will be
-            removed immediately.
+            the Free Plan. Paid-only features
+            will be removed immediately.
           </p>
 
           <Button
@@ -518,6 +643,10 @@ export default function PricingSection({
           : 'Unlock more of the Washek experience.'}
       </p>
 
+      {/* =====================================================
+          PLANS
+          ===================================================== */}
+
       {plans.map(
         (plan) => {
           const Icon =
@@ -527,7 +656,7 @@ export default function PricingSection({
             currentPlan ===
             plan.planKey;
 
-          const isCheckingOut =
+          const isLoading =
             checkoutPlan ===
             plan.planKey;
 
@@ -607,8 +736,8 @@ export default function PricingSection({
               {isCurrent ? (
                 <Button
                   type="button"
-                  className="w-full h-10 font-heading font-semibold"
                   variant="secondary"
+                  className="w-full h-10 font-heading font-semibold"
                   disabled
                 >
                   Current Plan
@@ -616,8 +745,8 @@ export default function PricingSection({
               ) : (
                 <Button
                   type="button"
-                  className="w-full h-10 font-heading font-semibold"
                   variant="outline"
+                  className="w-full h-10 font-heading font-semibold"
                   onClick={() =>
                     handleUpgrade(
                       plan.planKey
@@ -629,10 +758,9 @@ export default function PricingSection({
                     canceling
                   }
                 >
-                  {isCheckingOut ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-
                       Opening Checkout…
                     </>
                   ) : isPaid ? (
