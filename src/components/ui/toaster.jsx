@@ -1,5 +1,6 @@
 
 import { useToast } from "@/components/ui/use-toast";
+
 import {
   Toast,
   ToastClose,
@@ -17,14 +18,14 @@ export function Toaster() {
 
   return (
     <ToastProvider>
-      {toasts.map(function ({
-        id,
-        title,
-        description,
-        action,
-        ...props
-      }) {
-        return (
+      {toasts.map(
+        ({
+          id,
+          title,
+          description,
+          action,
+          ...props
+        }) => (
           <Toast
             key={id}
             {...props}
@@ -47,13 +48,14 @@ export function Toaster() {
 
             <ToastClose
               type="button"
-              onClick={() =>
-                dismiss(id)
-              }
+              aria-label="Close notification"
+              onClick={() => {
+                dismiss(id);
+              }}
             />
           </Toast>
-        );
-      })}
+        )
+      )}
 
       <ToastViewport />
     </ToastProvider>
