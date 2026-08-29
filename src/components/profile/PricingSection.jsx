@@ -79,7 +79,8 @@ const plans = [
       'border-chart-4/40',
     bgColor:
       'bg-chart-4/5',
-    badge: 'Best',
+    badge:
+      'Best',
 
     features: [
       '2,000 Kael AI messages/month',
@@ -129,15 +130,10 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * START CHECKOUT
+   * UPGRADE / PLAN CHANGE
    * ==========================================================
-   *
-   * The blank tab MUST be opened synchronously
-   * while the button click is still happening.
-   *
-   * Otherwise the browser may treat window.open()
-   * as an unwanted popup and block it.
    */
+
   const handleUpgrade =
     async (
       planKey
@@ -160,7 +156,10 @@ export default function PricingSection({
       }
 
       /*
-       * Open the tab FIRST.
+       * Open the new tab FIRST.
+       *
+       * This must happen directly inside the
+       * click event so browsers do not block it.
        */
       const checkoutWindow =
         window.open(
@@ -168,9 +167,6 @@ export default function PricingSection({
           '_blank'
         );
 
-      /*
-       * Browser blocked the popup.
-       */
       if (
         !checkoutWindow
       ) {
@@ -182,33 +178,22 @@ export default function PricingSection({
       }
 
       /*
-       * Show a loading message inside that tab.
+       * Show a simple loading page in the newly
+       * opened tab.
        */
       try {
         checkoutWindow.document.title =
-          'Opening Stripe Checkout…';
+          'Washek Fitness — Stripe Checkout';
 
         checkoutWindow.document.body.innerHTML = `
           <div style="
-            font-family:
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              'Segoe UI',
-              sans-serif;
-
-            min-height: 100vh;
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: center;
-
             margin: 0;
-
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #ffffff;
-
             color: #111827;
           ">
             <div style="
@@ -216,13 +201,13 @@ export default function PricingSection({
               padding: 32px;
             ">
               <div style="
-                width: 32px;
-                height: 32px;
+                width: 36px;
+                height: 36px;
                 border: 3px solid #e5e7eb;
                 border-top-color: #111827;
                 border-radius: 50%;
                 animation: washek-spin 0.8s linear infinite;
-                margin: 0 auto 16px;
+                margin: 0 auto 18px;
               "></div>
 
               <div style="
@@ -256,8 +241,8 @@ export default function PricingSection({
         `;
       } catch {
         /*
-         * Access to the new tab's document may be
-         * restricted by some browsers.
+         * Some browsers restrict access to the
+         * new window's document. That's okay.
          */
       }
 
@@ -267,30 +252,77 @@ export default function PricingSection({
 
       try {
         /*
-         * Now contact the backend.
+         * Now ask Supabase for the Stripe Checkout URL.
          */
         const result =
           await createStripeCheckout(
             planKey
           );
 
+        /*
+         * ====================================================
+         * NEW SUBSCRIPTION
+         * ====================================================
+         */
+
         if (
-          !result?.url
+          result?.action ===
+            'checkout' &&
+          result?.url
         ) {
-          throw new Error(
-            'Stripe did not return a checkout URL.'
-          );
+          checkoutWindow.location.href =
+            result.url;
+
+          return;
         }
 
         /*
-         * Load Checkout into the already-open tab.
+         * ====================================================
+         * EXISTING SUBSCRIPTION CHANGED
+         * ====================================================
          */
-        checkoutWindow.location.href =
-          result.url;
 
-        /*
-         * Keep Washek open in this tab.
-         */
+        if (
+          result?.action ===
+          'changed'
+        ) {
+          /*
+           * The new plan was changed directly through
+           * Stripe. Refresh our user state.
+           */
+          try {
+            const refreshed =
+              await supabaseApi.auth.me();
+
+            onSubscriptionChanged?.(
+              refreshed
+            );
+          } catch {
+            /*
+             * Parent state refresh is optional.
+             */
+          }
+
+          /*
+           * Close the temporary tab because there
+           * was no Checkout page to navigate to.
+           */
+          try {
+            checkoutWindow.close();
+          } catch {
+            // Ignore browser close restrictions.
+          }
+
+          toast.success(
+            `Your plan is now ${PLAN_LABELS[planKey]}.`
+          );
+
+          return;
+        }
+
+        throw new Error(
+          'Stripe did not provide a valid checkout response.'
+        );
       } catch (
         error
       ) {
@@ -300,8 +332,8 @@ export default function PricingSection({
         );
 
         /*
-         * Close the temporary tab if checkout
-         * could not be created.
+         * Close only the temporary tab created by
+         * this failed request.
          */
         try {
           checkoutWindow.close();
@@ -311,7 +343,7 @@ export default function PricingSection({
 
         toast.error(
           error?.message ||
-            'Unable to start Stripe checkout. Please try again.'
+            'Unable to start Stripe Checkout. Please try again.'
         );
       } finally {
         setCheckoutPlan(
@@ -322,7 +354,7 @@ export default function PricingSection({
 
   /*
    * ==========================================================
-   * CANCEL SUBSCRIPTION
+   * CANCEL
    * ==========================================================
    */
 
@@ -341,7 +373,7 @@ export default function PricingSection({
             PLAN_LABELS[
               currentPlan
             ] || 'paid'
-          } subscription immediately?\n\nYour account will switch to the Free Plan immediately and paid-only features will be removed.`
+          } subscription immediately?\n\nYour account will return to the Free Plan immediately and paid-only features will be removed.`
         );
 
       if (
@@ -359,9 +391,8 @@ export default function PricingSection({
           await supabaseApi.subscription.cancel();
 
         const updatedUser =
-          {
-            ...(result?.user ||
-              user),
+          result?.user || {
+            ...user,
 
             subscription_plan:
               'free',
@@ -393,7 +424,7 @@ export default function PricingSection({
 
         toast.error(
           error?.message ||
-            'Unable to cancel your subscription.'
+            'Unable to cancel your subscription. Please try again.'
         );
       } finally {
         setCanceling(
@@ -415,7 +446,7 @@ export default function PricingSection({
     <div className="space-y-4">
 
       {/* =====================================================
-          CANCEL SUBSCRIPTION
+          CANCEL
           ===================================================== */}
 
       {isPaid && (
@@ -432,8 +463,8 @@ export default function PricingSection({
           </div>
 
           <p className="text-xs text-muted-foreground mb-3">
-            Cancel immediately and return
-            to the Free Plan. Paid AI allowances
+            Cancel immediately and return to
+            the Free Plan. Paid AI allowances
             and paid-only features will be
             removed immediately.
           </p>
@@ -486,10 +517,6 @@ export default function PricingSection({
           ? 'Choose another plan to change your subscription.'
           : 'Unlock more of the Washek experience.'}
       </p>
-
-      {/* =====================================================
-          PLANS
-          ===================================================== */}
 
       {plans.map(
         (plan) => {
