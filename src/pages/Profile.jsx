@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseApi } from '@/lib/supabaseApi';
@@ -36,31 +35,59 @@ import {
 export default function Profile() {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState(null);
-  const [regenerating, setRegenerating] =
-    useState(false);
+  const [
+    user,
+    setUser,
+  ] = useState(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const [
+    loadingUser,
+    setLoadingUser,
+  ] = useState(true);
 
-    supabaseApi.auth
-      .me()
-      .then((currentUser) => {
-        if (mounted) {
-          setUser(currentUser);
-        }
-      })
-      .catch((error) => {
+  const [
+    regenerating,
+    setRegenerating,
+  ] = useState(false);
+
+  /*
+   * ==========================================================
+   * LOAD CURRENT USER
+   * ==========================================================
+   */
+
+  const loadUser =
+    async () => {
+      try {
+        const currentUser =
+          await supabaseApi.auth.me();
+
+        setUser(
+          currentUser
+        );
+      } catch (error) {
         console.error(
-          'Unable to load profile:',
+          'Unable to load current user:',
           error
         );
-      });
 
-    return () => {
-      mounted = false;
+        setUser(null);
+      } finally {
+        setLoadingUser(
+          false
+        );
+      }
     };
+
+  useEffect(() => {
+    loadUser();
   }, []);
+
+  /*
+   * ==========================================================
+   * PROGRAMS
+   * ==========================================================
+   */
 
   const {
     data: programs = [],
@@ -73,15 +100,27 @@ export default function Profile() {
     queryFn: () =>
       supabaseApi.entities.WorkoutProgram.filter(
         {
-          status: 'active',
-          created_by: user.email,
+          status:
+            'active',
+
+          created_by:
+            user.email,
         },
+
         '-created_date',
+
         1
       ),
 
-    enabled: !!user?.email,
+    enabled:
+      !!user?.email,
   });
+
+  /*
+   * ==========================================================
+   * WORKOUT LOGS
+   * ==========================================================
+   */
 
   const {
     data: logs = [],
@@ -94,13 +133,17 @@ export default function Profile() {
     queryFn: () =>
       supabaseApi.entities.WorkoutLog.filter(
         {
-          created_by: user.email,
+          created_by:
+            user.email,
         },
+
         '-date',
+
         999
       ),
 
-    enabled: !!user?.email,
+    enabled:
+      !!user?.email,
   });
 
   const activeProgram =
@@ -119,10 +162,17 @@ export default function Profile() {
       : null;
 
   const planLabels = {
-    free: 'Free',
-    progress: 'Progress',
-    performance: 'Performance',
-    elite: 'Elite',
+    free:
+      'Free',
+
+    progress:
+      'Progress',
+
+    performance:
+      'Performance',
+
+    elite:
+      'Elite',
   };
 
   const planColors = {
@@ -138,6 +188,55 @@ export default function Profile() {
     elite:
       'bg-chart-4/15 text-chart-4',
   };
+
+  /*
+   * ==========================================================
+   * SUBSCRIPTION CHANGE CALLBACK
+   * ==========================================================
+   *
+   * PricingSection calls this whenever the backend changes
+   * the subscription.
+   *
+   * We update local state immediately, then ask Supabase for
+   * the canonical account state.
+   * ==========================================================
+   */
+
+  const handleSubscriptionChanged =
+    async (
+      updatedUser
+    ) => {
+      if (
+        updatedUser
+      ) {
+        setUser(
+          updatedUser
+        );
+      }
+
+      /*
+       * Immediately fetch the real profile again.
+       */
+      try {
+        const freshUser =
+          await supabaseApi.auth.me();
+
+        setUser(
+          freshUser
+        );
+      } catch (error) {
+        console.error(
+          'Unable to refresh subscription state:',
+          error
+        );
+      }
+    };
+
+  /*
+   * ==========================================================
+   * GENERATE NEW PROGRAM
+   * ==========================================================
+   */
 
   const handleRegenerate =
     async () => {
@@ -157,7 +256,9 @@ export default function Profile() {
       );
 
       try {
-        if (activeProgram) {
+        if (
+          activeProgram
+        ) {
           await supabaseApi.entities.WorkoutProgram.update(
             activeProgram.id,
             {
@@ -177,12 +278,19 @@ export default function Profile() {
       }
     };
 
+  /*
+   * ==========================================================
+   * DELETE ACCOUNT
+   * ==========================================================
+   */
+
   const handleDeleteAccount =
     async () => {
       try {
         await supabaseApi.auth.updateMe(
           {
-            deleted: true,
+            deleted:
+              true,
           }
         );
 
@@ -199,6 +307,72 @@ export default function Profile() {
       }
     };
 
+  /*
+   * ==========================================================
+   * LOGOUT
+   * ==========================================================
+   */
+
+  const handleLogout =
+    async () => {
+      try {
+        await supabaseApi.auth.logout();
+      } catch (error) {
+        console.error(
+          'Logout failed:',
+          error
+        );
+
+        toast.error(
+          'Unable to log out. Please try again.'
+        );
+      }
+    };
+
+  /*
+   * ==========================================================
+   * LOADING
+   * ==========================================================
+   */
+
+  if (
+    loadingUser
+  ) {
+    return (
+      <div className="px-5 safe-bottom space-y-4 pt-2">
+
+        <div className="flex items-center justify-between">
+
+          <h1 className="font-heading text-2xl font-bold">
+            Profile
+          </h1>
+
+          <AppSettingsModal />
+
+        </div>
+
+        <Card className="p-5">
+
+          <div className="flex items-center gap-4">
+
+            <div className="w-16 h-16 rounded-2xl bg-muted animate-pulse" />
+
+            <div className="flex-1 space-y-2">
+
+              <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+
+              <div className="h-3 w-48 rounded bg-muted animate-pulse" />
+
+            </div>
+
+          </div>
+
+        </Card>
+
+      </div>
+    );
+  }
+
   return (
     <div className="px-5 safe-bottom space-y-4 pt-2">
 
@@ -207,23 +381,27 @@ export default function Profile() {
           ===================================================== */}
 
       <div className="flex items-center justify-between">
+
         <h1 className="font-heading text-2xl font-bold">
           Profile
         </h1>
 
         <AppSettingsModal />
-      </div>
 
+      </div>
 
       {/* =====================================================
           USER CARD
           ===================================================== */}
 
       <Card className="p-5">
+
         <div className="flex items-center gap-4">
 
           <div className="w-16 h-16 rounded-2xl bg-primary/15 flex items-center justify-center">
+
             <User className="w-8 h-8 text-primary" />
+
           </div>
 
           <div className="flex-1">
@@ -239,19 +417,24 @@ export default function Profile() {
 
             <Badge
               className={`mt-1 border-0 text-xs ${
-                planColors[plan]
+                planColors[
+                  plan
+                ] ||
+                planColors.free
               }`}
             >
-              {planLabels[plan]} Plan
+              {planLabels[
+                plan
+              ] ||
+                'Free'}{' '}
+              Plan
             </Badge>
 
           </div>
+
         </div>
 
-
-        {/* =================================================
-            MESSAGE USAGE
-            ================================================= */}
+        {/* Message usage */}
 
         {stats && (
           <div className="mt-4 pt-4 border-t border-border">
@@ -259,12 +442,17 @@ export default function Profile() {
             <div className="flex items-center justify-between mb-1.5">
 
               <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+
                 <Zap className="w-3.5 h-3.5" />
+
                 Kael Messages
+
               </span>
 
               <span className="text-xs font-semibold">
+
                 {stats.used} / {stats.limit}
+
               </span>
 
             </div>
@@ -273,14 +461,20 @@ export default function Profile() {
 
               <div
                 className={`h-full rounded-full transition-all ${
-                  stats.remaining === 0
+                  stats.remaining ===
+                  0
                     ? 'bg-destructive'
                     : 'bg-primary'
                 }`}
                 style={{
                   width: `${Math.min(
-                    (stats.used /
-                      stats.limit) *
+                    (
+                      stats.used /
+                      Math.max(
+                        stats.limit,
+                        1
+                      )
+                    ) *
                       100,
                     100
                   )}%`,
@@ -290,15 +484,16 @@ export default function Profile() {
             </div>
 
             <p className="text-[10px] text-muted-foreground mt-1">
+
               {stats.remaining}{' '}
-              messages remaining ·
-              resets monthly
+              messages remaining · resets monthly
+
             </p>
 
           </div>
         )}
-      </Card>
 
+      </Card>
 
       {/* =====================================================
           TRAINING PROFILE
@@ -331,7 +526,6 @@ export default function Profile() {
 
           </div>
 
-
           <div className="flex flex-col gap-1">
 
             <div className="flex items-center gap-2">
@@ -350,14 +544,15 @@ export default function Profile() {
                 text={
                   user?.primary_goal
                 }
-                limit={80}
+                limit={
+                  80
+                }
                 className="text-sm font-medium text-foreground/80"
               />
 
             </div>
 
           </div>
-
 
           <div className="flex items-center justify-between">
 
@@ -378,8 +573,8 @@ export default function Profile() {
           </div>
 
         </div>
-      </Card>
 
+      </Card>
 
       {/* =====================================================
           ACTIVE PROGRAM
@@ -400,7 +595,9 @@ export default function Profile() {
             Week{' '}
             {activeProgram.current_week}{' '}
             of{' '}
-            {activeProgram.duration_weeks}
+            {
+              activeProgram.duration_weeks
+            }
           </p>
 
           <div className="w-full h-2 bg-muted rounded-full mt-3 overflow-hidden">
@@ -408,14 +605,20 @@ export default function Profile() {
             <div
               className="h-full bg-primary rounded-full"
               style={{
-                width: `${
+                width: `${Math.min(
                   (
-                    (activeProgram.current_week ||
-                      1) /
-                    (activeProgram.duration_weeks ||
-                      12)
-                  ) * 100
-                }%`,
+                    (
+                      activeProgram.current_week ||
+                      1
+                    ) /
+                    (
+                      activeProgram.duration_weeks ||
+                      12
+                    )
+                  ) *
+                    100,
+                  100
+                )}%`,
               }}
             />
 
@@ -424,13 +627,11 @@ export default function Profile() {
         </Card>
       )}
 
-
       {/* =====================================================
           QUICK ACCESS
           ===================================================== */}
 
       <QuickAccess />
-
 
       {/* =====================================================
           ACTIONS
@@ -461,12 +662,11 @@ export default function Profile() {
 
         </Button>
 
-
         <Button
           variant="ghost"
           className="w-full h-12 justify-start text-destructive hover:text-destructive"
-          onClick={() =>
-            supabaseApi.auth.logout()
+          onClick={
+            handleLogout
           }
         >
 
@@ -476,12 +676,10 @@ export default function Profile() {
 
         </Button>
 
-
         <AlertDialog>
 
-          <AlertDialogTrigger
-            asChild
-          >
+          <AlertDialogTrigger asChild>
+
             <Button
               variant="ghost"
               className="w-full h-12 justify-start text-destructive/70 hover:text-destructive hover:bg-destructive/5"
@@ -492,8 +690,8 @@ export default function Profile() {
               Delete Account
 
             </Button>
-          </AlertDialogTrigger>
 
+          </AlertDialogTrigger>
 
           <AlertDialogContent>
 
@@ -504,18 +702,10 @@ export default function Profile() {
               </AlertDialogTitle>
 
               <AlertDialogDescription>
-                This will permanently
-                delete your account and
-                all associated data
-                including your workout
-                programs, logs, nutrition
-                entries, and progress
-                photos. This action cannot
-                be undone.
+                This will permanently delete your account and all associated data including your workout programs, logs, nutrition entries, and progress photos. This action cannot be undone.
               </AlertDialogDescription>
 
             </AlertDialogHeader>
-
 
             <AlertDialogFooter>
 
@@ -540,9 +730,8 @@ export default function Profile() {
 
       </div>
 
-
       {/* =====================================================
-          PRICING / SUBSCRIPTION
+          PRICING
           ===================================================== */}
 
       <div className="pt-2">
@@ -550,7 +739,7 @@ export default function Profile() {
         <PricingSection
           user={user}
           onSubscriptionChanged={
-            setUser
+            handleSubscriptionChanged
           }
         />
 
