@@ -1,11 +1,32 @@
-import {
-  createClient,
-} from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+/*
+ * ============================================================
+ * WASHEK FITNESS — STRIPE WEBHOOKS
+ * ============================================================
+ *
+ * Handles:
+ *
+ * - checkout.session.completed
+ * - checkout.session.async_payment_succeeded
+ * - customer.subscription.created
+ * - customer.subscription.updated
+ * - customer.subscription.deleted
+ * - invoice.paid
+ * - invoice.payment_failed
+ *
+ * The plan mapping uses the exact Stripe Price IDs provided
+ * for the Washek Fitness Sandbox.
+ */
+
+/*
+ * ============================================================
+ * ENVIRONMENT
+ * ============================================================
+ */
 
 const STRIPE_SECRET_KEY =
-  Deno.env.get(
-    'STRIPE_SECRET_KEY'
-  ) || '';
+  Deno.env.get('STRIPE_SECRET_KEY') || '';
 
 const STRIPE_WEBHOOK_SECRET =
   Deno.env.get(
@@ -13,14 +34,54 @@ const STRIPE_WEBHOOK_SECRET =
   ) || '';
 
 const SUPABASE_URL =
-  Deno.env.get(
-    'SUPABASE_URL'
-  ) || '';
+  Deno.env.get('SUPABASE_URL') || '';
 
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get(
     'SUPABASE_SERVICE_ROLE_KEY'
   ) || '';
+
+/*
+ * ============================================================
+ * EXACT STRIPE PRICE -> WASHEK PLAN MAPPING
+ * ============================================================
+ */
+
+const PRICE_TO_PLAN: Record<
+  string,
+  string
+> = {
+  'price_1TTYrbRuQpZftYKRoSyLbQ0c':
+    'progress',
+
+  'price_1TTYs8RuQpZftYKR8ZzpNg7x':
+    'performance',
+
+  'price_1TTYsWRuQpZftYKRKIm8V10E':
+    'elite',
+};
+
+const PAID_PLANS = [
+  'progress',
+  'performance',
+  'elite',
+];
+
+const PAID_STATUSES = [
+  'active',
+  'trialing',
+];
+
+const NON_PAID_STATUSES = [
+  'canceled',
+  'incomplete_expired',
+];
+
+/*
+ * ============================================================
+ * SUPABASE ADMIN CLIENT
+ * ============================================================
+ */
 
 const supabaseAdmin =
   createClient(
@@ -37,42 +98,15 @@ const supabaseAdmin =
     }
   );
 
-const PRODUCT_TO_PLAN = {
-  'prod_USTp1fOzf3aHsl':
-    'progress',
-
-  'prod_USTpsXJPgs7ccs':
-    'performance',
-
-  'prod_USTqn0bZsTVUkH':
-    'elite',
-};
-
-function json(
-  body: unknown,
-  status = 200
-) {
-  return new Response(
-    JSON.stringify(body),
-    {
-      status,
-
-      headers: {
-        'Content-Type':
-          'application/json',
-      },
-    }
-  );
-}
-
 /*
- * ==========================================================
+ * ============================================================
  * STRIPE API
- * ==========================================================
+ * ============================================================
  */
 
 async function stripe(
-  path: string
+  path: string,
+  options: RequestInit = {}
 ) {
   if (
     !STRIPE_SECRET_KEY
@@ -86,22 +120,44 @@ async function stripe(
     await fetch(
       `https://api.stripe.com/v1/${path}`,
       {
+        ...options,
+
         headers: {
           Authorization:
             `Bearer ${STRIPE_SECRET_KEY}`,
+
+          'Content-Type':
+            'application/x-www-form-urlencoded',
+
+          ...(options.headers ||
+            {}),
         },
       }
     );
 
-  const data =
-    await response.json();
+  const rawText =
+    await response.text();
+
+  let data: any = {};
+
+  try {
+    data =
+      JSON.parse(
+        rawText
+      );
+  } catch {
+    data = {
+      raw:
+        rawText,
+    };
+  }
 
   if (
     !response.ok
   ) {
     throw new Error(
       data?.error?.message ||
-        'Stripe API request failed.'
+        `Stripe returned HTTP ${response.status}.`
     );
   }
 
@@ -109,9 +165,9 @@ async function stripe(
 }
 
 /*
- * ==========================================================
- * SIGNATURE VERIFICATION
- * ==========================================================
+ * ============================================================
+ * STRIPE SIGNATURE VERIFICATION
+ * ============================================================
  */
 
 async function verifySignature(
@@ -126,20 +182,24 @@ async function verifySignature(
     );
   }
 
-  const parts =
+  const pieces =
     signatureHeader.split(',');
 
   const timestampPart =
-    parts.find(
+    pieces.find(
       (part) =>
-        part.startsWith('t=')
+        part.startsWith(
+          't='
+        )
     );
 
   const signatures =
-    parts
+    pieces
       .filter(
         (part) =>
-          part.startsWith('v1=')
+          part.startsWith(
+            'v1='
+          )
       )
       .map(
         (part) =>
@@ -152,7 +212,7 @@ async function verifySignature(
       0
   ) {
     throw new Error(
-      'Invalid Stripe webhook signature.'
+      'Invalid Stripe signature.'
     );
   }
 
@@ -171,11 +231,17 @@ async function verifySignature(
     );
   }
 
-  if (
+  /*
+   * Five-minute replay protection.
+   */
+  const age =
     Math.abs(
       Date.now() / 1000 -
         timestamp
-    ) >
+    );
+
+  if (
+    age >
     300
   ) {
     throw new Error(
@@ -186,11 +252,14 @@ async function verifySignature(
   const signedPayload =
     `${timestamp}.${payload}`;
 
-  const key =
+  const encoder =
+    new TextEncoder();
+
+  const cryptoKey =
     await crypto.subtle.importKey(
       'raw',
 
-      new TextEncoder().encode(
+      encoder.encode(
         STRIPE_WEBHOOK_SECRET
       ),
 
@@ -211,9 +280,9 @@ async function verifySignature(
     await crypto.subtle.sign(
       'HMAC',
 
-      key,
+      cryptoKey,
 
-      new TextEncoder().encode(
+      encoder.encode(
         signedPayload
       )
     );
@@ -249,21 +318,23 @@ async function verifySignature(
     let difference = 0;
 
     for (
-      let i = 0;
-      i < expected.length;
-      i += 1
+      let index = 0;
+      index <
+      expected.length;
+      index += 1
     ) {
       difference |=
         expected.charCodeAt(
-          i
+          index
         ) ^
         candidate.charCodeAt(
-          i
+          index
         );
     }
 
     if (
-      difference === 0
+      difference ===
+      0
     ) {
       return true;
     }
@@ -275,53 +346,56 @@ async function verifySignature(
 }
 
 /*
- * ==========================================================
- * CUSTOMER
- * ==========================================================
+ * ============================================================
+ * PLAN DETECTION
+ * ============================================================
  */
 
-async function getCustomer(
-  customerId: string | null
+function planFromPrice(
+  priceId: string | null
 ) {
   if (
-    !customerId
+    !priceId
   ) {
     return null;
   }
 
-  return stripe(
-    `customers/${encodeURIComponent(
-      customerId
-    )}`
-  );
-}
-
-function getCustomerEmail(
-  customer: any
-) {
   return (
-    customer?.email
-      ?.trim()
-      .toLowerCase() ||
+    PRICE_TO_PLAN[
+      priceId
+    ] ||
     null
   );
 }
 
 /*
- * ==========================================================
- * PROFILE LOOKUP
- * ==========================================================
+ * ============================================================
+ * GET SUBSCRIPTION PRICE
+ * ============================================================
+ */
+
+function getSubscriptionPriceId(
+  subscription: any
+) {
+  return (
+    subscription
+      ?.items
+      ?.data?.[0]
+      ?.price
+      ?.id ||
+    null
+  );
+}
+
+/*
+ * ============================================================
+ * FIND PROFILE BY USER ID
+ * ============================================================
  */
 
 async function findProfileByUserId(
-  userId: string | null
+  userId: string
 ) {
-  if (
-    !userId
-  ) {
-    return null;
-  }
-
   const {
     data,
     error,
@@ -341,11 +415,17 @@ async function findProfileByUserId(
     throw error;
   }
 
-  return data;
+  return data || null;
 }
 
+/*
+ * ============================================================
+ * FIND PROFILE BY STRIPE CUSTOMER
+ * ============================================================
+ */
+
 async function findProfileByCustomerId(
-  customerId: string | null
+  customerId: string
 ) {
   if (
     !customerId
@@ -372,212 +452,71 @@ async function findProfileByCustomerId(
     throw error;
   }
 
-  return data;
+  return data || null;
 }
 
-async function findProfileByEmail(
-  email: string | null
+/*
+ * ============================================================
+ * FIND PROFILE
+ * ============================================================
+ */
+
+async function findProfile(
+  userId: string | null,
+  customerId: string | null
 ) {
+  /*
+   * User ID is the strongest identifier because the checkout
+   * session contains it in metadata/client_reference_id.
+   */
   if (
-    !email
+    userId
   ) {
-    return null;
+    const profile =
+      await findProfileByUserId(
+        userId
+      );
+
+    if (
+      profile
+    ) {
+      return profile;
+    }
   }
 
-  const normalized =
-    email
-      .trim()
-      .toLowerCase();
-
-  const {
-    data,
-    error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .ilike(
-        'email',
-        normalized
-      )
-      .limit(1)
-      .maybeSingle();
-
+  /*
+   * Fallback to Stripe customer ID.
+   */
   if (
-    error
+    customerId
   ) {
-    throw error;
-  }
+    const profile =
+      await findProfileByCustomerId(
+        customerId
+      );
 
-  return data;
-}
-
-async function findProfile({
-  userId,
-  customerId,
-  email,
-}: {
-  userId: string | null;
-  customerId: string | null;
-  email: string | null;
-}) {
-  const byUser =
-    await findProfileByUserId(
-      userId
-    );
-
-  if (
-    byUser
-  ) {
-    return byUser;
-  }
-
-  const byCustomer =
-    await findProfileByCustomerId(
-      customerId
-    );
-
-  if (
-    byCustomer
-  ) {
-    return byCustomer;
-  }
-
-  const byEmail =
-    await findProfileByEmail(
-      email
-    );
-
-  if (
-    byEmail
-  ) {
-    return byEmail;
+    if (
+      profile
+    ) {
+      return profile;
+    }
   }
 
   return null;
 }
 
 /*
- * ==========================================================
- * PLAN DETECTION
- * ==========================================================
- */
-
-function getPlan(
-  subscription: any,
-  fallbackPlan: string | null = null
-) {
-  const item =
-    subscription
-      ?.items
-      ?.data?.[0];
-
-  const price =
-    item?.price;
-
-  const productId =
-    typeof price?.product ===
-    'string'
-      ? price.product
-      : null;
-
-  const priceId =
-    price?.id ||
-    null;
-
-  /*
-   * PRIMARY:
-   * Product ID.
-   */
-  if (
-    productId &&
-    PRODUCT_TO_PLAN[
-      productId
-    ]
-  ) {
-    return (
-      PRODUCT_TO_PLAN[
-        productId
-      ]
-    );
-  }
-
-  /*
-   * SECONDARY:
-   * Existing Price ID secrets.
-   */
-  const progressPrice =
-    Deno.env.get(
-      'STRIPE_PROGRESS_PRICE_ID'
-    );
-
-  const performancePrice =
-    Deno.env.get(
-      'STRIPE_PERFORMANCE_PRICE_ID'
-    );
-
-  const elitePrice =
-    Deno.env.get(
-      'STRIPE_ELITE_PRICE_ID'
-    );
-
-  if (
-    progressPrice &&
-    priceId ===
-      progressPrice
-  ) {
-    return 'progress';
-  }
-
-  if (
-    performancePrice &&
-    priceId ===
-      performancePrice
-  ) {
-    return 'performance';
-  }
-
-  if (
-    elitePrice &&
-    priceId ===
-      elitePrice
-  ) {
-    return 'elite';
-  }
-
-  /*
-   * THIRDARY:
-   * Subscription metadata.
-   */
-  const metadataPlan =
-    subscription
-      ?.metadata
-      ?.plan;
-
-  if (
-    [
-      'progress',
-      'performance',
-      'elite',
-    ].includes(
-      metadataPlan
-    )
-  ) {
-    return metadataPlan;
-  }
-
-  return fallbackPlan;
-}
-
-/*
- * ==========================================================
+ * ============================================================
  * UPDATE PROFILE
- * ==========================================================
+ * ============================================================
  */
 
 async function updateProfile(
   profileId: string,
-  values: Record<string, unknown>
+  patch: Record<
+    string,
+    unknown
+  >
 ) {
   const {
     error,
@@ -585,7 +524,7 @@ async function updateProfile(
     await supabaseAdmin
       .from('profiles')
       .update({
-        ...values,
+        ...patch,
 
         subscription_updated_at:
           new Date().toISOString(),
@@ -606,159 +545,32 @@ async function updateProfile(
 }
 
 /*
- * ==========================================================
- * CHECKOUT COMPLETED
- * ==========================================================
+ * ============================================================
+ * WRITE PAID SUBSCRIPTION
+ * ============================================================
  */
 
-async function handleCheckoutCompleted(
-  session: any
+async function writePaidSubscription(
+  profile: any,
+  subscription: any,
+  plan: string
 ) {
   const customerId =
-    typeof session?.customer ===
+    typeof subscription?.customer ===
     'string'
-      ? session.customer
+      ? subscription.customer
       : null;
-
-  const userId =
-    session
-      ?.metadata
-      ?.user_id ||
-    null;
-
-  const metadataPlan =
-    session
-      ?.metadata
-      ?.plan ||
-    null;
-
-  let email =
-    session
-      ?.customer_details
-      ?.email
-      ?.trim()
-      .toLowerCase() ||
-    session
-      ?.customer_email
-      ?.trim()
-      .toLowerCase() ||
-    null;
-
-  if (
-    !email &&
-    customerId
-  ) {
-    email =
-      getCustomerEmail(
-        await getCustomer(
-          customerId
-        )
-      );
-  }
-
-  const profile =
-    await findProfile({
-      userId,
-
-      customerId,
-
-      email,
-    });
-
-  if (
-    !profile
-  ) {
-    console.error(
-      'Stripe checkout could not be matched to a Washek profile.',
-      {
-        sessionId:
-          session?.id,
-
-        userId,
-
-        customerId,
-
-        email,
-      }
-    );
-
-    return;
-  }
 
   const subscriptionId =
-    typeof session?.subscription ===
+    typeof subscription?.id ===
     'string'
-      ? session.subscription
+      ? subscription.id
       : null;
 
-  if (
-    !subscriptionId
-  ) {
-    console.error(
-      'Checkout session did not contain a subscription ID.',
-      {
-        sessionId:
-          session?.id,
-
-        profileId:
-          profile.id,
-      }
-    );
-
-    return;
-  }
-
-  const subscription =
-    await stripe(
-      `subscriptions/${encodeURIComponent(
-        subscriptionId
-      )}`
-    );
-
-  const plan =
-    getPlan(
-      subscription,
-      metadataPlan
-    );
-
-  if (
-    !plan
-  ) {
-    console.error(
-      'Unable to determine Washek plan.',
-      {
-        subscriptionId,
-
-        profileId:
-          profile.id,
-
-        productId:
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.product,
-
-        priceId:
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.id,
-
-        metadataPlan,
-      }
-    );
-
-    return;
-  }
-
   const priceId =
-    subscription
-      ?.items
-      ?.data?.[0]
-      ?.price?.id ||
-    null;
+    getSubscriptionPriceId(
+      subscription
+    );
 
   await updateProfile(
     profile.id,
@@ -767,7 +579,7 @@ async function handleCheckoutCompleted(
         plan,
 
       subscription_status:
-        subscription.status ||
+        subscription?.status ||
         'active',
 
       stripe_customer_id:
@@ -778,18 +590,25 @@ async function handleCheckoutCompleted(
 
       stripe_price_id:
         priceId,
+
+      subscription_cancelled_at:
+        null,
     }
   );
 
   console.log(
-    'Washek subscription activated.',
+    '[WEBHOOK] Paid subscription written:',
     {
       profileId:
         profile.id,
 
+      userId:
+        profile.id,
+
       plan,
 
-      customerId,
+      status:
+        subscription?.status,
 
       subscriptionId,
 
@@ -799,60 +618,129 @@ async function handleCheckoutCompleted(
 }
 
 /*
- * ==========================================================
- * SUBSCRIPTION EVENTS
- * ==========================================================
+ * ============================================================
+ * HANDLE CHECKOUT COMPLETED
+ * ============================================================
+ */
+
+async function handleCheckoutCompleted(
+  session: any
+) {
+  const userId =
+    session?.metadata
+      ?.user_id ||
+    session?.client_reference_id ||
+    null;
+
+  const customerId =
+    typeof session?.customer ===
+    'string'
+      ? session.customer
+      : null;
+
+  const subscriptionId =
+    typeof session?.subscription ===
+    'string'
+      ? session.subscription
+      : null;
+
+  if (
+    !userId
+  ) {
+    throw new Error(
+      `Checkout Session ${session?.id || 'unknown'} does not contain the Washek user ID.`
+    );
+  }
+
+  if (
+    !subscriptionId
+  ) {
+    throw new Error(
+      `Checkout Session ${session?.id || 'unknown'} does not contain a subscription ID.`
+    );
+  }
+
+  /*
+   * Retrieve the actual Stripe subscription.
+   */
+  const subscription =
+    await stripe(
+      `subscriptions/${encodeURIComponent(
+        subscriptionId
+      )}`
+    );
+
+  const priceId =
+    getSubscriptionPriceId(
+      subscription
+    );
+
+  const plan =
+    planFromPrice(
+      priceId
+    );
+
+  if (
+    !plan
+  ) {
+    throw new Error(
+      `Stripe Price ${priceId || 'unknown'} is not mapped to a Washek Fitness plan.`
+    );
+  }
+
+  const profile =
+    await findProfile(
+      userId,
+      customerId
+    );
+
+  if (
+    !profile
+  ) {
+    throw new Error(
+      `No Washek profile was found for user ${userId}.`
+    );
+  }
+
+  await writePaidSubscription(
+    profile,
+    subscription,
+    plan
+  );
+}
+
+/*
+ * ============================================================
+ * HANDLE SUBSCRIPTION EVENT
+ * ============================================================
  */
 
 async function handleSubscription(
   subscription: any
 ) {
+  const userId =
+    subscription?.metadata
+      ?.user_id ||
+    null;
+
   const customerId =
     typeof subscription?.customer ===
     'string'
       ? subscription.customer
       : null;
 
-  const userId =
-    subscription
-      ?.metadata
-      ?.user_id ||
-    null;
-
-  const email =
-    getCustomerEmail(
-      await getCustomer(
-        customerId
-      )
-    );
-
   const profile =
-    await findProfile({
+    await findProfile(
       userId,
-
-      customerId,
-
-      email,
-    });
+      customerId
+    );
 
   if (
     !profile
   ) {
-    console.error(
-      'Stripe subscription could not be matched to Washek.',
-      {
-        subscriptionId:
-          subscription?.id,
-
-        userId,
-
-        customerId,
-
-        email,
-      }
+    throw new Error(
+      `No Washek profile found for Stripe subscription ${subscription?.id || 'unknown'}.`
     );
-
-    return;
   }
 
   const status =
@@ -860,27 +748,29 @@ async function handleSubscription(
     'inactive';
 
   const priceId =
-    subscription
-      ?.items
-      ?.data?.[0]
-      ?.price?.id ||
-    null;
-
-  const plan =
-    getPlan(
-      subscription,
-      profile.subscription_plan ||
-        null
+    getSubscriptionPriceId(
+      subscription
     );
 
+  const plan =
+    planFromPrice(
+      priceId
+    ) ||
+    subscription
+      ?.metadata
+      ?.plan ||
+    null;
+
   /*
-   * Immediate cancellation.
+   * ----------------------------------------------------------
+   * CANCELED
+   * ----------------------------------------------------------
    */
+
   if (
-    status ===
-      'canceled' ||
-    status ===
-      'incomplete_expired'
+    NON_PAID_STATUSES.includes(
+      status
+    )
   ) {
     await updateProfile(
       profile.id,
@@ -899,11 +789,14 @@ async function handleSubscription(
 
         stripe_price_id:
           null,
+
+        subscription_cancelled_at:
+          new Date().toISOString(),
       }
     );
 
     console.log(
-      'Washek subscription canceled.',
+      '[WEBHOOK] Subscription canceled:',
       {
         profileId:
           profile.id,
@@ -917,18 +810,19 @@ async function handleSubscription(
   }
 
   /*
-   * Active paid subscription.
+   * ----------------------------------------------------------
+   * ACTIVE / TRIALING
+   * ----------------------------------------------------------
    */
+
   if (
-    (
-      status ===
-        'active' ||
-      status ===
-        'trialing'
+    PAID_STATUSES.includes(
+      status
     ) &&
     plan &&
-    plan !==
-      'free'
+    PAID_PLANS.includes(
+      plan
+    )
   ) {
     await updateProfile(
       profile.id,
@@ -947,11 +841,14 @@ async function handleSubscription(
 
         stripe_price_id:
           priceId,
+
+        subscription_cancelled_at:
+          null,
       }
     );
 
     console.log(
-      'Washek subscription synchronized.',
+      '[WEBHOOK] Subscription active:',
       {
         profileId:
           profile.id,
@@ -960,12 +857,8 @@ async function handleSubscription(
 
         status,
 
-        productId:
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.product,
+        subscriptionId:
+          subscription.id,
 
         priceId,
       }
@@ -975,9 +868,11 @@ async function handleSubscription(
   }
 
   /*
-   * Anything that isn't an active paid
-   * entitlement becomes Free.
+   * ----------------------------------------------------------
+   * NON-ACTIVE / UNUSABLE PAID STATE
+   * ----------------------------------------------------------
    */
+
   await updateProfile(
     profile.id,
     {
@@ -995,39 +890,40 @@ async function handleSubscription(
 
       stripe_price_id:
         null,
+
+      subscription_cancelled_at:
+        new Date().toISOString(),
+    }
+  );
+
+  console.log(
+    '[WEBHOOK] Subscription has no active paid entitlement:',
+    {
+      profileId:
+        profile.id,
+
+      status,
+
+      subscriptionId:
+        subscription.id,
     }
   );
 }
 
 /*
- * ==========================================================
+ * ============================================================
  * INVOICE PAID
- * ==========================================================
+ * ============================================================
  */
 
 async function handleInvoicePaid(
   invoice: any
 ) {
-  const direct =
+  const subscriptionId =
     typeof invoice?.subscription ===
     'string'
       ? invoice.subscription
       : null;
-
-  const nested =
-    typeof invoice?.parent
-      ?.subscription_details
-      ?.subscription ===
-    'string'
-      ? invoice.parent
-          .subscription_details
-          .subscription
-      : null;
-
-  const subscriptionId =
-    direct ||
-    nested ||
-    null;
 
   if (
     !subscriptionId
@@ -1048,34 +944,19 @@ async function handleInvoicePaid(
 }
 
 /*
- * ==========================================================
- * INVOICE FAILED
- * ==========================================================
+ * ============================================================
+ * INVOICE PAYMENT FAILED
+ * ============================================================
  */
 
 async function handleInvoicePaymentFailed(
   invoice: any
 ) {
-  const direct =
+  const subscriptionId =
     typeof invoice?.subscription ===
     'string'
       ? invoice.subscription
       : null;
-
-  const nested =
-    typeof invoice?.parent
-      ?.subscription_details
-      ?.subscription ===
-    'string'
-      ? invoice.parent
-          .subscription_details
-          .subscription
-      : null;
-
-  const subscriptionId =
-    direct ||
-    nested ||
-    null;
 
   if (
     !subscriptionId
@@ -1090,43 +971,43 @@ async function handleInvoicePaymentFailed(
       )}`
     );
 
+  const userId =
+    subscription
+      ?.metadata
+      ?.user_id ||
+    null;
+
   const customerId =
     typeof subscription?.customer ===
     'string'
       ? subscription.customer
       : null;
 
-  const email =
-    getCustomerEmail(
-      await getCustomer(
-        customerId
-      )
-    );
-
   const profile =
-    await findProfile({
-      userId:
-        subscription
-          ?.metadata
-          ?.user_id ||
-        null,
-
-      customerId,
-
-      email,
-    });
+    await findProfile(
+      userId,
+      customerId
+    );
 
   if (
     !profile
   ) {
-    return;
+    throw new Error(
+      `No Washek profile found for failed-payment subscription ${subscription.id}.`
+    );
   }
 
+  /*
+   * Record Stripe's actual subscription status.
+   *
+   * Do not blindly revoke access merely because one invoice
+   * failed; Stripe may still retry payment.
+   */
   await updateProfile(
     profile.id,
     {
       subscription_status:
-        subscription.status ||
+        subscription?.status ||
         'past_due',
 
       stripe_customer_id:
@@ -1134,14 +1015,33 @@ async function handleInvoicePaymentFailed(
 
       stripe_subscription_id:
         subscription.id,
+
+      stripe_price_id:
+        getSubscriptionPriceId(
+          subscription
+        ),
+    }
+  );
+
+  console.log(
+    '[WEBHOOK] Invoice payment failed:',
+    {
+      profileId:
+        profile.id,
+
+      subscriptionId:
+        subscription.id,
+
+      status:
+        subscription?.status,
     }
   );
 }
 
 /*
- * ==========================================================
- * WEBHOOK
- * ==========================================================
+ * ============================================================
+ * EDGE FUNCTION
+ * ============================================================
  */
 
 Deno.serve(
@@ -1153,12 +1053,17 @@ Deno.serve(
       return new Response(
         'Method not allowed.',
         {
-          status: 405,
+          status:
+            405,
         }
       );
     }
 
     try {
+      /*
+       * Read the RAW request body.
+       * Stripe signature verification requires the raw payload.
+       */
       const payload =
         await req.text();
 
@@ -1173,7 +1078,8 @@ Deno.serve(
         return new Response(
           'Missing Stripe signature.',
           {
-            status: 400,
+            status:
+              400,
           }
         );
       }
@@ -1189,7 +1095,8 @@ Deno.serve(
         );
 
       console.log(
-        `Stripe webhook received: ${event.type}`
+        '[WEBHOOK] Stripe event received:',
+        event.type
       );
 
       switch (
@@ -1239,33 +1146,61 @@ Deno.serve(
 
         default:
           console.log(
-            `Ignoring Stripe event: ${event.type}`
+            '[WEBHOOK] Ignoring event:',
+            event.type
           );
       }
 
-      return json({
-        received:
-          true,
-      });
+      return new Response(
+        JSON.stringify({
+          received:
+            true,
+        }),
+        {
+          status:
+            200,
+
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+        }
+      );
     } catch (
       error
     ) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Webhook processing failed.';
+
       console.error(
-        'Stripe webhook error:',
-        error
+        '[WEBHOOK] FAILED:',
+        {
+          message,
+
+          timestamp:
+            new Date().toISOString(),
+        }
       );
 
-      return json(
-        {
+      return new Response(
+        JSON.stringify({
           received:
             false,
 
           error:
-            error instanceof Error
-              ? error.message
-              : 'Webhook processing failed.',
-        },
-        400
+            message,
+        }),
+        {
+          status:
+            400,
+
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+        }
       );
     }
   }
