@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-const CHECKOUT_FUNCTION =
-  import.meta.env.VITE_SUPABASE_CHECKOUT_FUNCTION ||
+const FUNCTION_NAME =
   'create-checkout-session';
 
 const VALID_PLANS = [
@@ -19,12 +18,12 @@ export async function createStripeCheckout(
     )
   ) {
     throw new Error(
-      'Invalid subscription plan.'
+      `Invalid subscription plan: ${plan}`
     );
   }
 
   /*
-   * Make sure the user has a current session.
+   * Confirm there is an authenticated session.
    */
   const {
     data: sessionData,
@@ -41,24 +40,26 @@ export async function createStripeCheckout(
     );
   }
 
+  const session =
+    sessionData?.session;
+
   if (
-    !sessionData?.session
-      ?.access_token
+    !session?.access_token
   ) {
     throw new Error(
-      'You must be signed in before upgrading.'
+      'You are not currently signed in. Please sign in again.'
     );
   }
 
   /*
-   * Call the Supabase Edge Function.
+   * Call the existing Supabase Edge Function.
    */
   const {
     data,
     error,
   } =
     await supabase.functions.invoke(
-      CHECKOUT_FUNCTION,
+      FUNCTION_NAME,
       {
         body: {
           plan,
@@ -67,27 +68,44 @@ export async function createStripeCheckout(
     );
 
   /*
-   * Supabase function invocation errors.
+   * A Supabase invocation error means the function
+   * itself could not be reached or returned a non-2xx
+   * response.
    */
   if (
     error
   ) {
     console.error(
-      'Checkout function invocation failed:',
+      '[STRIPE CHECKOUT] Supabase invocation error:',
       error
     );
 
     throw new Error(
       error.message ||
-        'The checkout service could not be reached.'
+        'The Stripe checkout service could not be reached.'
+    );
+  }
+
+  console.log(
+    '[STRIPE CHECKOUT] Supabase response:',
+    data
+  );
+
+  if (
+    !data
+  ) {
+    throw new Error(
+      'The checkout service returned no data.'
     );
   }
 
   /*
-   * Backend explicitly reported failure.
+   * Our Edge Function intentionally returns
+   * success:false for application errors while still
+   * using a successful HTTP response.
    */
   if (
-    data?.success ===
+    data.success ===
     false
   ) {
     throw new Error(
@@ -97,46 +115,107 @@ export async function createStripeCheckout(
   }
 
   /*
-   * Normal new-subscription flow.
+   * Normal FREE -> PAID checkout.
    */
   if (
-    data?.success &&
-    data?.action ===
+    data.success ===
+      true &&
+    data.action ===
       'checkout' &&
-    data?.url
+    typeof data.url ===
+      'string' &&
+    data.url.length >
+      0
   ) {
-    return data;
+    return {
+      success:
+        true,
+
+      action:
+        'checkout',
+
+      url:
+        data.url,
+
+      session_id:
+        data.session_id ||
+        null,
+
+      plan:
+        data.plan ||
+        plan,
+
+      product_id:
+        data.product_id ||
+        null,
+
+      price_id:
+        data.price_id ||
+        null,
+    };
   }
 
   /*
    * Existing subscription changed directly.
    */
   if (
-    data?.success &&
-    data?.action ===
+    data.success ===
+      true &&
+    data.action ===
       'changed'
   ) {
-    return data;
+    return {
+      success:
+        true,
+
+      action:
+        'changed',
+
+      plan:
+        data.plan ||
+        plan,
+
+      subscription_id:
+        data.subscription_id ||
+        null,
+
+      price_id:
+        data.price_id ||
+        null,
+    };
   }
 
   /*
-   * Defensive fallback.
+   * Defensive fallback in case the backend returns
+   * a URL without the expected action field.
    */
   if (
-    data?.url
+    typeof data.url ===
+      'string' &&
+    data.url.length >
+      0
   ) {
     return {
-      ...data,
-
       success:
         true,
 
       action:
         'checkout',
+
+      url:
+        data.url,
+
+      session_id:
+        data.session_id ||
+        null,
+
+      plan:
+        data.plan ||
+        plan,
     };
   }
 
   throw new Error(
-    'The checkout service did not return a Stripe Checkout URL.'
+    'Stripe did not return a valid Checkout URL.'
   );
 }
