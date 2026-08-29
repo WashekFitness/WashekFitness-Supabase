@@ -1,8 +1,10 @@
-import { createClient } from
-  'https://esm.sh/@supabase/supabase-js@2';
+import {
+  createClient,
+} from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin':
+    '*',
 
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
@@ -15,10 +17,14 @@ const corsHeaders = {
 };
 
 const STRIPE_SECRET_KEY =
-  Deno.env.get('STRIPE_SECRET_KEY') || '';
+  Deno.env.get(
+    'STRIPE_SECRET_KEY'
+  ) || '';
 
 const SUPABASE_URL =
-  Deno.env.get('SUPABASE_URL') || '';
+  Deno.env.get(
+    'SUPABASE_URL'
+  ) || '';
 
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get(
@@ -26,40 +32,23 @@ const SUPABASE_SERVICE_ROLE_KEY =
   ) || '';
 
 const APP_URL =
-  Deno.env.get('APP_URL') ||
+  Deno.env.get(
+    'APP_URL'
+  ) ||
   'https://washekfitness.com';
 
-/*
- * These are your Stripe PRODUCT IDs.
- *
- * They are not secret and can safely be
- * referenced by the server function.
- *
- * The function finds the active recurring
- * price attached to each product automatically.
- */
-const PRODUCT_IDS = {
+const PRODUCTS = {
   progress:
-    Deno.env.get(
-      'STRIPE_PROGRESS_PRODUCT_ID'
-    ) ||
     'prod_USTp1fOzf3aHsl',
 
   performance:
-    Deno.env.get(
-      'STRIPE_PERFORMANCE_PRODUCT_ID'
-    ) ||
     'prod_USTpsXJPgs7ccs',
 
   elite:
-    Deno.env.get(
-      'STRIPE_ELITE_PRODUCT_ID'
-    ) ||
     'prod_USTqn0bZsTVUkH',
 };
 
-const PLAN_ORDER = [
-  'free',
+const PAID_PLANS = [
   'progress',
   'performance',
   'elite',
@@ -71,8 +60,11 @@ const supabaseAdmin =
     SUPABASE_SERVICE_ROLE_KEY,
     {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession:
+          false,
+
+        autoRefreshToken:
+          false,
       },
     }
   );
@@ -85,21 +77,21 @@ function json(
     JSON.stringify(body),
     {
       status,
-      headers: corsHeaders,
+      headers:
+        corsHeaders,
     }
   );
 }
 
-/*
- * Generic Stripe API helper.
- */
 async function stripe(
   path: string,
   options: RequestInit = {}
 ) {
-  if (!STRIPE_SECRET_KEY) {
+  if (
+    !STRIPE_SECRET_KEY
+  ) {
     throw new Error(
-      'Stripe is not configured on the server. Add STRIPE_SECRET_KEY to Supabase secrets.'
+      'STRIPE_SECRET_KEY is not configured in Supabase.'
     );
   }
 
@@ -116,7 +108,8 @@ async function stripe(
           'Content-Type':
             'application/x-www-form-urlencoded',
 
-          ...(options.headers || {}),
+          ...(options.headers ||
+            {}),
         },
       }
     );
@@ -124,49 +117,19 @@ async function stripe(
   const data =
     await response.json();
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
     throw new Error(
       data?.error?.message ||
-        'Stripe request failed.'
+        'Stripe API request failed.'
     );
   }
 
   return data;
 }
 
-/*
- * Return the Stripe Product ID for
- * a Washek subscription plan.
- */
-function getProductId(
-  plan: string
-) {
-  if (
-    ![
-      'progress',
-      'performance',
-      'elite',
-    ].includes(plan)
-  ) {
-    throw new Error(
-      'Invalid subscription plan.'
-    );
-  }
-
-  return PRODUCT_IDS[
-    plan as keyof typeof PRODUCT_IDS
-  ];
-}
-
-/*
- * Find the active recurring Stripe Price
- * belonging to a Product.
- *
- * This means you only need to supply the
- * Product ID instead of manually finding
- * the Price ID.
- */
-async function getRecurringPriceForProduct(
+async function getMonthlyPrice(
   productId: string
 ) {
   const params =
@@ -198,47 +161,37 @@ async function getRecurringPriceForProduct(
     );
 
   const prices =
-    result?.data || [];
+    result?.data ||
+    [];
 
-  if (!prices.length) {
+  if (
+    prices.length ===
+    0
+  ) {
     throw new Error(
-      `No active recurring Stripe price was found for product ${productId}.`
+      `No active recurring price was found for Stripe product ${productId}.`
     );
   }
 
-  /*
-   * Prefer a monthly price if one exists.
-   */
   const monthly =
     prices.find(
       (price: any) =>
-        price?.recurring?.interval ===
+        price?.recurring
+          ?.interval ===
         'month'
     );
 
-  return monthly || prices[0];
-}
-
-function isPaidStatus(
-  status: string
-) {
   return (
-    status === 'active' ||
-    status === 'trialing'
+    monthly ||
+    prices[0]
   );
 }
 
-/*
- * Find the user's current Stripe
- * subscription if one exists.
- */
-async function findCurrentSubscription(
-  profile: any,
-  email: string
+async function findActiveSubscription(
+  profile: any
 ) {
   /*
-   * First use the subscription ID saved
-   * directly on the profile.
+   * Saved subscription ID.
    */
   if (
     profile?.stripe_subscription_id
@@ -254,9 +207,10 @@ async function findCurrentSubscription(
       if (
         subscription &&
         (
-          isPaidStatus(
-            subscription.status
-          ) ||
+          subscription.status ===
+            'active' ||
+          subscription.status ===
+            'trialing' ||
           subscription.status ===
             'past_due'
         )
@@ -264,14 +218,12 @@ async function findCurrentSubscription(
         return subscription;
       }
     } catch {
-      /*
-       * Continue with customer lookup.
-       */
+      // Continue.
     }
   }
 
   /*
-   * Next search by saved Stripe customer ID.
+   * Saved customer ID.
    */
   if (
     profile?.stripe_customer_id
@@ -280,58 +232,75 @@ async function findCurrentSubscription(
       await stripe(
         `subscriptions?customer=${encodeURIComponent(
           profile.stripe_customer_id
-        )}&status=all&limit=20`
+        )}&status=all&limit=50`
       );
 
     const subscription =
-      (result?.data || []).find(
+      (result?.data ||
+        []).find(
         (item: any) =>
-          isPaidStatus(
-            item.status
-          ) ||
+          item.status ===
+            'active' ||
+          item.status ===
+            'trialing' ||
           item.status ===
             'past_due'
-      );
+        );
 
-    if (subscription) {
+    if (
+      subscription
+    ) {
       return subscription;
     }
   }
 
   /*
-   * Final recovery method:
-   * find Stripe customers by email.
+   * Last-resort customer lookup by email.
+   *
+   * This is important for your existing
+   * Stripe test subscription.
    */
-  if (email) {
+  const email =
+    profile?.email ||
+    '';
+
+  if (
+    email
+  ) {
     const customers =
       await stripe(
         `customers?email=${encodeURIComponent(
           email
-        )}&limit=20`
+        )}&limit=50`
       );
 
     for (
       const customer of
-      customers?.data || []
+      customers?.data ||
+      []
     ) {
       const result =
         await stripe(
           `subscriptions?customer=${encodeURIComponent(
             customer.id
-          )}&status=all&limit=20`
+          )}&status=all&limit=50`
         );
 
       const subscription =
-        (result?.data || []).find(
-          (item: any) =>
-            isPaidStatus(
-              item.status
-            ) ||
-            item.status ===
-              'past_due'
-        );
+        (result?.data ||
+          []).find(
+            (item: any) =>
+              item.status ===
+                'active' ||
+              item.status ===
+                'trialing' ||
+              item.status ===
+                'past_due'
+          );
 
-      if (subscription) {
+      if (
+        subscription
+      ) {
         return subscription;
       }
     }
@@ -340,305 +309,397 @@ async function findCurrentSubscription(
   return null;
 }
 
-/*
- * Change an existing paid subscription
- * to another Washek paid plan.
- *
- * This prevents multiple subscriptions
- * being created for one user.
- */
-async function changeExistingSubscription(
-  subscription: any,
-  newPriceId: string
+async function updateProfile(
+  userId: string,
+  values: Record<string, unknown>
 ) {
-  const items =
-    subscription?.items?.data || [];
+  const {
+    error,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        ...values,
 
-  if (!items.length) {
-    throw new Error(
-      'The existing Stripe subscription has no subscription item to update.'
-    );
+        subscription_updated_at:
+          new Date().toISOString(),
+
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        'id',
+        userId
+      );
+
+  if (
+    error
+  ) {
+    throw error;
   }
-
-  const subscriptionItem =
-    items[0];
-
-  const params =
-    new URLSearchParams();
-
-  params.set(
-    'price',
-    newPriceId
-  );
-
-  /*
-   * Keep the existing quantity.
-   */
-  params.set(
-    'quantity',
-    String(
-      subscriptionItem.quantity ||
-        1
-    )
-  );
-
-  /*
-   * Apply the plan change immediately
-   * without generating an extra prorated
-   * charge/refund.
-   */
-  params.set(
-    'proration_behavior',
-    'none'
-  );
-
-  const updatedItem =
-    await stripe(
-      `subscription_items/${encodeURIComponent(
-        subscriptionItem.id
-      )}`,
-      {
-        method: 'POST',
-        body:
-          params.toString(),
-      }
-    );
-
-  return updatedItem;
 }
 
-Deno.serve(async (req) => {
+function getProductForPlan(
+  plan: string
+) {
   if (
-    req.method ===
-    'OPTIONS'
-  ) {
-    return new Response(
-      'ok',
-      {
-        headers:
-          corsHeaders,
-      }
-    );
-  }
-
-  if (
-    req.method !==
-    'POST'
-  ) {
-    return json(
-      {
-        success:
-          false,
-
-        error:
-          'Method not allowed.',
-      },
-      405
-    );
-  }
-
-  try {
-    /*
-     * Authenticate the request.
-     */
-    const authHeader =
-      req.headers.get(
-        'Authorization'
-      );
-
-    if (!authHeader) {
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            'You must be signed in.',
-        },
-        401
-      );
-    }
-
-    const token =
-      authHeader.replace(
-        /^Bearer\s+/i,
-        ''
-      );
-
-    const {
-      data: authData,
-      error: authError,
-    } =
-      await supabaseAdmin.auth.getUser(
-        token
-      );
-
-    if (
-      authError ||
-      !authData?.user
-    ) {
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            'Your session is invalid or expired.',
-        },
-        401
-      );
-    }
-
-    const authUser =
-      authData.user;
-
-    /*
-     * Read requested plan.
-     */
-    const body =
-      await req.json().catch(
-        () => ({})
-      );
-
-    const plan =
-      String(
-        body?.plan ||
-          ''
-      )
-        .trim()
-        .toLowerCase();
-
-    if (
-      ![
-        'progress',
-        'performance',
-        'elite',
-      ].includes(plan)
-    ) {
-      throw new Error(
-        'Invalid subscription plan.'
-      );
-    }
-
-    const productId =
-      getProductId(plan);
-
-    /*
-     * Resolve the Product to an active
-     * recurring Price.
-     */
-    const price =
-      await getRecurringPriceForProduct(
-        productId
-      );
-
-    const priceId =
-      price.id;
-
-    /*
-     * Load the user's profile.
-     */
-    const {
-      data: profile,
-      error: profileError,
-    } =
-      await supabaseAdmin
-        .from('profiles')
-        .select(
-          `
-            id,
-            email,
-            full_name,
-            subscription_plan,
-            subscription_status,
-            stripe_customer_id,
-            stripe_subscription_id,
-            stripe_price_id
-          `
-        )
-        .eq(
-          'id',
-          authUser.id
-        )
-        .single();
-
-    if (profileError) {
-      throw new Error(
-        'Unable to load your profile.'
-      );
-    }
-
-    const currentPlan =
-      profile?.subscription_plan ||
-      'free';
-
-    if (
-      currentPlan ===
+    !PAID_PLANS.includes(
       plan
+    )
+  ) {
+    throw new Error(
+      'Invalid subscription plan.'
+    );
+  }
+
+  return (
+    PRODUCTS[
+      plan as keyof typeof PRODUCTS
+    ]
+  );
+}
+
+Deno.serve(
+  async (req) => {
+    if (
+      req.method ===
+      'OPTIONS'
     ) {
-      throw new Error(
-        `You are already subscribed to the ${plan} plan.`
+      return new Response(
+        'ok',
+        {
+          headers:
+            corsHeaders,
+        }
       );
     }
 
-    const email =
-      profile?.email ||
-      authUser.email ||
-      '';
-
-    /*
-     * Check whether this user already
-     * has an active Stripe subscription.
-     */
-    const existingSubscription =
-      await findCurrentSubscription(
-        profile,
-        email
-      );
-
-    /*
-     * =====================================================
-     * PAID -> PAID
-     *
-     * Change the existing subscription instead
-     * of creating a second subscription.
-     * =====================================================
-     */
     if (
-      existingSubscription
+      req.method !==
+      'POST'
     ) {
-      const updatedItem =
-        await changeExistingSubscription(
-          existingSubscription,
-          priceId
+      return json(
+        {
+          success:
+            false,
+
+          error:
+            'Method not allowed.',
+        },
+        405
+      );
+    }
+
+    try {
+      /*
+       * =====================================================
+       * AUTH
+       * =====================================================
+       */
+
+      const authHeader =
+        req.headers.get(
+          'Authorization'
         );
 
-      const customerId =
-        typeof existingSubscription.customer ===
-        'string'
-          ? existingSubscription.customer
-          : profile?.stripe_customer_id ||
-            null;
+      if (
+        !authHeader
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              'You must be signed in.',
+          },
+          401
+        );
+      }
+
+      const token =
+        authHeader.replace(
+          /^Bearer\s+/i,
+          ''
+        );
+
+      const {
+        data:
+          authData,
+        error:
+          authError,
+      } =
+        await supabaseAdmin.auth.getUser(
+          token
+        );
+
+      if (
+        authError ||
+        !authData?.user
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            error:
+              'Your login session is invalid or expired.',
+          },
+          401
+        );
+      }
+
+      const user =
+        authData.user;
 
       /*
-       * Update Supabase immediately.
-       *
-       * The Stripe webhook will also verify
-       * and maintain this state.
+       * =====================================================
+       * REQUEST
+       * =====================================================
        */
+
+      const body =
+        await req
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      const plan =
+        String(
+          body?.plan ||
+            ''
+        )
+          .trim()
+          .toLowerCase();
+
+      const productId =
+        getProductForPlan(
+          plan
+        );
+
+      /*
+       * =====================================================
+       * PROFILE
+       * =====================================================
+       */
+
       const {
-        data: updatedProfile,
-        error: updateError,
+        data: profile,
+        error:
+          profileError,
       } =
         await supabaseAdmin
           .from('profiles')
-          .update({
+          .select(
+            `
+              id,
+              email,
+              full_name,
+              subscription_plan,
+              subscription_status,
+              stripe_customer_id,
+              stripe_subscription_id,
+              stripe_price_id
+            `
+          )
+          .eq(
+            'id',
+            user.id
+          )
+          .single();
+
+      if (
+        profileError
+      ) {
+        throw new Error(
+          'Unable to load your Washek Fitness profile.'
+        );
+      }
+
+      /*
+       * =====================================================
+       * FIND TARGET PRICE
+       * =====================================================
+       */
+
+      const targetPrice =
+        await getMonthlyPrice(
+          productId
+        );
+
+      /*
+       * =====================================================
+       * CHECK FOR AN EXISTING STRIPE SUBSCRIPTION
+       * =====================================================
+       */
+
+      const existingSubscription =
+        await findActiveSubscription(
+          profile
+        );
+
+      /*
+       * =====================================================
+       * PAID -> PAID
+       * =====================================================
+       *
+       * Don't create a second subscription.
+       */
+
+      if (
+        existingSubscription
+      ) {
+        const item =
+          existingSubscription
+            ?.items
+            ?.data?.[0];
+
+        if (!item) {
+          throw new Error(
+            'Your Stripe subscription has no subscription item to update.'
+          );
+        }
+
+        /*
+         * If already using the target price,
+         * don't do anything.
+         */
+        if (
+          item?.price?.id ===
+          targetPrice.id
+        ) {
+          await updateProfile(
+            user.id,
+            {
+              subscription_plan:
+                plan,
+
+              subscription_status:
+                existingSubscription.status,
+
+              stripe_customer_id:
+                typeof existingSubscription.customer ===
+                'string'
+                  ? existingSubscription.customer
+                  : profile?.stripe_customer_id ||
+                    null,
+
+              stripe_subscription_id:
+                existingSubscription.id,
+
+              stripe_price_id:
+                targetPrice.id,
+            }
+          );
+
+          return json({
+            success:
+              true,
+
+            action:
+              'changed',
+
+            plan,
+
+            user:
+              profile,
+          });
+        }
+
+        const itemParams =
+          new URLSearchParams();
+
+        itemParams.set(
+          'price',
+          targetPrice.id
+        );
+
+        itemParams.set(
+          'quantity',
+          String(
+            item.quantity ||
+              1
+          )
+        );
+
+        /*
+         * Change takes effect immediately.
+         *
+         * No surprise mid-cycle prorated charge.
+         */
+        itemParams.set(
+          'proration_behavior',
+          'none'
+        );
+
+        await stripe(
+          `subscription_items/${encodeURIComponent(
+            item.id
+          )}`,
+          {
+            method:
+              'POST',
+
+            body:
+              itemParams.toString(),
+          }
+        );
+
+        /*
+         * Update subscription metadata too.
+         */
+        const subscriptionParams =
+          new URLSearchParams();
+
+        subscriptionParams.set(
+          'metadata[plan]',
+          plan
+        );
+
+        subscriptionParams.set(
+          'metadata[user_id]',
+          user.id
+        );
+
+        subscriptionParams.set(
+          'metadata[product_id]',
+          productId
+        );
+
+        subscriptionParams.set(
+          'metadata[price_id]',
+          targetPrice.id
+        );
+
+        await stripe(
+          `subscriptions/${encodeURIComponent(
+            existingSubscription.id
+          )}`,
+          {
+            method:
+              'POST',
+
+            body:
+              subscriptionParams.toString(),
+          }
+        );
+
+        const customerId =
+          typeof existingSubscription.customer ===
+          'string'
+            ? existingSubscription.customer
+            : profile?.stripe_customer_id ||
+              null;
+
+        await updateProfile(
+          user.id,
+          {
             subscription_plan:
               plan,
 
             subscription_status:
-              existingSubscription.status ||
-              'active',
+              existingSubscription.status,
 
             stripe_customer_id:
               customerId,
@@ -647,26 +708,155 @@ Deno.serve(async (req) => {
               existingSubscription.id,
 
             stripe_price_id:
-              priceId,
+              targetPrice.id,
+          }
+        );
 
-            subscription_cancelled_at:
-              null,
+        return json({
+          success:
+            true,
 
-            subscription_updated_at:
-              new Date().toISOString(),
+          action:
+            'changed',
 
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            'id',
-            authUser.id
-          )
-          .select()
-          .single();
+          plan,
 
-      if (updateError) {
-        throw updateError;
+          subscription_id:
+            existingSubscription.id,
+
+          price_id:
+            targetPrice.id,
+        });
+      }
+
+      /*
+       * =====================================================
+       * FREE -> PAID
+       * =====================================================
+       */
+
+      const params =
+        new URLSearchParams();
+
+      params.set(
+        'mode',
+        'subscription'
+      );
+
+      params.set(
+        'line_items[0][price]',
+        targetPrice.id
+      );
+
+      params.set(
+        'line_items[0][quantity]',
+        '1'
+      );
+
+      params.set(
+        'success_url',
+        `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
+          plan
+        )}`
+      );
+
+      params.set(
+        'cancel_url',
+        `${APP_URL}/profile`
+      );
+
+      /*
+       * Authenticated Washek user association.
+       */
+      params.set(
+        'client_reference_id',
+        user.id
+      );
+
+      params.set(
+        'metadata[user_id]',
+        user.id
+      );
+
+      params.set(
+        'metadata[plan]',
+        plan
+      );
+
+      params.set(
+        'metadata[product_id]',
+        productId
+      );
+
+      params.set(
+        'metadata[price_id]',
+        targetPrice.id
+      );
+
+      /*
+       * Put the same metadata on the actual
+       * Stripe Subscription.
+       */
+      params.set(
+        'subscription_data[metadata][user_id]',
+        user.id
+      );
+
+      params.set(
+        'subscription_data[metadata][plan]',
+        plan
+      );
+
+      params.set(
+        'subscription_data[metadata][product_id]',
+        productId
+      );
+
+      params.set(
+        'subscription_data[metadata][price_id]',
+        targetPrice.id
+      );
+
+      /*
+       * Reuse Stripe Customer when possible.
+       */
+      if (
+        profile?.stripe_customer_id
+      ) {
+        params.set(
+          'customer',
+          profile.stripe_customer_id
+        );
+      } else if (
+        profile?.email ||
+        user.email
+      ) {
+        params.set(
+          'customer_email',
+          profile?.email ||
+            user.email ||
+            ''
+        );
+      }
+
+      const session =
+        await stripe(
+          'checkout/sessions',
+          {
+            method:
+              'POST',
+
+            body:
+              params.toString(),
+          }
+        );
+
+      if (
+        !session?.url
+      ) {
+        throw new Error(
+          'Stripe did not return a Checkout URL.'
+        );
       }
 
       return json({
@@ -674,7 +864,13 @@ Deno.serve(async (req) => {
           true,
 
         action:
-          'changed',
+          'checkout',
+
+        url:
+          session.url,
+
+        session_id:
+          session.id,
 
         plan,
 
@@ -682,180 +878,28 @@ Deno.serve(async (req) => {
           productId,
 
         price_id:
-          priceId,
-
-        subscription_id:
-          existingSubscription.id,
-
-        subscription_item_id:
-          updatedItem?.id ||
-          null,
-
-        user:
-          updatedProfile,
+          targetPrice.id,
       });
-    }
-
-    /*
-     * =====================================================
-     * FREE -> PAID
-     *
-     * Create a normal Stripe Checkout Session.
-     * =====================================================
-     */
-
-    const customerId =
-      profile?.stripe_customer_id ||
-      null;
-
-    const params =
-      new URLSearchParams();
-
-    params.set(
-      'mode',
-      'subscription'
-    );
-
-    params.set(
-      'line_items[0][price]',
-      priceId
-    );
-
-    params.set(
-      'line_items[0][quantity]',
-      '1'
-    );
-
-    /*
-     * Include the requested plan in the
-     * return URL so the frontend knows what
-     * subscription was purchased.
-     */
-    params.set(
-      'success_url',
-      `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
-        plan
-      )}`
-    );
-
-    params.set(
-      'cancel_url',
-      `${APP_URL}/profile`
-    );
-
-    params.set(
-      'client_reference_id',
-      authUser.id
-    );
-
-    params.set(
-      'metadata[user_id]',
-      authUser.id
-    );
-
-    params.set(
-      'metadata[plan]',
-      plan
-    );
-
-    params.set(
-      'metadata[product_id]',
-      productId
-    );
-
-    params.set(
-      'metadata[price_id]',
-      priceId
-    );
-
-    params.set(
-      'subscription_data[metadata][user_id]',
-      authUser.id
-    );
-
-    params.set(
-      'subscription_data[metadata][plan]',
-      plan
-    );
-
-    params.set(
-      'subscription_data[metadata][product_id]',
-      productId
-    );
-
-    params.set(
-      'subscription_data[metadata][price_id]',
-      priceId
-    );
-
-    if (customerId) {
-      params.set(
-        'customer',
-        customerId
-      );
-    } else if (email) {
-      params.set(
-        'customer_email',
-        email
-      );
-    }
-
-    const session =
-      await stripe(
-        'checkout/sessions',
-        {
-          method:
-            'POST',
-
-          body:
-            params.toString(),
-        }
-      );
-
-    if (!session?.url) {
-      throw new Error(
-        'Stripe did not return a checkout URL.'
-      );
-    }
-
-    return json({
-      success:
-        true,
-
-      action:
-        'checkout',
-
-      url:
-        session.url,
-
-      session_id:
-        session.id,
-
-      plan,
-
-      product_id:
-        productId,
-
-      price_id:
-        priceId,
-    });
-  } catch (error) {
-    console.error(
-      'create-checkout-session error:',
+    } catch (
       error
-    );
+    ) {
+      console.error(
+        'create-checkout-session error:',
+        error
+      );
 
-    return json(
-      {
-        success:
-          false,
+      return json(
+        {
+          success:
+            false,
 
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unable to start subscription checkout.',
-      },
-      400
-    );
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Unable to start Stripe Checkout.',
+        },
+        400
+      );
+    }
   }
-});
+);
