@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Mail, Send } from 'lucide-react';
@@ -16,7 +17,8 @@ export default function Contact() {
     message: '',
   });
 
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] =
+    useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,9 +40,14 @@ export default function Contact() {
       toast({
         title: 'Message sent',
         description:
-          'Thanks for reaching out — Adrian will get back to you soon.',
+          "Thanks for reaching out---We'll try to get back to you as soon as possible!",
       });
     } catch (err) {
+      console.error(
+        'Contact form submission failed:',
+        err
+      );
+
       toast({
         title: 'Something went wrong',
         description:
