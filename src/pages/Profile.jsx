@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import {
+  useState,
+  useEffect,
+} from 'react';
 
 import {
   useNavigate,
 } from 'react-router-dom';
-
-import {
-  supabaseApi,
-} from '@/lib/supabaseApi';
 
 import {
   useQuery,
@@ -38,17 +37,21 @@ import AppSettingsModal from '@/components/AppSettingsModal';
 
 import ExpandableText from '@/components/ExpandableText';
 
-import {
-  toast,
-} from 'sonner';
-
 import PricingSection from '@/components/profile/PricingSection';
 
 import QuickAccess from '@/components/layout/QuickAccess';
 
 import {
+  supabaseApi,
+} from '@/lib/supabaseApi';
+
+import {
   computeStats,
 } from '@/lib/messageLimit';
+
+import {
+  toast,
+} from 'sonner';
 
 import {
   AlertDialog,
@@ -64,124 +67,96 @@ import {
 
 
 export default function Profile() {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const [
-    user,
-    setUser,
-  ] = useState(null);
+  const [user, setUser] =
+    useState(null);
 
-  const [
-    regenerating,
-    setRegenerating,
-  ] = useState(false);
+  const [regenerating, setRegenerating] =
+    useState(false);
 
 
-  useEffect(
-    () => {
-      let active =
-        true;
+  useEffect(() => {
+    let active = true;
 
-      supabaseApi.auth
-        .me()
-        .then(
-          (currentUser) => {
-            if (
-              active
-            ) {
-              setUser(
-                currentUser
-              );
-            }
-          }
-        )
-        .catch(
-          (error) => {
-            console.error(
-              '[PROFILE] Failed to load profile:',
-              error
-            );
-
-            toast.error(
-              error?.message ||
-              'Unable to load your profile.'
-            );
-          }
+    supabaseApi.auth
+      .me()
+      .then((currentUser) => {
+        if (active) {
+          setUser(currentUser);
+        }
+      })
+      .catch((error) => {
+        console.error(
+          '[PROFILE] Failed to load profile:',
+          error
         );
 
-      return () => {
-        active =
-          false;
-      };
-    },
-    []
-  );
+        if (active) {
+          toast.error(
+            error?.message ||
+              'Unable to load your profile.'
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   const {
-    data:
-      programs = [],
-  } =
-    useQuery({
-      queryKey: [
-        'programs',
-        user?.email,
-      ],
+    data: programs = [],
+  } = useQuery({
+    queryKey: [
+      'programs',
+      user?.email,
+    ],
 
-      queryFn: () =>
-        supabaseApi.entities.WorkoutProgram.filter(
-          {
-            status:
-              'active',
+    queryFn: () =>
+      supabaseApi.entities.WorkoutProgram.filter(
+        {
+          status: 'active',
+          created_by: user.email,
+        },
+        '-created_date',
+        1
+      ),
 
-            created_by:
-              user.email,
-          },
-
-          '-created_date',
-
-          1
-        ),
-
-      enabled:
-        !!user?.email,
-    });
+    enabled: !!user?.email,
+  });
 
 
   const {
-    data:
-      logs = [],
-  } =
-    useQuery({
-      queryKey: [
-        'logs',
-        user?.email,
-      ],
+    data: logs = [],
+  } = useQuery({
+    queryKey: [
+      'logs',
+      user?.email,
+    ],
 
-      queryFn: () =>
-        supabaseApi.entities.WorkoutLog.filter(
-          {
-            created_by:
-              user.email,
-          },
+    queryFn: () =>
+      supabaseApi.entities.WorkoutLog.filter(
+        {
+          created_by: user.email,
+        },
+        '-date',
+        999
+      ),
 
-          '-date',
-
-          999
-        ),
-
-      enabled:
-        !!user?.email,
-    });
+    enabled: !!user?.email,
+  });
 
 
   const activeProgram =
     programs[0];
 
+
   const plan =
     user?.subscription_plan ||
     'free';
+
 
   const stats =
     user
@@ -193,17 +168,10 @@ export default function Profile() {
 
 
   const planLabels = {
-    free:
-      'Free',
-
-    progress:
-      'Progress',
-
-    performance:
-      'Performance',
-
-    elite:
-      'Elite',
+    free: 'Free',
+    progress: 'Progress',
+    performance: 'Performance',
+    elite: 'Elite',
   };
 
 
@@ -222,93 +190,79 @@ export default function Profile() {
   };
 
 
-  const handleRegenerate =
-    async () => {
+  const handleRegenerate = async () => {
+    if (
+      !user?.fitness_level ||
+      !user?.primary_goal
+    ) {
+      navigate('/onboarding');
+      return;
+    }
 
-      if (
-        !user?.fitness_level ||
-        !user?.primary_goal
-      ) {
-        navigate(
-          '/onboarding'
-        );
+    setRegenerating(true);
 
-        return;
-      }
-
-      setRegenerating(
-        true
-      );
-
-      try {
-
-        if (
-          activeProgram
-        ) {
-          await supabaseApi.entities.WorkoutProgram.update(
-            activeProgram.id,
-            {
-              status:
-                'completed',
-            }
-          );
-        }
-
-        navigate(
-          '/onboarding'
-        );
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          '[PROFILE] Regeneration failed:',
-          error
-        );
-
-        toast.error(
-          error?.message ||
-          'Unable to start a new program.'
-        );
-
-      } finally {
-
-        setRegenerating(
-          false
-        );
-      }
-    };
-
-
-  const handleDeleteAccount =
-    async () => {
-
-      try {
-
-        await supabaseApi.auth.updateMe(
+    try {
+      if (activeProgram) {
+        await supabaseApi.entities.WorkoutProgram.update(
+          activeProgram.id,
           {
-            deleted:
-              true,
+            status: 'completed',
           }
         );
-
-        await supabaseApi.auth.logout();
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          '[PROFILE] Account deletion failed:',
-          error
-        );
-
-        toast.error(
-          'Failed to delete account. Please try again.'
-        );
       }
-    };
+
+      navigate('/onboarding');
+    } catch (error) {
+      console.error(
+        '[PROFILE] Regeneration failed:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Unable to start a new program.'
+      );
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+
+  const handleLogout = async () => {
+    try {
+      await supabaseApi.auth.logout();
+    } catch (error) {
+      console.error(
+        '[PROFILE] Logout failed:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Unable to log out.'
+      );
+    }
+  };
+
+
+  const handleDeleteAccount = async () => {
+    try {
+      await supabaseApi.auth.updateMe({
+        deleted: true,
+      });
+
+      await supabaseApi.auth.logout();
+    } catch (error) {
+      console.error(
+        '[PROFILE] Account deletion failed:',
+        error
+      );
+
+      toast.error(
+        'Failed to delete account. Please try again.'
+      );
+    }
+  };
 
 
   if (!user) {
@@ -319,7 +273,6 @@ export default function Profile() {
         items-center
         justify-center
       ">
-
         <div className="
           w-8
           h-8
@@ -329,7 +282,6 @@ export default function Profile() {
           rounded-full
           animate-spin
         " />
-
       </div>
     );
   }
@@ -340,6 +292,7 @@ export default function Profile() {
       className="
         relative
         z-0
+        w-full
         px-5
         safe-bottom
         space-y-4
@@ -363,13 +316,15 @@ export default function Profile() {
         "
       >
 
-        <h1 className="
-          relative
-          z-10
-          font-heading
-          text-2xl
-          font-bold
-        ">
+        <h1
+          className="
+            relative
+            z-10
+            font-heading
+            text-2xl
+            font-bold
+          "
+        >
           Profile
         </h1>
 
@@ -383,9 +338,7 @@ export default function Profile() {
             pointer-events-auto
           "
         >
-
           <AppSettingsModal />
-
         </div>
 
       </div>
@@ -417,13 +370,11 @@ export default function Profile() {
             justify-center
             shrink-0
           ">
-
             <User className="
               w-8
               h-8
               text-primary
             " />
-
           </div>
 
 
@@ -438,10 +389,7 @@ export default function Profile() {
               text-lg
               truncate
             ">
-              {
-                user.full_name ||
-                'Athlete'
-              }
+              {user.full_name || 'Athlete'}
             </h2>
 
 
@@ -450,9 +398,7 @@ export default function Profile() {
               text-muted-foreground
               truncate
             ">
-              {
-                user.email
-              }
+              {user.email}
             </p>
 
 
@@ -461,19 +407,20 @@ export default function Profile() {
                 mt-1
                 border-0
                 text-xs
-                ${planColors[plan]}
+                ${planColors[plan] || planColors.free}
               `}
             >
-              {
-                planLabels[plan]
-              }{' '}
-              Plan
+              {planLabels[plan] || 'Free'} Plan
             </Badge>
 
           </div>
 
         </div>
 
+
+        {/* =================================================
+            KAEL MESSAGE USAGE
+            ================================================= */}
 
         {stats && (
           <div className="
@@ -497,14 +444,12 @@ export default function Profile() {
                 items-center
                 gap-1.5
               ">
-
                 <Zap className="
                   w-3.5
                   h-3.5
-                />
+                " />
 
                 Kael Messages
-
               </span>
 
 
@@ -512,11 +457,7 @@ export default function Profile() {
                 text-xs
                 font-semibold
               ">
-                {
-                  stats.used
-                } / {
-                  stats.limit
-                }
+                {stats.used} / {stats.limit}
               </span>
 
             </div>
@@ -536,8 +477,7 @@ export default function Profile() {
                   rounded-full
                   transition-all
                   ${
-                    stats.remaining ===
-                    0
+                    stats.remaining === 0
                       ? 'bg-destructive'
                       : 'bg-primary'
                   }
@@ -547,7 +487,10 @@ export default function Profile() {
                     `${Math.min(
                       (
                         stats.used /
-                        stats.limit
+                        Math.max(
+                          stats.limit,
+                          1
+                        )
                       ) *
                         100,
                       100
@@ -563,10 +506,7 @@ export default function Profile() {
               text-muted-foreground
               mt-1
             ">
-              {
-                stats.remaining
-              }{' '}
-              messages remaining · resets monthly
+              {stats.remaining} messages remaining · resets monthly
             </p>
 
           </div>
@@ -632,10 +572,7 @@ export default function Profile() {
               font-medium
               capitalize
             ">
-              {
-                user.fitness_level ||
-                '—'
-              }
+              {user.fitness_level || '—'}
             </span>
 
           </div>
@@ -714,9 +651,7 @@ export default function Profile() {
               text-sm
               font-medium
             ">
-              {
-                logs.length
-              }
+              {logs.length}
             </span>
 
           </div>
@@ -754,9 +689,7 @@ export default function Profile() {
             font-heading
             font-bold
           ">
-            {
-              activeProgram.program_name
-            }
+            {activeProgram.program_name}
           </p>
 
 
@@ -765,14 +698,8 @@ export default function Profile() {
             text-muted-foreground
             mt-1
           ">
-            Week{' '}
-            {
-              activeProgram.current_week
-            }{' '}
-            of{' '}
-            {
-              activeProgram.duration_weeks
-            }
+            Week {activeProgram.current_week || 1} of{' '}
+            {activeProgram.duration_weeks || 12}
           </p>
 
 
@@ -823,9 +750,7 @@ export default function Profile() {
         relative
         z-0
       ">
-
         <QuickAccess />
-
       </div>
 
 
@@ -882,23 +807,7 @@ export default function Profile() {
             justify-start
           "
           onClick={
-            async () => {
-              try {
-                await supabaseApi.auth.logout();
-              } catch (
-                error
-              ) {
-                console.error(
-                  '[PROFILE] Logout failed:',
-                  error
-                );
-
-                toast.error(
-                  error?.message ||
-                  'Unable to log out.'
-                );
-              }
-            }
+            handleLogout
           }
         >
 
@@ -1000,9 +909,7 @@ export default function Profile() {
         z-0
         pt-2
       ">
-
         <PricingSection />
-
       </div>
 
     </div>
