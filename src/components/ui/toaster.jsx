@@ -1,5 +1,6 @@
-
-import { useToast } from "@/components/ui/use-toast";
+import {
+  useToast,
+} from '@/components/ui/use-toast';
 
 import {
   Toast,
@@ -8,56 +9,76 @@ import {
   ToastProvider,
   ToastTitle,
   ToastViewport,
-} from "@/components/ui/toast";
+} from '@/components/ui/toast';
 
 export function Toaster() {
   const {
     toasts,
     dismiss,
-  } = useToast();
+  } =
+    useToast();
 
   return (
     <ToastProvider>
+
       {toasts.map(
-        ({
-          id,
-          title,
-          description,
-          action,
-          ...props
-        }) => (
-          <Toast
-            key={id}
-            {...props}
-          >
-            <div className="grid gap-1">
-              {title && (
-                <ToastTitle>
-                  {title}
-                </ToastTitle>
-              )}
+        toast => {
 
-              {description && (
-                <ToastDescription>
-                  {description}
-                </ToastDescription>
-              )}
-            </div>
+          const {
+            id,
+            title,
+            description,
+            action,
+            ...props
+          } = toast;
 
-            {action}
+          return (
+            <Toast
+              key={
+                id
+              }
+              {...props}
+            >
 
-            <ToastClose
-              type="button"
-              aria-label="Close notification"
-              onClick={() => {
-                dismiss(id);
-              }}
-            />
-          </Toast>
-        )
+              <div className="grid gap-1 pr-2">
+
+                {title && (
+                  <ToastTitle>
+                    {
+                      title
+                    }
+                  </ToastTitle>
+                )}
+
+                {description && (
+                  <ToastDescription>
+                    {
+                      description
+                    }
+                  </ToastDescription>
+                )}
+
+              </div>
+
+              {action}
+
+              <ToastClose
+                type="button"
+                aria-label="Close notification"
+                onClick={() =>
+                  dismiss(
+                    id
+                  )
+                }
+              />
+
+            </Toast>
+          );
+        }
       )}
 
       <ToastViewport />
+
     </ToastProvider>
   );
 }
