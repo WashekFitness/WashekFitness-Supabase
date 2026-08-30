@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -155,12 +156,12 @@ export default function FoodEditModal({
     );
 
 
-  return (
+  return createPortal(
     <div
       className="
         fixed
         inset-0
-        z-[70]
+        z-[10000]
         bg-background/95
         backdrop-blur-sm
         flex
@@ -545,6 +546,7 @@ export default function FoodEditModal({
 
       </div>
 
-    </div>
+    </div>,
+    document.body
   );
 }
