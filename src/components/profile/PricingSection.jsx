@@ -1,756 +1,321 @@
+import { useState } from 'react';
+
 import {
-  createClient
-} from 'jsr:@supabase/supabase-js@2';
+  Check,
+  Zap,
+  Crown,
+  Flame,
+  Loader2
+} from 'lucide-react';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-
-  'Access-Control-Allow-Methods':
-    'POST, OPTIONS'
-};
-
-
-const PLAN_ORDER = {
-  free: 0,
-  progress: 1,
-  performance: 2,
-  elite: 3
-};
+import { supabase } from '@/lib/supabase';
 
 
-const PLAN_PRICE_ENV = {
-  progress:
-    'STRIPE_PROGRESS_PRICE_ID',
+const plans = [
+  {
+    name: 'Progress',
+    planKey: 'progress',
+    price: '$7.99',
+    period: '/mo',
+    icon: Flame,
+    color: 'text-accent',
+    borderColor: 'border-accent/30',
+    bgColor: 'bg-accent/5',
+    badge: null,
 
-  performance:
-    'STRIPE_PERFORMANCE_PRICE_ID',
-
-  elite:
-    'STRIPE_ELITE_PRICE_ID'
-};
-
-
-function json(
-  body: unknown,
-  status = 200
-) {
-  return new Response(
-    JSON.stringify(body),
-    {
-      status,
-
-      headers: {
-        ...corsHeaders,
-
-        'Content-Type':
-          'application/json'
-      }
-    }
-  );
-}
-
-
-async function requireUser(
-  req: Request
-) {
-  const authHeader =
-    req.headers.get(
-      'Authorization'
-    );
-
-  if (!authHeader) {
-    throw new Error(
-      'Missing authorization header.'
-    );
-  }
-
-
-  const url =
-    Deno.env.get(
-      'SUPABASE_URL'
-    );
-
-  const key =
-    Deno.env.get(
-      'SUPABASE_ANON_KEY'
-    ) || '';
-
-
-  if (!url || !key) {
-    throw new Error(
-      'Supabase authentication is not configured.'
-    );
-  }
-
-
-  const client =
-    createClient(
-      url,
-      key,
-      {
-        global: {
-          headers: {
-            Authorization:
-              authHeader
-          }
-        }
-      }
-    );
-
-
-  const {
-    data,
-    error
-  } =
-    await client.auth.getUser();
-
-
-  if (
-    error ||
-    !data.user
-  ) {
-    throw new Error(
-      'Not authenticated.'
-    );
-  }
-
-
-  return data.user;
-}
-
-
-function getAdminClient() {
-  const url =
-    Deno.env.get(
-      'SUPABASE_URL'
-    ) || '';
-
-  const key =
-    Deno.env.get(
-      'SUPABASE_SERVICE_ROLE_KEY'
-    ) || '';
-
-
-  if (!url || !key) {
-    throw new Error(
-      'Supabase server credentials are not configured.'
-    );
-  }
-
-
-  return createClient(
-    url,
-    key,
-    {
-      auth: {
-        persistSession:
-          false,
-
-        autoRefreshToken:
-          false
-      }
-    }
-  );
-}
-
-
-async function stripe(
-  path: string,
-  options: RequestInit = {}
-) {
-  const key =
-    Deno.env.get(
-      'STRIPE_SECRET_KEY'
-    );
-
-
-  if (!key) {
-    throw new Error(
-      'STRIPE_SECRET_KEY is not configured.'
-    );
-  }
-
-
-  const response =
-    await fetch(
-      `https://api.stripe.com/v1/${path}`,
-      {
-        ...options,
-
-        headers: {
-          Authorization:
-            `Bearer ${key}`,
-
-          'Content-Type':
-            'application/x-www-form-urlencoded',
-
-          ...(options.headers || {})
-        }
-      }
-    );
-
-
-  const data =
-    await response
-      .json()
-      .catch(
-        () => ({})
-      );
-
-
-  if (
-    !response.ok
-  ) {
-    throw new Error(
-      data?.error?.message ||
-      'Stripe API request failed.'
-    );
-  }
-
-
-  return data;
-}
-
-
-function formBody(
-  values: Record<string, string>
-) {
-  const params =
-    new URLSearchParams();
-
-
-  for (
-    const [
-      key,
-      value
+    features: [
+      '300 Kael AI messages/month',
+      'Full custom workout adjustments',
+      'Food scan & barcode tracking',
+      'Advanced macro tracking',
+      'Save & compare progress photos'
     ]
-      of Object.entries(
-        values
-      )
-  ) {
-    params.set(
-      key,
-      value
-    );
-  }
+  },
 
+  {
+    name: 'Performance',
+    planKey: 'performance',
+    price: '$14.99',
+    period: '/mo',
+    icon: Zap,
+    color: 'text-primary',
+    borderColor: 'border-primary/40',
+    bgColor: 'bg-primary/5',
+    badge: 'Most Popular',
 
-  return params.toString();
-}
+    features: [
+      '800 Kael AI messages/month',
+      'Everything in Progress',
+      'AI body fat % scanner*',
+      'Nutrition insights & suggestions',
+      'Workout analytics dashboard'
+    ],
 
+    disclaimer:
+      '* AI body fat estimates are approximations only and may not be fully accurate.'
+  },
 
-function priceToPlan(
-  priceId: string | null
-) {
-  if (!priceId) {
-    return null;
-  }
+  {
+    name: 'Elite',
+    planKey: 'elite',
+    price: '$24.99',
+    period: '/mo',
+    icon: Crown,
+    color: 'text-chart-4',
+    borderColor: 'border-chart-4/40',
+    bgColor: 'bg-chart-4/5',
+    badge: 'Best',
 
-
-  for (
-    const [
-      plan,
-      envName
+    features: [
+      '2,000 Kael AI messages/month',
+      'Everything in Performance',
+      'Enhanced real-time workout adjustments',
+      'AI calisthenics form analysis with video',
+      'AI form scoring, rep/hold counting & corrective drills',
+      'Elite tips & insider coaching secrets',
+      'Deep recovery & deload guidance'
     ]
-      of Object.entries(
-        PLAN_PRICE_ENV
-      )
-  ) {
-    const configured =
-      Deno.env.get(
-        envName
-      );
-
-
-    if (
-      configured &&
-      configured === priceId
-    ) {
-      return plan;
-    }
   }
+];
 
 
-  return null;
-}
+export default function PricingSection() {
+  const [loadingPlan, setLoadingPlan] = useState(null);
 
-
-Deno.serve(
-  async (req) => {
-
-    if (
-      req.method ===
-      'OPTIONS'
-    ) {
-      return new Response(
-        'ok',
-        {
-          headers:
-            corsHeaders
-        }
-      );
+  const startCheckout = async (planKey) => {
+    if (loadingPlan) {
+      return;
     }
 
-
-    if (
-      req.method !==
-      'POST'
-    ) {
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            'Method not allowed.'
-        },
-
-        405
-      );
-    }
-
+    setLoadingPlan(planKey);
 
     try {
+      const {
+        data: { user },
+        error: authError
+      } = await supabase.auth.getUser();
 
-      const user =
-        await requireUser(
-          req
-        );
-
-
-      const admin =
-        getAdminClient();
-
-
-      const body =
-        await req.json();
-
-
-      const plan =
-        String(
-          body?.plan ||
-          ''
-        );
-
-
-      if (
-        ![
-          'progress',
-          'performance',
-          'elite'
-        ].includes(
-          plan
-        )
-      ) {
-        return json(
-          {
-            success:
-              false,
-
-            error:
-              'Invalid subscription plan.'
-          },
-
-          400
-        );
+      if (authError) {
+        throw authError;
       }
 
-
-      const priceId =
-        Deno.env.get(
-          PLAN_PRICE_ENV[
-            plan
-          ]
-        );
-
-
-      if (!priceId) {
-        return json(
-          {
-            success:
-              false,
-
-            error:
-              `${PLAN_PRICE_ENV[plan]} is not configured.`
-          },
-
-          503
-        );
+      if (!user) {
+        window.location.assign('/login');
+        return;
       }
-
 
       const {
-        data:
-          profile,
-        error:
-          profileError
-      } =
-        await admin
-          .from(
-            'profiles'
-          )
-          .select(
-            [
-              'id',
-              'email',
-              'subscription_plan',
-              'subscription_status',
-              'stripe_customer_id',
-              'stripe_subscription_id'
-            ].join(',')
-          )
-          .eq(
-            'id',
-            user.id
-          )
-          .maybeSingle();
-
-
-      if (
-        profileError
-      ) {
-        throw new Error(
-          `Unable to load profile: ${profileError.message}`
-        );
-      }
-
-
-      const currentPlan =
-        profile?.subscription_plan ||
-        'free';
-
-
-      const currentRank =
-        PLAN_ORDER[
-          currentPlan
-        ] ?? 0;
-
-
-      const targetRank =
-        PLAN_ORDER[
-          plan
-        ];
-
-
-      /*
-       * EXISTING PAID SUBSCRIBER
-       *
-       * Upgrade the existing Stripe subscription.
-       *
-       * Do NOT create a second subscription.
-       */
-      if (
-        currentRank > 0 &&
-        profile?.stripe_subscription_id
-      ) {
-
-        const subscription =
-          await stripe(
-            `subscriptions/${encodeURIComponent(
-              profile.stripe_subscription_id
-            )}`
-          );
-
-
-        if (
-          ![
-            'active',
-            'trialing'
-          ].includes(
-            subscription?.status
-          )
-        ) {
-          return json(
-            {
-              success:
-                false,
-
-              error:
-                'Your current subscription needs attention before it can be upgraded.',
-
-              error_code:
-                'SUBSCRIPTION_NOT_UPGRADABLE'
-            },
-
-            409
-          );
-        }
-
-
-        const currentPriceId =
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.price
-            ?.id ||
-          null;
-
-
-        const actualCurrentPlan =
-          priceToPlan(
-            currentPriceId
-          ) ||
-          currentPlan;
-
-
-        const actualCurrentRank =
-          PLAN_ORDER[
-            actualCurrentPlan
-          ] ?? 0;
-
-
-        if (
-          actualCurrentRank ===
-          targetRank
-        ) {
-          return json(
-            {
-              success:
-                true,
-
-              mode:
-                'already_on_plan',
-
-              plan
-            }
-          );
-        }
-
-
-        if (
-          targetRank <
-          actualCurrentRank
-        ) {
-          return json(
-            {
-              success:
-                false,
-
-              error:
-                'Downgrades are handled through your billing controls.',
-
-              error_code:
-                'DOWNGRADE_NOT_SUPPORTED_HERE'
-            },
-
-            409
-          );
-        }
-
-
-        const itemId =
-          subscription
-            ?.items
-            ?.data?.[0]
-            ?.id;
-
-
-        if (!itemId) {
-          throw new Error(
-            'Stripe subscription has no subscription item.'
-          );
-        }
-
-
-        const updated =
-          await stripe(
-            `subscriptions/${encodeURIComponent(
-              subscription.id
-            )}`,
-
-            {
-              method:
-                'POST',
-
-              body:
-                formBody(
-                  {
-                    'items[0][id]':
-                      itemId,
-
-                    'items[0][price]':
-                      priceId,
-
-                    'items[0][quantity]':
-                      '1',
-
-                    proration_behavior:
-                      'create_prorations',
-
-                    'metadata[user_id]':
-                      user.id,
-
-                    'metadata[plan]':
-                      plan
-                  }
-                )
-            }
-          );
-
-
-        return json(
-          {
-            success:
-              true,
-
-            mode:
-              'upgrade',
-
-            plan,
-
-            subscriptionId:
-              updated.id,
-
-            status:
-              updated.status
-          }
-        );
-      }
-
-
-      /*
-       * NEW SUBSCRIBER
-       *
-       * Create a Stripe Checkout Session.
-       */
-      const appUrl =
-        (
-          Deno.env.get(
-            'APP_URL'
-          ) ||
-          'https://washekfitness.com'
-        )
-          .replace(
-            /\/$/,
-            ''
-          );
-
-
-      const values:
-        Record<string, string> =
+        data,
+        error
+      } = await supabase.functions.invoke(
+        'create-checkout-session',
         {
-          mode:
-            'subscription',
-
-          'line_items[0][price]':
-            priceId,
-
-          'line_items[0][quantity]':
-            '1',
-
-          /*
-           * THIS is now the actual
-           * Supabase user ID.
-           */
-          client_reference_id:
-            user.id,
-
-          /*
-           * Put the user ID and plan
-           * on the Checkout Session.
-           */
-          'metadata[user_id]':
-            user.id,
-
-          'metadata[plan]':
-            plan,
-
-          /*
-           * Also put them on the
-           * Stripe Subscription itself.
-           */
-          'subscription_data[metadata][user_id]':
-            user.id,
-
-          'subscription_data[metadata][plan]':
-            plan,
-
-          success_url:
-            `${appUrl}/subscription-return?session_id={CHECKOUT_SESSION_ID}`,
-
-          cancel_url:
-            `${appUrl}/profile?checkout=cancelled`,
-
-          billing_address_collection:
-            'auto',
-
-          allow_promotion_codes:
-            'true'
-        };
-
-
-      if (
-        profile?.stripe_customer_id
-      ) {
-        values.customer =
-          profile.stripe_customer_id;
-
-      } else {
-        values.customer_email =
-          profile?.email ||
-          user.email ||
-          '';
-      }
-
-
-      const session =
-        await stripe(
-          'checkout/sessions',
-
-          {
-            method:
-              'POST',
-
-            body:
-              formBody(
-                values
-              )
+          body: {
+            plan: planKey
           }
-        );
-
-
-      return json(
-        {
-          success:
-            true,
-
-          mode:
-            'checkout',
-
-          plan,
-
-          sessionId:
-            session.id,
-
-          url:
-            session.url
         }
       );
 
-    } catch (error) {
+      if (error) {
+        throw error;
+      }
 
+      if (data?.success === false) {
+        throw new Error(
+          data.error ||
+          'Unable to start checkout.'
+        );
+      }
+
+      if (data?.mode === 'already_on_plan') {
+        window.location.assign(
+          '/subscription-return?status=already-active'
+        );
+        return;
+      }
+
+      if (data?.mode === 'upgrade') {
+        window.location.assign(
+          `/subscription-return?plan=${encodeURIComponent(
+            planKey
+          )}&upgraded=1`
+        );
+        return;
+      }
+
+      if (!data?.url) {
+        throw new Error(
+          'Stripe did not return a checkout URL.'
+        );
+      }
+
+      window.location.assign(data.url);
+
+    } catch (error) {
       console.error(
-        '[CHECKOUT]',
+        '[PRICING] Checkout failed:',
         error
       );
 
-
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Unable to start checkout.'
-        },
-
-        500
+      window.alert(
+        error?.message ||
+        'Unable to start checkout. Please try again.'
       );
+
+    } finally {
+      setLoadingPlan(null);
     }
-  }
-);
+  };
+
+
+  return (
+    <div className="space-y-4">
+
+      <div className="flex items-center gap-2 mb-1">
+        <Crown className="w-4 h-4 text-chart-4" />
+
+        <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
+          Upgrade Your Plan
+        </h3>
+      </div>
+
+
+      <p className="text-xs text-muted-foreground -mt-2 mb-3">
+        Live Workout tracking is free for everyone.
+        Paid plans unlock more AI usage and personalization.
+      </p>
+
+
+      {plans.map((plan) => {
+        const Icon = plan.icon;
+        const loading = loadingPlan === plan.planKey;
+
+        return (
+          <Card
+            key={plan.name}
+            className={
+              `p-4 border-2 ${plan.borderColor} ` +
+              `${plan.bgColor} relative`
+            }
+          >
+
+            {plan.badge && (
+              <Badge
+                className="
+                  absolute
+                  -top-2.5
+                  right-4
+                  bg-primary
+                  text-primary-foreground
+                  text-[10px]
+                  px-2
+                  py-0.5
+                "
+              >
+                {plan.badge}
+              </Badge>
+            )}
+
+
+            <div className="flex items-center justify-between mb-3">
+
+              <div className="flex items-center gap-2">
+                <Icon
+                  className={`w-5 h-5 ${plan.color}`}
+                />
+
+                <span className="font-heading font-bold text-base">
+                  {plan.name}
+                </span>
+              </div>
+
+
+              <div className="flex items-baseline gap-0.5">
+                <span
+                  className={
+                    `font-heading font-bold text-xl ${plan.color}`
+                  }
+                >
+                  {plan.price}
+                </span>
+
+                <span className="text-xs text-muted-foreground">
+                  {plan.period}
+                </span>
+              </div>
+
+            </div>
+
+
+            <ul className="space-y-1.5 mb-3">
+
+              {plan.features.map((feature) => (
+                <li
+                  key={feature}
+                  className="
+                    flex
+                    items-start
+                    gap-2
+                    text-sm
+                  "
+                >
+                  <Check
+                    className="
+                      w-3.5
+                      h-3.5
+                      mt-0.5
+                      text-accent
+                      flex-shrink-0
+                    "
+                  />
+
+                  <span>
+                    {feature}
+                  </span>
+                </li>
+              ))}
+
+            </ul>
+
+
+            {plan.disclaimer && (
+              <p className="text-[10px] text-muted-foreground italic mb-3">
+                {plan.disclaimer}
+              </p>
+            )}
+
+
+            <Button
+              className="w-full h-10 font-heading font-semibold"
+              variant="outline"
+              onClick={() =>
+                startCheckout(plan.planKey)
+              }
+              disabled={loadingPlan !== null}
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Opening Stripe…
+                </span>
+              ) : (
+                `Get ${plan.name}`
+              )}
+            </Button>
+
+          </Card>
+        );
+      })}
+
+
+      <p className="text-[10px] text-muted-foreground text-center">
+        Cancel anytime. Billed monthly.
+      </p>
+
+    </div>
+  );
+}
