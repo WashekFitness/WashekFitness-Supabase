@@ -1,7 +1,4 @@
-import {
-  useState,
-} from 'react';
-
+import { useState } from 'react';
 import {
   Link,
 } from 'react-router-dom';
@@ -36,8 +33,7 @@ import {
 export default function Contact() {
   const {
     toast,
-  } =
-    useToast();
+  } = useToast();
 
 
   const [
@@ -58,9 +54,74 @@ export default function Contact() {
 
   const handleSubmit =
     async (
-      e
+      event
     ) => {
-      e.preventDefault();
+      event.preventDefault();
+
+      if (
+        submitting
+      ) {
+        return;
+      }
+
+
+      const name =
+        form.name.trim();
+
+      const email =
+        form.email.trim();
+
+      const message =
+        form.message.trim();
+
+
+      if (!name) {
+        toast({
+          title:
+            'Name required',
+
+          description:
+            'Please enter your name.',
+
+          variant:
+            'destructive',
+        });
+
+        return;
+      }
+
+
+      if (!email) {
+        toast({
+          title:
+            'Email required',
+
+          description:
+            'Please enter your email address.',
+
+          variant:
+            'destructive',
+        });
+
+        return;
+      }
+
+
+      if (!message) {
+        toast({
+          title:
+            'Message required',
+
+          description:
+            'Please enter a message.',
+
+          variant:
+            'destructive',
+        });
+
+        return;
+      }
+
 
       setSubmitting(
         true
@@ -68,30 +129,34 @@ export default function Contact() {
 
 
       try {
+        /*
+         * IMPORTANT:
+         *
+         * send-contact-email expects:
+         *   name
+         *   email
+         *   message
+         *
+         * Do NOT send:
+         *   to
+         *   subject
+         *   body
+         *
+         * The Edge Function supplies the destination and
+         * subject itself.
+         */
 
-        await supabaseApi.email.send(
-          {
-            name:
-              form.name,
-
-            email:
-              form.email,
-
-            message:
-              form.message,
-          }
-        );
+        await supabaseApi.email.send({
+          name,
+          email,
+          message,
+        });
 
 
         setForm({
-          name:
-            '',
-
-          email:
-            '',
-
-          message:
-            '',
+          name: '',
+          email: '',
+          message: '',
         });
 
 
@@ -104,12 +169,11 @@ export default function Contact() {
         });
 
       } catch (
-        err
+        error
       ) {
-
         console.error(
-          '[Contact] Email failed:',
-          err
+          '[CONTACT] Email failed:',
+          error
         );
 
 
@@ -118,6 +182,7 @@ export default function Contact() {
             'Something went wrong',
 
           description:
+            error?.message ||
             'Please try emailing washekfitness@gmail.com directly.',
 
           variant:
@@ -125,7 +190,6 @@ export default function Contact() {
         });
 
       } finally {
-
         setSubmitting(
           false
         );
@@ -138,6 +202,7 @@ export default function Contact() {
       className="
         relative
         z-0
+        w-full
         px-5
         pb-4
         max-w-2xl
@@ -169,8 +234,9 @@ export default function Contact() {
             flex
             items-center
             justify-center
-            w-10
-            h-10
+            w-11
+            h-11
+            shrink-0
             -ml-2
             rounded-xl
             text-muted-foreground
@@ -253,7 +319,7 @@ export default function Contact() {
 
       <div className="space-y-6">
 
-        {/* Email */}
+        {/* Direct email */}
 
         <a
           href="mailto:washekfitness@gmail.com"
@@ -269,6 +335,7 @@ export default function Contact() {
             bg-card
             p-4
             hover:border-primary/40
+            active:bg-muted/50
             transition-colors
             pointer-events-auto
             touch-manipulation
@@ -283,6 +350,7 @@ export default function Contact() {
             flex
             items-center
             justify-center
+            shrink-0
           ">
 
             <Mail className="
@@ -361,20 +429,23 @@ export default function Contact() {
                 Name
               </label>
 
-
               <Input
                 required
                 value={
                   form.name
                 }
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    name:
-                      e.target.value,
-                  })
+                onChange={
+                  (event) =>
+                    setForm(
+                      (previous) => ({
+                        ...previous,
+                        name:
+                          event.target.value,
+                      })
+                    )
                 }
                 placeholder="Your name"
+                autoComplete="name"
               />
 
             </div>
@@ -392,21 +463,24 @@ export default function Contact() {
                 Email
               </label>
 
-
               <Input
                 required
                 type="email"
                 value={
                   form.email
                 }
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    email:
-                      e.target.value,
-                  })
+                onChange={
+                  (event) =>
+                    setForm(
+                      (previous) => ({
+                        ...previous,
+                        email:
+                          event.target.value,
+                      })
+                    )
                 }
                 placeholder="you@example.com"
+                autoComplete="email"
               />
 
             </div>
@@ -432,12 +506,15 @@ export default function Contact() {
               value={
                 form.message
               }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  message:
-                    e.target.value,
-                })
+              onChange={
+                (event) =>
+                  setForm(
+                    (previous) => ({
+                      ...previous,
+                      message:
+                        event.target.value,
+                    })
+                  )
               }
               placeholder="How can we help?"
               className="
@@ -460,20 +537,31 @@ export default function Contact() {
               w-full
               h-11
               pointer-events-auto
+              touch-manipulation
             "
           >
 
             {submitting ? (
 
-              <div className="
-                w-4
-                h-4
-                border-2
-                border-primary-foreground
-                border-t-transparent
-                rounded-full
-                animate-spin
-              " />
+              <span className="
+                flex
+                items-center
+                gap-2
+              ">
+
+                <span className="
+                  w-4
+                  h-4
+                  border-2
+                  border-primary-foreground
+                  border-t-transparent
+                  rounded-full
+                  animate-spin
+                " />
+
+                Sending…
+
+              </span>
 
             ) : (
 
