@@ -1,670 +1,1007 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import {
-  Button,
-} from '@/components/ui/button';
+  useNavigate,
+} from 'react-router-dom';
 
 import {
-  Input,
-} from '@/components/ui/input';
+  supabaseApi,
+} from '@/lib/supabaseApi';
+
+import {
+  useQuery,
+} from '@tanstack/react-query';
 
 import {
   Card,
 } from '@/components/ui/card';
 
 import {
-  Check,
-  X,
-  Plus,
+  Button,
+} from '@/components/ui/button';
+
+import {
+  Badge,
+} from '@/components/ui/badge';
+
+import {
+  User,
+  Dumbbell,
+  Target,
+  RefreshCw,
+  Zap,
   Trash2,
+  LogOut,
 } from 'lucide-react';
 
+import AppSettingsModal from '@/components/AppSettingsModal';
 
-export default function FoodEditModal({
-  foods,
-  imageUrl,
-  onConfirm,
-  onCancel,
-}) {
+import ExpandableText from '@/components/ExpandableText';
+
+import {
+  toast,
+} from 'sonner';
+
+import PricingSection from '@/components/profile/PricingSection';
+
+import QuickAccess from '@/components/layout/QuickAccess';
+
+import {
+  computeStats,
+} from '@/lib/messageLimit';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
+
+export default function Profile() {
+  const navigate =
+    useNavigate();
+
   const [
-    items,
-    setItems,
-  ] = useState(
-    (foods || []).map(
-      (food) => ({
-        ...food,
-        image_url:
-          imageUrl,
-      })
-    )
+    user,
+    setUser,
+  ] = useState(null);
+
+  const [
+    regenerating,
+    setRegenerating,
+  ] = useState(false);
+
+
+  useEffect(
+    () => {
+      let active =
+        true;
+
+      supabaseApi.auth
+        .me()
+        .then(
+          (currentUser) => {
+            if (
+              active
+            ) {
+              setUser(
+                currentUser
+              );
+            }
+          }
+        )
+        .catch(
+          (error) => {
+            console.error(
+              '[PROFILE] Failed to load profile:',
+              error
+            );
+
+            toast.error(
+              error?.message ||
+              'Unable to load your profile.'
+            );
+          }
+        );
+
+      return () => {
+        active =
+          false;
+      };
+    },
+    []
   );
 
 
-  const update = (
-    index,
-    field,
-    value
-  ) => {
-    setItems(
-      (previous) =>
-        previous.map(
-          (
-            item,
-            itemIndex
-          ) =>
-            itemIndex ===
-            index
-              ? {
-                  ...item,
-                  [field]:
-                    field ===
-                      'food_name' ||
-                    field ===
-                      'serving_size'
-                      ? value
-                      : parseFloat(
-                          value
-                        ) || 0,
-                }
-              : item
-        )
-    );
-  };
+  const {
+    data:
+      programs = [],
+  } =
+    useQuery({
+      queryKey: [
+        'programs',
+        user?.email,
+      ],
 
+      queryFn: () =>
+        supabaseApi.entities.WorkoutProgram.filter(
+          {
+            status:
+              'active',
 
-  const addItem = () => {
-    setItems(
-      (previous) => [
-        ...previous,
+            created_by:
+              user.email,
+          },
 
-        {
-          food_name:
-            '',
+          '-created_date',
 
-          serving_size:
-            '1 serving',
-
-          calories:
-            0,
-
-          protein_g:
-            0,
-
-          carbs_g:
-            0,
-
-          fat_g:
-            0,
-
-          image_url:
-            imageUrl,
-        },
-      ]
-    );
-  };
-
-
-  const removeItem = (
-    index
-  ) => {
-    setItems(
-      (previous) =>
-        previous.filter(
-          (
-            _,
-            itemIndex
-          ) =>
-            itemIndex !==
-            index
-        )
-    );
-  };
-
-
-  const totalCals =
-    items.reduce(
-      (
-        total,
-        item
-      ) =>
-        total +
-        (
-          Number(
-            item.calories
-          ) || 0
+          1
         ),
-      0
-    );
+
+      enabled:
+        !!user?.email,
+    });
 
 
-  const validItems =
-    items.filter(
-      (item) =>
-        item?.food_name
-          ?.trim()
+  const {
+    data:
+      logs = [],
+  } =
+    useQuery({
+      queryKey: [
+        'logs',
+        user?.email,
+      ],
+
+      queryFn: () =>
+        supabaseApi.entities.WorkoutLog.filter(
+          {
+            created_by:
+              user.email,
+          },
+
+          '-date',
+
+          999
+        ),
+
+      enabled:
+        !!user?.email,
+    });
+
+
+  const activeProgram =
+    programs[0];
+
+  const plan =
+    user?.subscription_plan ||
+    'free';
+
+  const stats =
+    user
+      ? computeStats(
+          user,
+          plan
+        )
+      : null;
+
+
+  const planLabels = {
+    free:
+      'Free',
+
+    progress:
+      'Progress',
+
+    performance:
+      'Performance',
+
+    elite:
+      'Elite',
+  };
+
+
+  const planColors = {
+    free:
+      'bg-muted text-muted-foreground',
+
+    progress:
+      'bg-accent/15 text-accent',
+
+    performance:
+      'bg-primary/15 text-primary',
+
+    elite:
+      'bg-chart-4/15 text-chart-4',
+  };
+
+
+  const handleRegenerate =
+    async () => {
+
+      if (
+        !user?.fitness_level ||
+        !user?.primary_goal
+      ) {
+        navigate(
+          '/onboarding'
+        );
+
+        return;
+      }
+
+      setRegenerating(
+        true
+      );
+
+      try {
+
+        if (
+          activeProgram
+        ) {
+          await supabaseApi.entities.WorkoutProgram.update(
+            activeProgram.id,
+            {
+              status:
+                'completed',
+            }
+          );
+        }
+
+        navigate(
+          '/onboarding'
+        );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          '[PROFILE] Regeneration failed:',
+          error
+        );
+
+        toast.error(
+          error?.message ||
+          'Unable to start a new program.'
+        );
+
+      } finally {
+
+        setRegenerating(
+          false
+        );
+      }
+    };
+
+
+  const handleDeleteAccount =
+    async () => {
+
+      try {
+
+        await supabaseApi.auth.updateMe(
+          {
+            deleted:
+              true,
+          }
+        );
+
+        await supabaseApi.auth.logout();
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          '[PROFILE] Account deletion failed:',
+          error
+        );
+
+        toast.error(
+          'Failed to delete account. Please try again.'
+        );
+      }
+    };
+
+
+  if (!user) {
+    return (
+      <div className="
+        min-h-[60vh]
+        flex
+        items-center
+        justify-center
+      ">
+
+        <div className="
+          w-8
+          h-8
+          border-4
+          border-muted
+          border-t-primary
+          rounded-full
+          animate-spin
+        " />
+
+      </div>
     );
+  }
 
 
   return (
     <div
       className="
-        fixed
-        inset-0
-        z-[1000]
-        bg-background/95
-        backdrop-blur-sm
-        flex
-        flex-col
-        overflow-hidden
-        pointer-events-auto
+        relative
+        z-0
+        px-5
+        safe-bottom
+        space-y-4
+        pt-2
       "
     >
 
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
+      {/* ====================================================
+          PROFILE HEADER
+          ==================================================== */}
 
       <div
         className="
           relative
-          z-10
-          shrink-0
+          z-[80]
           flex
           items-center
           justify-between
-          px-5
-          pt-[max(0.75rem,env(safe-area-inset-top))]
-          pb-4
-          border-b
-          border-border
-          bg-background
+          min-h-12
+          pointer-events-auto
         "
       >
 
-        <div>
+        <h1 className="
+          relative
+          z-10
+          font-heading
+          text-2xl
+          font-bold
+        ">
+          Profile
+        </h1>
 
-          <h2 className="
-            font-heading
-            font-bold
-            text-lg
-          ">
-            Review Scan
-          </h2>
 
-          <p className="
-            text-xs
-            text-muted-foreground
-          ">
-            Edit anything the AI got wrong
-          </p>
+        <div
+          className="
+            relative
+            z-[90]
+            flex
+            items-center
+            pointer-events-auto
+          "
+        >
+
+          <AppSettingsModal />
 
         </div>
+
+      </div>
+
+
+      {/* ====================================================
+          USER CARD
+          ==================================================== */}
+
+      <Card className="
+        relative
+        z-0
+        p-5
+      ">
+
+        <div className="
+          flex
+          items-center
+          gap-4
+        ">
+
+          <div className="
+            w-16
+            h-16
+            rounded-2xl
+            bg-primary/15
+            flex
+            items-center
+            justify-center
+            shrink-0
+          ">
+
+            <User className="
+              w-8
+              h-8
+              text-primary
+            " />
+
+          </div>
+
+
+          <div className="
+            flex-1
+            min-w-0
+          ">
+
+            <h2 className="
+              font-heading
+              font-bold
+              text-lg
+              truncate
+            ">
+              {
+                user.full_name ||
+                'Athlete'
+              }
+            </h2>
+
+
+            <p className="
+              text-sm
+              text-muted-foreground
+              truncate
+            ">
+              {
+                user.email
+              }
+            </p>
+
+
+            <Badge
+              className={`
+                mt-1
+                border-0
+                text-xs
+                ${planColors[plan]}
+              `}
+            >
+              {
+                planLabels[plan]
+              }{' '}
+              Plan
+            </Badge>
+
+          </div>
+
+        </div>
+
+
+        {stats && (
+          <div className="
+            mt-4
+            pt-4
+            border-t
+            border-border
+          ">
+
+            <div className="
+              flex
+              items-center
+              justify-between
+              mb-1.5
+            ">
+
+              <span className="
+                text-xs
+                text-muted-foreground
+                flex
+                items-center
+                gap-1.5
+              ">
+
+                <Zap className="
+                  w-3.5
+                  h-3.5
+                />
+
+                Kael Messages
+
+              </span>
+
+
+              <span className="
+                text-xs
+                font-semibold
+              ">
+                {
+                  stats.used
+                } / {
+                  stats.limit
+                }
+              </span>
+
+            </div>
+
+
+            <div className="
+              w-full
+              h-1.5
+              bg-muted
+              rounded-full
+              overflow-hidden
+            ">
+
+              <div
+                className={`
+                  h-full
+                  rounded-full
+                  transition-all
+                  ${
+                    stats.remaining ===
+                    0
+                      ? 'bg-destructive'
+                      : 'bg-primary'
+                  }
+                `}
+                style={{
+                  width:
+                    `${Math.min(
+                      (
+                        stats.used /
+                        stats.limit
+                      ) *
+                        100,
+                      100
+                    )}%`,
+                }}
+              />
+
+            </div>
+
+
+            <p className="
+              text-[10px]
+              text-muted-foreground
+              mt-1
+            ">
+              {
+                stats.remaining
+              }{' '}
+              messages remaining · resets monthly
+            </p>
+
+          </div>
+        )}
+
+      </Card>
+
+
+      {/* ====================================================
+          TRAINING PROFILE
+          ==================================================== */}
+
+      <Card className="
+        relative
+        z-0
+        p-4
+      ">
+
+        <h3 className="
+          font-heading
+          font-bold
+          text-sm
+          mb-3
+          text-muted-foreground
+          uppercase
+          tracking-wider
+        ">
+          Training Profile
+        </h3>
+
+
+        <div className="
+          space-y-3
+        ">
+
+          <div className="
+            flex
+            items-center
+            justify-between
+          ">
+
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
+
+              <Dumbbell className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
+
+              <span className="text-sm">
+                Level
+              </span>
+
+            </div>
+
+
+            <span className="
+              text-sm
+              font-medium
+              capitalize
+            ">
+              {
+                user.fitness_level ||
+                '—'
+              }
+            </span>
+
+          </div>
+
+
+          <div className="
+            flex
+            flex-col
+            gap-1
+          ">
+
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
+
+              <Target className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
+
+              <span className="text-sm">
+                Primary Goal
+              </span>
+
+            </div>
+
+
+            <div className="pl-6">
+
+              <ExpandableText
+                text={
+                  user.primary_goal
+                }
+                limit={80}
+                className="
+                  text-sm
+                  font-medium
+                  text-foreground/80
+                "
+              />
+
+            </div>
+
+          </div>
+
+
+          <div className="
+            flex
+            items-center
+            justify-between
+          ">
+
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
+
+              <Zap className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
+
+              <span className="text-sm">
+                Total Workouts
+              </span>
+
+            </div>
+
+
+            <span className="
+              text-sm
+              font-medium
+            ">
+              {
+                logs.length
+              }
+            </span>
+
+          </div>
+
+        </div>
+
+      </Card>
+
+
+      {/* ====================================================
+          ACTIVE PROGRAM
+          ==================================================== */}
+
+      {activeProgram && (
+        <Card className="
+          relative
+          z-0
+          p-4
+        ">
+
+          <h3 className="
+            font-heading
+            font-bold
+            text-sm
+            mb-3
+            text-muted-foreground
+            uppercase
+            tracking-wider
+          ">
+            Active Program
+          </h3>
+
+
+          <p className="
+            font-heading
+            font-bold
+          ">
+            {
+              activeProgram.program_name
+            }
+          </p>
+
+
+          <p className="
+            text-sm
+            text-muted-foreground
+            mt-1
+          ">
+            Week{' '}
+            {
+              activeProgram.current_week
+            }{' '}
+            of{' '}
+            {
+              activeProgram.duration_weeks
+            }
+          </p>
+
+
+          <div className="
+            w-full
+            h-2
+            bg-muted
+            rounded-full
+            mt-3
+            overflow-hidden
+          ">
+
+            <div
+              className="
+                h-full
+                bg-primary
+                rounded-full
+              "
+              style={{
+                width:
+                  `${
+                    (
+                      (
+                        activeProgram.current_week ||
+                        1
+                      ) /
+                      (
+                        activeProgram.duration_weeks ||
+                        12
+                      )
+                    ) *
+                    100
+                  }%`,
+              }}
+            />
+
+          </div>
+
+        </Card>
+      )}
+
+
+      {/* ====================================================
+          QUICK ACCESS
+          ==================================================== */}
+
+      <div className="
+        relative
+        z-0
+      ">
+
+        <QuickAccess />
+
+      </div>
+
+
+      {/* ====================================================
+          ACTIONS
+          ==================================================== */}
+
+      <div className="
+        relative
+        z-0
+        space-y-2
+      ">
+
+        <Button
+          type="button"
+          variant="outline"
+          className="
+            w-full
+            h-12
+            justify-start
+          "
+          onClick={
+            handleRegenerate
+          }
+          disabled={
+            regenerating
+          }
+        >
+
+          <RefreshCw
+            className={`
+              w-4
+              h-4
+              mr-3
+              ${
+                regenerating
+                  ? 'animate-spin'
+                  : ''
+              }
+            `}
+          />
+
+          Generate New Program
+
+        </Button>
 
 
         <Button
           type="button"
           variant="ghost"
-          size="icon"
           className="
-            relative
-            z-20
-            pointer-events-auto
-            touch-manipulation
+            w-full
+            h-12
+            justify-start
           "
           onClick={
-            onCancel
+            async () => {
+              try {
+                await supabaseApi.auth.logout();
+              } catch (
+                error
+              ) {
+                console.error(
+                  '[PROFILE] Logout failed:',
+                  error
+                );
+
+                toast.error(
+                  error?.message ||
+                  'Unable to log out.'
+                );
+              }
+            }
           }
-          aria-label="Close food review"
         >
 
-          <X className="w-5 h-5 pointer-events-none" />
+          <LogOut className="
+            w-4
+            h-4
+            mr-3
+          " />
+
+          Log Out
 
         </Button>
 
-      </div>
 
+        <AlertDialog>
 
-      {/* =====================================================
-          SCROLLING CONTENT
-          ===================================================== */}
+          <AlertDialogTrigger
+            asChild
+          >
 
-      <div
-        className="
-          flex-1
-          min-h-0
-          overflow-y-auto
-          overscroll-contain
-          px-5
-          py-4
-          space-y-4
-        "
-      >
-
-        {items.map(
-          (
-            item,
-            index
-          ) => (
-
-            <Card
-              key={
-                index
-              }
+            <Button
+              type="button"
+              variant="ghost"
               className="
-                p-4
-                space-y-3
+                w-full
+                h-12
+                justify-start
+                text-destructive/70
+                hover:text-destructive
               "
             >
 
-              <div className="
-                flex
-                items-center
-                justify-between
-              ">
+              <Trash2 className="
+                w-4
+                h-4
+                mr-3
+              " />
 
-                <p className="
-                  text-xs
-                  font-bold
-                  text-muted-foreground
-                  uppercase
-                  tracking-wider
-                ">
-                  Item {index + 1}
-                </p>
+              Delete Account
+
+            </Button>
+
+          </AlertDialogTrigger>
 
 
-                {items.length >
-                  1 && (
+          <AlertDialogContent>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      removeItem(
-                        index
-                      )
-                    }
-                    className="
-                      relative
-                      z-10
-                      p-2
-                      -m-2
-                      text-destructive
-                      hover:opacity-70
-                      pointer-events-auto
-                      touch-manipulation
-                    "
-                    aria-label={`Remove item ${
-                      index + 1
-                    }`}
-                  >
-                    <Trash2 className="w-4 h-4 pointer-events-none" />
-                  </button>
+            <AlertDialogHeader>
 
-                )}
+              <AlertDialogTitle>
+                Delete Account
+              </AlertDialogTitle>
 
-              </div>
+              <AlertDialogDescription>
+                This will permanently delete your account
+                and all associated data including your workout
+                programs, logs, nutrition entries, and progress
+                photos. This action cannot be undone.
+              </AlertDialogDescription>
+
+            </AlertDialogHeader>
 
 
-              {/* Food name */}
+            <AlertDialogFooter>
 
-              <div>
-
-                <p className="
-                  text-[11px]
-                  text-muted-foreground
-                  mb-1
-                ">
-                  Food Name
-                </p>
+              <AlertDialogCancel>
+                Cancel
+              </AlertDialogCancel>
 
 
-                <Input
-                  value={
-                    item.food_name ||
-                    ''
-                  }
-                  onChange={
-                    (event) =>
-                      update(
-                        index,
-                        'food_name',
-                        event.target.value
-                      )
-                  }
-                  className="
-                    h-10
-                    text-sm
-                  "
-                  placeholder="e.g. Grilled Chicken Breast"
-                />
+              <AlertDialogAction
+                className="
+                  bg-destructive
+                  text-destructive-foreground
+                  hover:bg-destructive/90
+                "
+                onClick={
+                  handleDeleteAccount
+                }
+              >
+                Delete My Account
+              </AlertDialogAction>
 
-              </div>
+            </AlertDialogFooter>
 
+          </AlertDialogContent>
 
-              {/* Serving */}
-
-              <div>
-
-                <p className="
-                  text-[11px]
-                  text-muted-foreground
-                  mb-1
-                ">
-                  Serving Size
-                </p>
-
-
-                <Input
-                  value={
-                    item.serving_size ||
-                    ''
-                  }
-                  onChange={
-                    (event) =>
-                      update(
-                        index,
-                        'serving_size',
-                        event.target.value
-                      )
-                  }
-                  className="
-                    h-10
-                    text-sm
-                  "
-                  placeholder="e.g. 1 cup, 150g"
-                />
-
-              </div>
-
-
-              {/* Macros */}
-
-              <div className="
-                grid
-                grid-cols-2
-                gap-2
-              ">
-
-                <div>
-
-                  <p className="
-                    text-[11px]
-                    text-muted-foreground
-                    mb-1
-                  ">
-                    Calories
-                  </p>
-
-
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={
-                      item.calories ??
-                      ''
-                    }
-                    onChange={
-                      (event) =>
-                        update(
-                          index,
-                          'calories',
-                          event.target.value
-                        )
-                    }
-                    className="
-                      h-10
-                      text-sm
-                    "
-                  />
-
-                </div>
-
-
-                <div>
-
-                  <p className="
-                    text-[11px]
-                    text-muted-foreground
-                    mb-1
-                  ">
-                    Protein (g)
-                  </p>
-
-
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={
-                      item.protein_g ??
-                      ''
-                    }
-                    onChange={
-                      (event) =>
-                        update(
-                          index,
-                          'protein_g',
-                          event.target.value
-                        )
-                    }
-                    className="
-                      h-10
-                      text-sm
-                    "
-                  />
-
-                </div>
-
-
-                <div>
-
-                  <p className="
-                    text-[11px]
-                    text-muted-foreground
-                    mb-1
-                  ">
-                    Carbs (g)
-                  </p>
-
-
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={
-                      item.carbs_g ??
-                      ''
-                    }
-                    onChange={
-                      (event) =>
-                        update(
-                          index,
-                          'carbs_g',
-                          event.target.value
-                        )
-                    }
-                    className="
-                      h-10
-                      text-sm
-                    "
-                  />
-
-                </div>
-
-
-                <div>
-
-                  <p className="
-                    text-[11px]
-                    text-muted-foreground
-                    mb-1
-                  ">
-                    Fat (g)
-                  </p>
-
-
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={
-                      item.fat_g ??
-                      ''
-                    }
-                    onChange={
-                      (event) =>
-                        update(
-                          index,
-                          'fat_g',
-                          event.target.value
-                        )
-                    }
-                    className="
-                      h-10
-                      text-sm
-                    "
-                  />
-
-                </div>
-
-              </div>
-
-            </Card>
-
-          )
-        )}
-
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="
-            relative
-            z-10
-            w-full
-            h-10
-            gap-2
-            pointer-events-auto
-            touch-manipulation
-          "
-          onClick={
-            addItem
-          }
-        >
-
-          <Plus className="w-4 h-4 pointer-events-none" />
-
-          Add Another Item
-
-        </Button>
-
-
-        {/* Space above the footer */}
-
-        <div className="h-4" />
+        </AlertDialog>
 
       </div>
 
 
-      {/* =====================================================
-          CONFIRMATION FOOTER
-          ===================================================== */}
+      {/* ====================================================
+          PRICING
+          ==================================================== */}
 
-      <div
-        className="
-          relative
-          z-20
-          shrink-0
-          px-5
-          pt-3
-          bg-card
-          border-t
-          border-border
-          shadow-[0_-8px_24px_rgba(0,0,0,0.30)]
-        "
-        style={{
-          paddingBottom:
-            'max(1rem, env(safe-area-inset-bottom))',
-        }}
-      >
+      <div className="
+        relative
+        z-0
+        pt-2
+      ">
 
-        <div className="
-          flex
-          items-center
-          justify-between
-          mb-3
-        ">
-
-          <p className="
-            text-sm
-            text-muted-foreground
-          ">
-            Total
-          </p>
-
-
-          <p className="
-            font-heading
-            font-bold
-            text-sm
-          ">
-            {Math.round(
-              totalCals
-            )}{' '}
-            kcal ·{' '}
-            {items.length}{' '}
-            item
-            {items.length !==
-            1
-              ? 's'
-              : ''}
-          </p>
-
-        </div>
-
-
-        <p className="
-          text-[10px]
-          text-muted-foreground
-          mb-3
-          leading-relaxed
-        ">
-          ⚠️ AI estimates are approximate and may not be 100% accurate.
-          Portion sizes, cooking methods, and brand differences can affect
-          values. Always verify with a nutrition label if precision matters.
-        </p>
-
-
-        <Button
-          type="button"
-          className="
-            relative
-            z-[30]
-            w-full
-            h-12
-            min-h-12
-            font-heading
-            font-semibold
-            gap-2
-            pointer-events-auto
-            touch-manipulation
-          "
-          onClick={() =>
-            onConfirm(
-              validItems
-            )
-          }
-          disabled={
-            validItems.length ===
-            0
-          }
-        >
-
-          <Check className="w-4 h-4 pointer-events-none" />
-
-          Save to Log
-
-        </Button>
-
-        <div className="h-1" />
+        <PricingSection />
 
       </div>
 
