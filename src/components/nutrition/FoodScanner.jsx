@@ -1,4 +1,12 @@
-import { useRef, useState } from 'react';
+import { useState, useRef } from 'react';
+
+import {
+  Button,
+} from '@/components/ui/button';
+
+import {
+  Card,
+} from '@/components/ui/card';
 
 import {
   Camera,
@@ -6,16 +14,7 @@ import {
   Loader2,
   Lock,
   AlertCircle,
-  CheckCircle2,
 } from 'lucide-react';
-
-import {
-  Card,
-} from '@/components/ui/card';
-
-import {
-  Button,
-} from '@/components/ui/button';
 
 import {
   supabaseApi,
@@ -41,8 +40,7 @@ function getFoodMemory() {
     return JSON.parse(
       localStorage.getItem(
         FOOD_MEMORY_KEY
-      ) ||
-        '{}'
+      ) || '{}'
     );
   } catch {
     return {};
@@ -55,34 +53,35 @@ function saveFoodMemory(
   const memory =
     getFoodMemory();
 
-  for (
-    const food of foods
-  ) {
-    if (
-      food?.food_name?.trim()
-    ) {
-      memory[
-        food.food_name
-          .toLowerCase()
-          .trim()
-      ] = {
-        calories:
-          food.calories,
+  foods.forEach(
+    food => {
+      if (
+        food?.food_name
+          ?.trim()
+      ) {
+        memory[
+          food.food_name
+            .toLowerCase()
+            .trim()
+        ] = {
+          calories:
+            food.calories,
 
-        protein_g:
-          food.protein_g,
+          protein_g:
+            food.protein_g,
 
-        carbs_g:
-          food.carbs_g,
+          carbs_g:
+            food.carbs_g,
 
-        fat_g:
-          food.fat_g,
+          fat_g:
+            food.fat_g,
 
-        serving_size:
-          food.serving_size,
-      };
+          serving_size:
+            food.serving_size,
+        };
+      }
     }
-  }
+  );
 
   localStorage.setItem(
     FOOD_MEMORY_KEY,
@@ -93,9 +92,11 @@ function saveFoodMemory(
 }
 
 /*
- * ============================================================
- * FOOD MEMORY CONTEXT
- * ============================================================
+ * Keep this context deliberately small.
+ *
+ * The old version could keep accumulating a large amount of
+ * prior food data and make an otherwise simple image request
+ * unnecessarily expensive/heavy.
  */
 
 function buildMemoryContext() {
@@ -113,395 +114,263 @@ function buildMemoryContext() {
     return '';
   }
 
+  /*
+   * Only use the most recent 20 remembered foods.
+   */
+  const recent =
+    entries.slice(
+      -20
+    );
+
   const lines =
-    entries
+    recent
       .map(
-        ([
-          name,
-          food,
-        ]) =>
-          `- ${name}: ${food.calories} kcal, ${food.protein_g}g protein, ${food.carbs_g}g carbs, ${food.fat_g}g fat (${food.serving_size || 'per serving'})`
+        (
+          [
+            name,
+            value,
+          ]
+        ) =>
+          `- ${name}: ${value.calories ?? '?'} kcal, ${value.protein_g ?? '?'}g protein, ${value.carbs_g ?? '?'}g carbs, ${value.fat_g ?? '?'}g fat (${value.serving_size || 'per serving'})`
       )
-      .join('\n');
+      .join(
+        '\n'
+      );
 
   return `
 
-Previously corrected foods for this user:
+PREVIOUSLY CORRECTED FOODS:
+Use these only as a reference when you recognize the same food.
+
 ${lines}
-
-Use these values as a baseline when the image clearly shows the same food, but do not blindly copy them when the portion or preparation is different.`;
-}
-
-/*
- * ============================================================
- * FOOD SCAN SCHEMA
- * ============================================================
- */
-
-const FOOD_SCAN_SCHEMA = {
-  type: 'object',
-
-  additionalProperties: false,
-
-  properties: {
-    foods: {
-      type: 'array',
-
-      items: {
-        type: 'object',
-
-        additionalProperties: false,
-
-        properties: {
-          food_name: {
-            type: 'string',
-          },
-
-          serving_size: {
-            type: 'string',
-          },
-
-          calories: {
-            type: 'number',
-          },
-
-          protein_g: {
-            type: 'number',
-          },
-
-          carbs_g: {
-            type: 'number',
-          },
-
-          fat_g: {
-            type: 'number',
-          },
-
-          confidence: {
-            type: 'string',
-
-            enum: [
-              'high',
-              'medium',
-              'low',
-            ],
-          },
-
-          notes: {
-            type: 'string',
-          },
-        },
-
-        required: [
-          'food_name',
-          'serving_size',
-          'calories',
-          'protein_g',
-          'carbs_g',
-          'fat_g',
-          'confidence',
-          'notes',
-        ],
-      },
-    },
-  },
-
-  required: [
-    'foods',
-  ],
-};
-
-/*
- * ============================================================
- * BARCODE / PACKAGE SCAN SCHEMA
- * ============================================================
- */
-
-const FOOD_BARCODE_SCHEMA = {
-  type: 'object',
-
-  additionalProperties: false,
-
-  properties: {
-    food_name: {
-      type: 'string',
-    },
-
-    serving_size: {
-      type: 'string',
-    },
-
-    calories: {
-      type: 'number',
-    },
-
-    protein_g: {
-      type: 'number',
-    },
-
-    carbs_g: {
-      type: 'number',
-    },
-
-    fat_g: {
-      type: 'number',
-    },
-
-    confidence: {
-      type: 'string',
-
-      enum: [
-        'high',
-        'medium',
-        'low',
-      ],
-    },
-
-    source: {
-      type: 'string',
-
-      enum: [
-        'nutrition_label',
-        'identified_product',
-        'estimate',
-      ],
-    },
-
-    notes: {
-      type: 'string',
-    },
-  },
-
-  required: [
-    'food_name',
-    'serving_size',
-    'calories',
-    'protein_g',
-    'carbs_g',
-    'fat_g',
-    'confidence',
-    'source',
-    'notes',
-  ],
-};
-
-/*
- * ============================================================
- * FOOD PHOTO PROMPT
- * ============================================================
- */
-
-function buildFoodScanPrompt() {
-  return `
-You are a precision nutrition analyst for Washek Fitness.
-
-Analyze the food shown in the attached image.
-
-ACCURACY IS THE PRIORITY.
-
-Do not invent foods that are not visible.
-
-Identify every distinct food item that can reasonably be identified.
-
-For each item:
-
-1. Identify the food as specifically as the image allows.
-   Example:
-   "grilled chicken breast"
-   is better than
-   "chicken".
-
-2. Estimate the portion size using visible cues such as:
-   - plate size
-   - bowl size
-   - food volume
-   - relative size of nearby objects
-   - normal density of the food
-
-3. Estimate calories and macros for that estimated portion.
-
-4. Account for likely preparation:
-   - oils
-   - butter
-   - sauces
-   - dressings
-   - frying
-   - visible toppings
-
-5. Do NOT automatically add arbitrary extra fat.
-   Only include cooking oils or fats when the preparation or food appearance reasonably supports them.
-
-6. Calories and macros must be internally consistent.
-   Check approximately:
-   protein × 4
-   + carbs × 4
-   + fat × 9
-
-7. If the exact portion cannot be determined, give your best realistic estimate and mark confidence as medium or low.
-
-8. Never claim exact precision from a photograph.
-   A photo gives an estimate, not a laboratory measurement.
-
-9. Separate foods when multiple foods are clearly visible.
-
-10. Use the previously corrected-food context only when the same food and a reasonably similar portion are clearly present.
-
-${buildMemoryContext()}
 `;
 }
 
 /*
  * ============================================================
- * PACKAGE / LABEL PROMPT
+ * VALIDATION / NORMALIZATION
  * ============================================================
  */
+
+function numberOrZero(
+  value
+) {
+  const number =
+    Number(
+      value
+    );
+
+  return Number.isFinite(
+    number
+  )
+    ? Math.max(
+        0,
+        number
+      )
+    : 0;
+}
+
+function normalizeFood(
+  food
+) {
+  if (
+    !food ||
+    typeof food !==
+      'object'
+  ) {
+    return null;
+  }
+
+  const name =
+    String(
+      food.food_name ||
+        food.name ||
+        ''
+    ).trim();
+
+  if (
+    !name
+  ) {
+    return null;
+  }
+
+  return {
+    food_name:
+      name,
+
+    serving_size:
+      String(
+        food.serving_size ||
+          'Estimated serving'
+      ).trim(),
+
+    calories:
+      Math.round(
+        numberOrZero(
+          food.calories
+        )
+      ),
+
+    protein_g:
+      Number(
+        numberOrZero(
+          food.protein_g
+        ).toFixed(
+          1
+        )
+      ),
+
+    carbs_g:
+      Number(
+        numberOrZero(
+          food.carbs_g
+        ).toFixed(
+          1
+        )
+      ),
+
+    fat_g:
+      Number(
+        numberOrZero(
+          food.fat_g
+        ).toFixed(
+          1
+        )
+      ),
+  };
+}
+
+function normalizeFoods(
+  value
+) {
+  if (
+    Array.isArray(
+      value
+    )
+  ) {
+    return value
+      .map(
+        normalizeFood
+      )
+      .filter(Boolean);
+  }
+
+  if (
+    value &&
+    typeof value ===
+      'object'
+  ) {
+    if (
+      Array.isArray(
+        value.foods
+      )
+    ) {
+      return value.foods
+        .map(
+          normalizeFood
+        )
+        .filter(
+          Boolean
+        );
+    }
+
+    const single =
+      normalizeFood(
+        value
+      );
+
+    return single
+      ? [single]
+      : [];
+  }
+
+  return [];
+}
+
+/*
+ * ============================================================
+ * PROMPTS
+ * ============================================================
+ */
+
+function buildFoodPrompt() {
+  return `
+You are Kael's food-analysis system for Washek Fitness.
+
+Analyze the supplied food photograph.
+
+Your job is to estimate the visible food as accurately as a photograph allows.
+
+IMPORTANT:
+
+- Identify every distinct visible food item that can reasonably be identified.
+- Use specific names when visually supported.
+- Estimate the visible portion size.
+- Estimate calories, protein, carbohydrates, and fat.
+- Consider visible cooking methods, sauces, dressings, oils, toppings, breading, and other visible ingredients.
+- Do not invent hidden ingredients.
+- Do not pretend a photograph provides exact laboratory nutrition data.
+- Make realistic estimates rather than extreme guesses.
+- Calories should be reasonably consistent with the listed macros.
+- If the exact portion cannot be known, give your best defensible estimate.
+- Do not return a generic meal description instead of individual food items.
+
+Return ONLY valid JSON in exactly this shape:
+
+{
+  "foods": [
+    {
+      "food_name": "specific food name",
+      "serving_size": "estimated portion",
+      "calories": 0,
+      "protein_g": 0,
+      "carbs_g": 0,
+      "fat_g": 0
+    }
+  ]
+}
+
+Do not use markdown.
+Do not add commentary outside the JSON object.
+
+${buildMemoryContext()}
+`;
+}
 
 function buildBarcodePrompt() {
   return `
-You are a precision nutrition analyst for Washek Fitness.
+You are Kael's nutrition-label analysis system for Washek Fitness.
 
-Analyze the attached food package or nutrition label.
+Analyze the supplied food package or Nutrition Facts image.
 
-ACCURACY IS THE PRIORITY.
+When a Nutrition Facts label is readable:
 
-If a Nutrition Facts label is visible:
+- use the printed serving size
+- use the printed calories
+- use the printed protein
+- use the printed carbohydrates
+- use the printed fat
 
-- Read the values directly from the label.
-- Do NOT estimate values that are clearly printed.
-- Use the serving size exactly as printed.
-- Use calories exactly as printed.
-- Use protein, carbohydrate, and fat exactly as printed.
-- Preserve the exact product name when visible.
+Do NOT invent numbers when clearly printed values are visible.
 
-If the label is not visible but the exact product and brand can be identified:
+If the exact product cannot be identified from the image, say so through the JSON values you can actually determine.
 
-- identify the product as specifically as possible;
-- provide the most reliable known nutrition information;
-- mark confidence appropriately.
+Return ONLY valid JSON in exactly this shape:
 
-If neither the label nor exact product can be determined:
+{
+  "food_name": "product name",
+  "serving_size": "serving size",
+  "calories": 0,
+  "protein_g": 0,
+  "carbs_g": 0,
+  "fat_g": 0
+}
 
-- do not invent an exact nutritional profile;
-- provide a reasonable estimate;
-- mark confidence low.
-
-Do not fabricate brand-specific information.
-
-Calories and macros must be internally checked for consistency.
+Do not use markdown.
+Do not add commentary outside the JSON object.
 
 ${buildMemoryContext()}
 `;
-}
-
-/*
- * ============================================================
- * VALIDATE SCAN
- * ============================================================
- */
-
-function normalizeFoods(
-  foods
-) {
-  if (
-    !Array.isArray(
-      foods
-    )
-  ) {
-    return [];
-  }
-
-  return foods
-    .map(
-      (
-        food
-      ) => ({
-        food_name:
-          String(
-            food?.food_name ||
-              ''
-          ).trim(),
-
-        serving_size:
-          String(
-            food?.serving_size ||
-              '1 serving'
-          ).trim(),
-
-        calories:
-          Number.isFinite(
-            Number(
-              food?.calories
-            )
-          )
-            ? Math.max(
-                0,
-                Number(
-                  food.calories
-                )
-              )
-            : 0,
-
-        protein_g:
-          Number.isFinite(
-            Number(
-              food?.protein_g
-            )
-          )
-            ? Math.max(
-                0,
-                Number(
-                  food.protein_g
-                )
-              )
-            : 0,
-
-        carbs_g:
-          Number.isFinite(
-            Number(
-              food?.carbs_g
-            )
-          )
-            ? Math.max(
-                0,
-                Number(
-                  food.carbs_g
-                )
-              )
-            : 0,
-
-        fat_g:
-          Number.isFinite(
-            Number(
-              food?.fat_g
-            )
-          )
-            ? Math.max(
-                0,
-                Number(
-                  food.fat_g
-                )
-              )
-            : 0,
-
-        confidence:
-          food?.confidence ||
-          'medium',
-
-        notes:
-          String(
-            food?.notes ||
-              ''
-          ).trim(),
-      })
-    )
-    .filter(
-      (
-        food
-      ) =>
-        Boolean(
-          food.food_name
-        )
-    );
 }
 
 /*
@@ -534,26 +403,48 @@ export default function FoodScanner({
     setError,
   ] = useState('');
 
-  const [
-    successMessage,
-    setSuccessMessage,
-  ] = useState('');
-
   const fileInputRef =
     useRef(null);
 
   /*
    * ==========================================================
-   * SNAP FOOD
+   * RESET
+   * ==========================================================
+   */
+
+  function resetScanner() {
+    setScanning(
+      false
+    );
+
+    setMode(
+      null
+    );
+
+    setError(
+      ''
+    );
+
+    if (
+      fileInputRef.current
+    ) {
+      fileInputRef.current.value =
+        '';
+    }
+  }
+
+  /*
+   * ==========================================================
+   * FOOD PHOTO
    * ==========================================================
    */
 
   const handleCapture =
     async (
-      event
+      e
     ) => {
       const file =
-        event.target
+        e.target
           ?.files?.[0];
 
       if (
@@ -561,6 +452,10 @@ export default function FoodScanner({
       ) {
         return;
       }
+
+      setError(
+        ''
+      );
 
       setScanning(
         true
@@ -570,29 +465,23 @@ export default function FoodScanner({
         'photo'
       );
 
-      setError(
-        ''
-      );
-
-      setSuccessMessage(
-        ''
-      );
-
       try {
+        /*
+         * Make sure this really is an image.
+         */
         if (
           !file.type.startsWith(
             'image/'
           )
         ) {
           throw new Error(
-            'Please select a food photo.'
+            'Please choose a photo of your food.'
           );
         }
 
         /*
-         * Upload image.
+         * Upload.
          */
-
         const uploaded =
           await supabaseApi.storage.uploadFile(
             {
@@ -600,18 +489,28 @@ export default function FoodScanner({
             }
           );
 
+        const imageUrl =
+          uploaded?.file_url;
+
         if (
-          !uploaded?.file_url
+          !imageUrl
         ) {
           throw new Error(
             'The food photo uploaded, but no image URL was returned.'
           );
         }
 
-        /*
-         * Vision AI request.
-         */
+        console.log(
+          '[FoodScanner] Uploaded food image.'
+        );
 
+        /*
+         * AI.
+         *
+         * IMPORTANT:
+         * We still use the existing centralized ai-generate
+         * function. No new backend function is required.
+         */
         const result =
           await supabaseApi.ai.invoke(
             {
@@ -619,78 +518,145 @@ export default function FoodScanner({
                 'food_scan',
 
               prompt:
-                buildFoodScanPrompt(),
+                buildFoodPrompt(),
 
               file_urls: [
-                uploaded.file_url,
+                imageUrl,
               ],
 
-              response_json_schema:
-                FOOD_SCAN_SCHEMA,
+              response_json_schema: {
+                type:
+                  'object',
+
+                properties: {
+                  foods: {
+                    type:
+                      'array',
+
+                    items: {
+                      type:
+                        'object',
+
+                      properties: {
+                        food_name: {
+                          type:
+                            'string',
+                        },
+
+                        serving_size: {
+                          type:
+                            'string',
+                        },
+
+                        calories: {
+                          type:
+                            'number',
+                        },
+
+                        protein_g: {
+                          type:
+                            'number',
+                        },
+
+                        carbs_g: {
+                          type:
+                            'number',
+                        },
+
+                        fat_g: {
+                          type:
+                            'number',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             }
           );
 
+        console.log(
+          '[FoodScanner] AI response received.',
+          result
+        );
+
+        /*
+         * Normalize response.
+         */
         const foods =
           normalizeFoods(
-            result?.foods
+            result
           );
 
         if (
           !foods.length
         ) {
           throw new Error(
-            'The AI could not identify any food clearly enough to estimate.'
+            'Kael could not identify any food items in that photo. Try a clearer photo with the entire meal visible.'
           );
         }
 
         /*
-         * Show review screen.
+         * Show edit/confirmation modal instead of saving
+         * immediately.
          */
+        setPendingFoods(
+          {
+            foods,
 
-        setPendingFoods({
-          foods,
-
-          imageUrl:
-            uploaded.file_url,
-        });
-
-        setSuccessMessage(
-          'Food scan complete. Review the estimates before saving.'
+            imageUrl,
+          }
         );
       } catch (
-        scanError
+        caught
       ) {
         console.error(
-          '[FoodScanner] Food scan failed:',
-          scanError
+          '[FoodScanner] Food analysis failed:',
+          caught
         );
 
+        const message =
+          caught?.message ||
+          'Food analysis failed. Please try again.';
+
         setError(
-          scanError?.message ||
-            'Food scanning failed. Please try another photo.'
+          message
         );
       } finally {
+        /*
+         * THIS IS CRITICAL.
+         *
+         * The scanner can never remain stuck on the spinner.
+         */
         setScanning(
           false
         );
 
-        event.target.value =
-          '';
+        setMode(
+          null
+        );
+
+        if (
+          e.target
+        ) {
+          e.target.value =
+            '';
+        }
       }
     };
 
   /*
    * ==========================================================
-   * PACKAGE / LABEL SCAN
+   * PACKAGE / LABEL
    * ==========================================================
    */
 
   const handleBarcodeCapture =
     async (
-      event
+      e
     ) => {
       const file =
-        event.target
+        e.target
           ?.files?.[0];
 
       if (
@@ -698,6 +664,10 @@ export default function FoodScanner({
       ) {
         return;
       }
+
+      setError(
+        ''
+      );
 
       setScanning(
         true
@@ -707,14 +677,6 @@ export default function FoodScanner({
         'barcode'
       );
 
-      setError(
-        ''
-      );
-
-      setSuccessMessage(
-        ''
-      );
-
       try {
         if (
           !file.type.startsWith(
@@ -722,7 +684,7 @@ export default function FoodScanner({
           )
         ) {
           throw new Error(
-            'Please select a package or nutrition-label photo.'
+            'Please choose a photo of the food package or label.'
           );
         }
 
@@ -733,8 +695,11 @@ export default function FoodScanner({
             }
           );
 
+        const imageUrl =
+          uploaded?.file_url;
+
         if (
-          !uploaded?.file_url
+          !imageUrl
         ) {
           throw new Error(
             'The package photo uploaded, but no image URL was returned.'
@@ -751,56 +716,95 @@ export default function FoodScanner({
                 buildBarcodePrompt(),
 
               file_urls: [
-                uploaded.file_url,
+                imageUrl,
               ],
 
-              response_json_schema:
-                FOOD_BARCODE_SCHEMA,
+              response_json_schema: {
+                type:
+                  'object',
+
+                properties: {
+                  food_name: {
+                    type:
+                      'string',
+                  },
+
+                  serving_size: {
+                    type:
+                      'string',
+                  },
+
+                  calories: {
+                    type:
+                      'number',
+                  },
+
+                  protein_g: {
+                    type:
+                      'number',
+                  },
+
+                  carbs_g: {
+                    type:
+                      'number',
+                  },
+
+                  fat_g: {
+                    type:
+                      'number',
+                  },
+                },
+              },
             }
           );
 
         const foods =
-          normalizeFoods([
-            result,
-          ]);
+          normalizeFoods(
+            result
+          );
 
         if (
           !foods.length
         ) {
           throw new Error(
-            'The AI could not identify the product or nutrition information clearly enough.'
+            'Kael could not read that food package. Try a clearer photo of the Nutrition Facts label.'
           );
         }
 
-        setPendingFoods({
-          foods,
+        setPendingFoods(
+          {
+            foods,
 
-          imageUrl:
-            uploaded.file_url,
-        });
-
-        setSuccessMessage(
-          'Package scan complete. Review the nutrition values before saving.'
+            imageUrl,
+          }
         );
       } catch (
-        scanError
+        caught
       ) {
         console.error(
-          '[FoodScanner] Package scan failed:',
-          scanError
+          '[FoodScanner] Package analysis failed:',
+          caught
         );
 
         setError(
-          scanError?.message ||
-            'Package scanning failed. Please try again.'
+          caught?.message ||
+            'Package analysis failed. Please try again.'
         );
       } finally {
         setScanning(
           false
         );
 
-        event.target.value =
-          '';
+        setMode(
+          null
+        );
+
+        if (
+          e.target
+        ) {
+          e.target.value =
+            '';
+        }
       }
     };
 
@@ -811,72 +815,46 @@ export default function FoodScanner({
    */
 
   const handleConfirm =
-    (
-      items
-    ) => {
-      const validItems =
-        items.filter(
-          (
-            item
-          ) =>
-            item?.food_name?.trim()
+    items => {
+      const normalized =
+        normalizeFoods(
+          items
         );
 
       if (
-        !validItems.length
+        !normalized.length
       ) {
+        setError(
+          'There were no valid food items to save.'
+        );
+
         return;
       }
 
       saveFoodMemory(
-        validItems
+        normalized
       );
 
-      for (
-        const food of
-        validItems
-      ) {
-        /*
-         * Do not send AI confidence/notes to the nutrition
-         * database unless the database explicitly supports them.
-         */
-        onFoodDetected({
-          food_name:
-            food.food_name,
-
-          serving_size:
-            food.serving_size,
-
-          calories:
-            food.calories,
-
-          protein_g:
-            food.protein_g,
-
-          carbs_g:
-            food.carbs_g,
-
-          fat_g:
-            food.fat_g,
-
-          image_url:
-            pendingFoods?.imageUrl ||
-            null,
-        });
-      }
+      normalized.forEach(
+        food => {
+          onFoodDetected(
+            food
+          );
+        }
+      );
 
       setPendingFoods(
         null
       );
 
-      setSuccessMessage(
-        'Food added to your nutrition log.'
+      setError(
+        ''
       );
     };
 
   /*
    * ==========================================================
-   * LOCKS
+   * ACCESS
    * ==========================================================
    */
 
@@ -894,7 +872,7 @@ export default function FoodScanner({
 
   /*
    * ==========================================================
-   * REVIEW
+   * EDIT MODAL
    * ==========================================================
    */
 
@@ -939,15 +917,16 @@ export default function FoodScanner({
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
 
         <p className="font-heading font-bold">
-          {mode === 'barcode'
-            ? 'Reading nutrition information…'
-            : 'Analyzing your food…'}
+
+          {mode ===
+          'barcode'
+            ? 'Reading your food label...'
+            : 'Analyzing your food...'}
+
         </p>
 
-        <p className="text-sm text-muted-foreground text-center max-w-xs">
-          {mode === 'barcode'
-            ? 'Kael is reading the package and nutrition label.'
-            : 'Kael is identifying the food, estimating the portion, and calculating the nutrition.'}
+        <p className="text-sm text-muted-foreground text-center">
+          Kael is identifying the food and estimating its nutrition.
         </p>
 
       </Card>
@@ -956,12 +935,48 @@ export default function FoodScanner({
 
   /*
    * ==========================================================
-   * NORMAL VIEW
+   * MAIN UI
    * ==========================================================
    */
 
   return (
     <div className="space-y-3">
+
+      {error && (
+        <Card className="p-3 border-destructive/30 bg-destructive/5">
+
+          <div className="flex items-start gap-2">
+
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+
+            <div className="flex-1">
+
+              <p className="text-xs font-semibold text-destructive">
+                Food analysis failed
+              </p>
+
+              <p className="text-xs text-muted-foreground mt-1 break-words">
+                {error}
+              </p>
+
+              <button
+                type="button"
+                className="text-xs font-semibold text-primary mt-2"
+                onClick={() =>
+                  setError(
+                    ''
+                  )
+                }
+              >
+                Dismiss
+              </button>
+
+            </div>
+
+          </div>
+
+        </Card>
+      )}
 
       <input
         ref={
@@ -984,48 +999,23 @@ export default function FoodScanner({
         }
       />
 
-      {error && (
-        <Card className="p-3 border-destructive/30 bg-destructive/5">
-
-          <div className="flex items-start gap-2">
-
-            <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-
-            <p className="text-xs text-destructive leading-relaxed">
-              {error}
-            </p>
-
-          </div>
-
-        </Card>
-      )}
-
-      {successMessage && (
-        <Card className="p-3 border-accent/30 bg-accent/5">
-
-          <div className="flex items-start gap-2">
-
-            <CheckCircle2 className="w-4 h-4 text-accent mt-0.5 shrink-0" />
-
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {successMessage}
-            </p>
-
-          </div>
-
-        </Card>
-      )}
-
       <div className="grid grid-cols-2 gap-3">
 
-        {/* Snap Food */}
-
         <Card
-          className={`p-5 flex flex-col items-center gap-2 transition-all ${
-            snapLocked
-              ? 'opacity-60 cursor-default'
-              : 'cursor-pointer hover:border-primary/40 active:scale-[0.98]'
-          }`}
+          className={`
+            p-5
+            flex
+            flex-col
+            items-center
+            gap-2
+            transition-all
+            ${
+              snapLocked
+                ? 'opacity-60 cursor-default'
+                : 'cursor-pointer hover:border-primary/40 active:scale-[0.98]'
+            }
+          `}
+
           onClick={() => {
             if (
               snapLocked
@@ -1033,12 +1023,12 @@ export default function FoodScanner({
               return;
             }
 
-            setMode(
-              'photo'
-            );
-
             setError(
               ''
+            );
+
+            setMode(
+              'photo'
             );
 
             setTimeout(
@@ -1050,11 +1040,18 @@ export default function FoodScanner({
         >
 
           <div
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-              snapLocked
-                ? 'bg-muted'
-                : 'bg-primary/15'
-            }`}
+            className={`
+              w-12 h-12
+              rounded-2xl
+              flex
+              items-center
+              justify-center
+              ${
+                snapLocked
+                  ? 'bg-muted'
+                  : 'bg-primary/15'
+              }
+            `}
           >
 
             {snapLocked ? (
@@ -1077,14 +1074,21 @@ export default function FoodScanner({
 
         </Card>
 
-        {/* Scan Package */}
-
         <Card
-          className={`p-5 flex flex-col items-center gap-2 transition-all ${
-            barcodeLocked
-              ? 'opacity-60 cursor-default'
-              : 'cursor-pointer hover:border-primary/40 active:scale-[0.98]'
-          }`}
+          className={`
+            p-5
+            flex
+            flex-col
+            items-center
+            gap-2
+            transition-all
+            ${
+              barcodeLocked
+                ? 'opacity-60 cursor-default'
+                : 'cursor-pointer hover:border-primary/40 active:scale-[0.98]'
+            }
+          `}
+
           onClick={() => {
             if (
               barcodeLocked
@@ -1092,12 +1096,12 @@ export default function FoodScanner({
               return;
             }
 
-            setMode(
-              'barcode'
-            );
-
             setError(
               ''
+            );
+
+            setMode(
+              'barcode'
             );
 
             setTimeout(
@@ -1109,11 +1113,18 @@ export default function FoodScanner({
         >
 
           <div
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-              barcodeLocked
-                ? 'bg-muted'
-                : 'bg-accent/15'
-            }`}
+            className={`
+              w-12 h-12
+              rounded-2xl
+              flex
+              items-center
+              justify-center
+              ${
+                barcodeLocked
+                  ? 'bg-muted'
+                  : 'bg-accent/15'
+              }
+            `}
           >
 
             {barcodeLocked ? (
@@ -1137,14 +1148,6 @@ export default function FoodScanner({
         </Card>
 
       </div>
-
-      <p className="text-[10px] text-muted-foreground text-center px-3 leading-relaxed">
-        Photo-based nutrition values are
-        estimates unless a readable
-        nutrition label provides exact
-        values. Review the results before
-        saving.
-      </p>
 
     </div>
   );
