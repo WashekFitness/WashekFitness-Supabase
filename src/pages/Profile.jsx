@@ -1,10 +1,28 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabaseApi } from '@/lib/supabaseApi';
-import { useQuery } from '@tanstack/react-query';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import {
+  useState,
+  useEffect,
+} from 'react';
+
+import {
+  useNavigate,
+} from 'react-router-dom';
+
+import {
+  useQuery,
+} from '@tanstack/react-query';
+
+import {
+  Card,
+} from '@/components/ui/card';
+
+import {
+  Button,
+} from '@/components/ui/button';
+
+import {
+  Badge,
+} from '@/components/ui/badge';
+
 import {
   User,
   Dumbbell,
@@ -14,12 +32,27 @@ import {
   Zap,
   Trash2,
 } from 'lucide-react';
+
 import AppSettingsModal from '@/components/AppSettingsModal';
+
 import ExpandableText from '@/components/ExpandableText';
-import { toast } from 'sonner';
+
 import PricingSection from '@/components/profile/PricingSection';
+
 import QuickAccess from '@/components/layout/QuickAccess';
-import { computeStats } from '@/lib/messageLimit';
+
+import {
+  supabaseApi,
+} from '@/lib/supabaseApi';
+
+import {
+  computeStats,
+} from '@/lib/messageLimit';
+
+import {
+  toast,
+} from 'sonner';
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,126 +65,122 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+
 export default function Profile() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
+
 
   const [
     user,
     setUser,
   ] = useState(null);
 
-  const [
-    loadingUser,
-    setLoadingUser,
-  ] = useState(true);
 
   const [
     regenerating,
     setRegenerating,
   ] = useState(false);
 
-  /*
-   * ==========================================================
-   * LOAD CURRENT USER
-   * ==========================================================
-   */
-
-  const loadUser =
-    async () => {
-      try {
-        const currentUser =
-          await supabaseApi.auth.me();
-
-        setUser(
-          currentUser
-        );
-      } catch (error) {
-        console.error(
-          'Unable to load current user:',
-          error
-        );
-
-        setUser(null);
-      } finally {
-        setLoadingUser(
-          false
-        );
-      }
-    };
 
   useEffect(() => {
-    loadUser();
+    let active = true;
+
+    supabaseApi.auth.me()
+      .then(
+        (currentUser) => {
+          if (active) {
+            setUser(
+              currentUser
+            );
+          }
+        }
+      )
+      .catch(
+        (error) => {
+          console.error(
+            '[PROFILE] Unable to load user:',
+            error
+          );
+
+          if (active) {
+            toast.error(
+              error?.message ||
+              'Unable to load your profile.'
+            );
+          }
+        }
+      );
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  /*
-   * ==========================================================
-   * PROGRAMS
-   * ==========================================================
-   */
 
   const {
     data: programs = [],
-  } = useQuery({
-    queryKey: [
-      'programs',
-      user?.email,
-    ],
+  } =
+    useQuery({
+      queryKey: [
+        'programs',
+        user?.email,
+      ],
 
-    queryFn: () =>
-      supabaseApi.entities.WorkoutProgram.filter(
-        {
-          status:
-            'active',
+      queryFn: () =>
+        supabaseApi.entities.WorkoutProgram.filter(
+          {
+            status:
+              'active',
 
-          created_by:
-            user.email,
-        },
+            created_by:
+              user.email,
+          },
 
-        '-created_date',
+          '-created_date',
 
-        1
-      ),
+          1
+        ),
 
-    enabled:
-      !!user?.email,
-  });
+      enabled:
+        !!user?.email,
+    });
 
-  /*
-   * ==========================================================
-   * WORKOUT LOGS
-   * ==========================================================
-   */
 
   const {
     data: logs = [],
-  } = useQuery({
-    queryKey: [
-      'logs',
-      user?.email,
-    ],
+  } =
+    useQuery({
+      queryKey: [
+        'logs',
+        user?.email,
+      ],
 
-    queryFn: () =>
-      supabaseApi.entities.WorkoutLog.filter(
-        {
-          created_by:
-            user.email,
-        },
+      queryFn: () =>
+        supabaseApi.entities.WorkoutLog.filter(
+          {
+            created_by:
+              user.email,
+          },
 
-        '-date',
+          '-date',
 
-        999
-      ),
+          999
+        ),
 
-    enabled:
-      !!user?.email,
-  });
+      enabled:
+        !!user?.email,
+    });
+
 
   const activeProgram =
     programs[0];
 
+
   const plan =
     user?.subscription_plan ||
     'free';
+
 
   const stats =
     user
@@ -160,6 +189,7 @@ export default function Profile() {
           plan
         )
       : null;
+
 
   const planLabels = {
     free:
@@ -175,6 +205,7 @@ export default function Profile() {
       'Elite',
   };
 
+
   const planColors = {
     free:
       'bg-muted text-muted-foreground',
@@ -189,57 +220,10 @@ export default function Profile() {
       'bg-chart-4/15 text-chart-4',
   };
 
-  /*
-   * ==========================================================
-   * SUBSCRIPTION CHANGE CALLBACK
-   * ==========================================================
-   *
-   * PricingSection calls this whenever the backend changes
-   * the subscription.
-   *
-   * We update local state immediately, then ask Supabase for
-   * the canonical account state.
-   * ==========================================================
-   */
-
-  const handleSubscriptionChanged =
-    async (
-      updatedUser
-    ) => {
-      if (
-        updatedUser
-      ) {
-        setUser(
-          updatedUser
-        );
-      }
-
-      /*
-       * Immediately fetch the real profile again.
-       */
-      try {
-        const freshUser =
-          await supabaseApi.auth.me();
-
-        setUser(
-          freshUser
-        );
-      } catch (error) {
-        console.error(
-          'Unable to refresh subscription state:',
-          error
-        );
-      }
-    };
-
-  /*
-   * ==========================================================
-   * GENERATE NEW PROGRAM
-   * ==========================================================
-   */
 
   const handleRegenerate =
     async () => {
+
       if (
         !user?.fitness_level ||
         !user?.primary_goal
@@ -251,16 +235,20 @@ export default function Profile() {
         return;
       }
 
+
       setRegenerating(
         true
       );
 
+
       try {
+
         if (
           activeProgram
         ) {
           await supabaseApi.entities.WorkoutProgram.update(
             activeProgram.id,
+
             {
               status:
                 'completed',
@@ -268,37 +256,77 @@ export default function Profile() {
           );
         }
 
+
         navigate(
           '/onboarding'
         );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          '[PROFILE] Regeneration failed:',
+          error
+        );
+
+        toast.error(
+          error?.message ||
+          'Unable to start a new program.'
+        );
+
       } finally {
+
         setRegenerating(
           false
         );
       }
     };
 
-  /*
-   * ==========================================================
-   * DELETE ACCOUNT
-   * ==========================================================
-   */
+
+  const handleLogout =
+    async () => {
+      try {
+
+        await supabaseApi.auth.logout();
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          '[PROFILE] Logout failed:',
+          error
+        );
+
+        toast.error(
+          error?.message ||
+          'Unable to log out.'
+        );
+      }
+    };
+
 
   const handleDeleteAccount =
     async () => {
+
       try {
-        await supabaseApi.auth.updateMe(
-          {
-            deleted:
-              true,
-          }
-        );
+
+        await supabaseApi.auth.updateMe({
+          deleted:
+            true,
+        });
+
 
         await supabaseApi.auth.logout();
-      } catch (err) {
+
+      } catch (
+        error
+      ) {
+
         console.error(
-          'Account deletion failed:',
-          err
+          '[PROFILE] Account deletion failed:',
+          error
         );
 
         toast.error(
@@ -307,126 +335,143 @@ export default function Profile() {
       }
     };
 
-  /*
-   * ==========================================================
-   * LOGOUT
-   * ==========================================================
-   */
 
-  const handleLogout =
-    async () => {
-      try {
-        await supabaseApi.auth.logout();
-      } catch (error) {
-        console.error(
-          'Logout failed:',
-          error
-        );
+  return (
+    <div
+      className="
+        relative
+        z-0
+        px-5
+        safe-bottom
+        space-y-4
+        pt-2
+      "
+    >
 
-        toast.error(
-          'Unable to log out. Please try again.'
-        );
-      }
-    };
+      {/* ====================================================
+          PROFILE HEADER
+          ==================================================== */}
 
-  /*
-   * ==========================================================
-   * LOADING
-   * ==========================================================
-   */
+      <div
+        className="
+          relative
+          z-[60]
+          flex
+          items-center
+          justify-between
+          min-h-12
+          pointer-events-auto
+        "
+      >
 
-  if (
-    loadingUser
-  ) {
-    return (
-      <div className="px-5 safe-bottom space-y-4 pt-2">
+        <h1
+          className="
+            relative
+            z-10
+            font-heading
+            text-2xl
+            font-bold
+          "
+        >
+          Profile
+        </h1>
 
-        <div className="flex items-center justify-between">
 
-          <h1 className="font-heading text-2xl font-bold">
-            Profile
-          </h1>
+        <div
+          className="
+            relative
+            z-[70]
+            flex
+            items-center
+            justify-center
+            pointer-events-auto
+          "
+          style={{
+            isolation:
+              'isolate',
+          }}
+        >
 
           <AppSettingsModal />
 
         </div>
 
-        <Card className="p-5">
-
-          <div className="flex items-center gap-4">
-
-            <div className="w-16 h-16 rounded-2xl bg-muted animate-pulse" />
-
-            <div className="flex-1 space-y-2">
-
-              <div className="h-4 w-32 rounded bg-muted animate-pulse" />
-
-              <div className="h-3 w-48 rounded bg-muted animate-pulse" />
-
-            </div>
-
-          </div>
-
-        </Card>
-
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-5 safe-bottom space-y-4 pt-2">
-
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
-
-      <div className="flex items-center justify-between">
-
-        <h1 className="font-heading text-2xl font-bold">
-          Profile
-        </h1>
-
-        <AppSettingsModal />
-
       </div>
 
-      {/* =====================================================
+
+      {/* ====================================================
           USER CARD
-          ===================================================== */}
+          ==================================================== */}
 
-      <Card className="p-5">
+      <Card className="relative z-0 p-5">
 
         <div className="flex items-center gap-4">
 
-          <div className="w-16 h-16 rounded-2xl bg-primary/15 flex items-center justify-center">
+          <div className="
+            w-16
+            h-16
+            rounded-2xl
+            bg-primary/15
+            flex
+            items-center
+            justify-center
+            shrink-0
+          ">
 
-            <User className="w-8 h-8 text-primary" />
+            <User className="
+              w-8
+              h-8
+              text-primary
+            " />
 
           </div>
 
-          <div className="flex-1">
 
-            <h2 className="font-heading font-bold text-lg">
-              {user?.full_name ||
-                'Athlete'}
+          <div className="flex-1 min-w-0">
+
+            <h2 className="
+              font-heading
+              font-bold
+              text-lg
+              truncate
+            ">
+              {
+                user?.full_name ||
+                'Athlete'
+              }
             </h2>
 
-            <p className="text-sm text-muted-foreground">
-              {user?.email}
+
+            <p className="
+              text-sm
+              text-muted-foreground
+              truncate
+            ">
+              {
+                user?.email
+              }
             </p>
 
+
             <Badge
-              className={`mt-1 border-0 text-xs ${
-                planColors[
-                  plan
-                ] ||
-                planColors.free
-              }`}
+              className={
+                `
+                  mt-1
+                  border-0
+                  text-xs
+                  ${
+                    planColors[
+                      plan
+                    ]
+                  }
+                `
+              }
             >
-              {planLabels[
-                plan
-              ] ||
-                'Free'}{' '}
+              {
+                planLabels[
+                  plan
+                ]
+              }{' '}
               Plan
             </Badge>
 
@@ -434,14 +479,31 @@ export default function Profile() {
 
         </div>
 
+
         {/* Message usage */}
 
         {stats && (
-          <div className="mt-4 pt-4 border-t border-border">
+          <div className="
+            mt-4
+            pt-4
+            border-t
+            border-border
+          ">
 
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="
+              flex
+              items-center
+              justify-between
+              mb-1.5
+            ">
 
-              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <span className="
+                text-xs
+                text-muted-foreground
+                flex
+                items-center
+                gap-1.5
+              ">
 
                 <Zap className="w-3.5 h-3.5" />
 
@@ -449,45 +511,64 @@ export default function Profile() {
 
               </span>
 
-              <span className="text-xs font-semibold">
 
+              <span className="
+                text-xs
+                font-semibold
+              ">
                 {stats.used} / {stats.limit}
-
               </span>
 
             </div>
 
-            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+
+            <div className="
+              w-full
+              h-1.5
+              bg-muted
+              rounded-full
+              overflow-hidden
+            ">
 
               <div
-                className={`h-full rounded-full transition-all ${
-                  stats.remaining ===
-                  0
-                    ? 'bg-destructive'
-                    : 'bg-primary'
-                }`}
+                className={
+                  `
+                    h-full
+                    rounded-full
+                    transition-all
+                    ${
+                      stats.remaining === 0
+                        ? 'bg-destructive'
+                        : 'bg-primary'
+                    }
+                  `
+                }
+
                 style={{
-                  width: `${Math.min(
-                    (
-                      stats.used /
-                      Math.max(
-                        stats.limit,
-                        1
-                      )
-                    ) *
-                      100,
-                    100
-                  )}%`,
+                  width:
+                    `${Math.min(
+                      (
+                        stats.used /
+                        stats.limit
+                      ) *
+                        100,
+                      100
+                    )}%`,
                 }}
               />
 
             </div>
 
-            <p className="text-[10px] text-muted-foreground mt-1">
 
-              {stats.remaining}{' '}
+            <p className="
+              text-[10px]
+              text-muted-foreground
+              mt-1
+            ">
+              {
+                stats.remaining
+              }{' '}
               messages remaining · resets monthly
-
             </p>
 
           </div>
@@ -495,23 +576,45 @@ export default function Profile() {
 
       </Card>
 
-      {/* =====================================================
+
+      {/* ====================================================
           TRAINING PROFILE
-          ===================================================== */}
+          ==================================================== */}
 
-      <Card className="p-4">
+      <Card className="relative z-0 p-4">
 
-        <h3 className="font-heading font-bold text-sm mb-3 text-muted-foreground uppercase tracking-wider">
+        <h3 className="
+          font-heading
+          font-bold
+          text-sm
+          mb-3
+          text-muted-foreground
+          uppercase
+          tracking-wider
+        ">
           Training Profile
         </h3>
 
+
         <div className="space-y-3">
 
-          <div className="flex items-center justify-between">
+          <div className="
+            flex
+            items-center
+            justify-between
+          ">
 
-            <div className="flex items-center gap-2">
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
 
-              <Dumbbell className="w-4 h-4 text-muted-foreground" />
+              <Dumbbell className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
 
               <span className="text-sm">
                 Level
@@ -519,24 +622,45 @@ export default function Profile() {
 
             </div>
 
-            <span className="text-sm font-medium capitalize">
-              {user?.fitness_level ||
-                '—'}
+
+            <span className="
+              text-sm
+              font-medium
+              capitalize
+            ">
+              {
+                user?.fitness_level ||
+                '—'
+              }
             </span>
 
           </div>
 
-          <div className="flex flex-col gap-1">
 
-            <div className="flex items-center gap-2">
+          <div className="
+            flex
+            flex-col
+            gap-1
+          ">
 
-              <Target className="w-4 h-4 text-muted-foreground" />
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
+
+              <Target className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
 
               <span className="text-sm">
                 Primary Goal
               </span>
 
             </div>
+
 
             <div className="pl-6">
 
@@ -547,18 +671,35 @@ export default function Profile() {
                 limit={
                   80
                 }
-                className="text-sm font-medium text-foreground/80"
+                className="
+                  text-sm
+                  font-medium
+                  text-foreground/80
+                "
               />
 
             </div>
 
           </div>
 
-          <div className="flex items-center justify-between">
 
-            <div className="flex items-center gap-2">
+          <div className="
+            flex
+            items-center
+            justify-between
+          ">
 
-              <Zap className="w-4 h-4 text-muted-foreground" />
+            <div className="
+              flex
+              items-center
+              gap-2
+            ">
+
+              <Zap className="
+                w-4
+                h-4
+                text-muted-foreground
+              " />
 
               <span className="text-sm">
                 Total Workouts
@@ -566,8 +707,14 @@ export default function Profile() {
 
             </div>
 
-            <span className="text-sm font-medium">
-              {logs.length}
+
+            <span className="
+              text-sm
+              font-medium
+            ">
+              {
+                logs.length
+              }
             </span>
 
           </div>
@@ -576,49 +723,87 @@ export default function Profile() {
 
       </Card>
 
-      {/* =====================================================
+
+      {/* ====================================================
           ACTIVE PROGRAM
-          ===================================================== */}
+          ==================================================== */}
 
       {activeProgram && (
-        <Card className="p-4">
+        <Card className="
+          relative
+          z-0
+          p-4
+        ">
 
-          <h3 className="font-heading font-bold text-sm mb-3 text-muted-foreground uppercase tracking-wider">
+          <h3 className="
+            font-heading
+            font-bold
+            text-sm
+            mb-3
+            text-muted-foreground
+            uppercase
+            tracking-wider
+          ">
             Active Program
           </h3>
 
-          <p className="font-heading font-bold">
-            {activeProgram.program_name}
+
+          <p className="
+            font-heading
+            font-bold
+          ">
+            {
+              activeProgram.program_name
+            }
           </p>
 
-          <p className="text-sm text-muted-foreground mt-1">
+
+          <p className="
+            text-sm
+            text-muted-foreground
+            mt-1
+          ">
             Week{' '}
-            {activeProgram.current_week}{' '}
+            {
+              activeProgram.current_week
+            }{' '}
             of{' '}
             {
               activeProgram.duration_weeks
             }
           </p>
 
-          <div className="w-full h-2 bg-muted rounded-full mt-3 overflow-hidden">
+
+          <div className="
+            w-full
+            h-2
+            bg-muted
+            rounded-full
+            mt-3
+            overflow-hidden
+          ">
 
             <div
-              className="h-full bg-primary rounded-full"
+              className="
+                h-full
+                bg-primary
+                rounded-full
+              "
               style={{
-                width: `${Math.min(
-                  (
+                width:
+                  `${
                     (
-                      activeProgram.current_week ||
-                      1
-                    ) /
-                    (
-                      activeProgram.duration_weeks ||
-                      12
-                    )
-                  ) *
-                    100,
-                  100
-                )}%`,
+                      (
+                        activeProgram.current_week ||
+                        1
+                      ) /
+                      (
+                        activeProgram.duration_weeks ||
+                        12
+                      )
+                    ) *
+                    100
+                  }%`,
               }}
             />
 
@@ -627,21 +812,33 @@ export default function Profile() {
         </Card>
       )}
 
-      {/* =====================================================
+
+      {/* ====================================================
           QUICK ACCESS
-          ===================================================== */}
+          ==================================================== */}
 
-      <QuickAccess />
+      <div className="relative z-0">
+        <QuickAccess />
+      </div>
 
-      {/* =====================================================
+
+      {/* ====================================================
           ACTIONS
-          ===================================================== */}
+          ==================================================== */}
 
-      <div className="space-y-2">
+      <div className="
+        relative
+        z-0
+        space-y-2
+      ">
 
         <Button
           variant="outline"
-          className="w-full h-12 justify-start"
+          className="
+            w-full
+            h-12
+            justify-start
+          "
           onClick={
             handleRegenerate
           }
@@ -651,47 +848,80 @@ export default function Profile() {
         >
 
           <RefreshCw
-            className={`w-4 h-4 mr-3 ${
-              regenerating
-                ? 'animate-spin'
-                : ''
-            }`}
+            className={
+              `
+                w-4
+                h-4
+                mr-3
+                ${
+                  regenerating
+                    ? 'animate-spin'
+                    : ''
+                }
+              `
+            }
           />
 
           Generate New Program
 
         </Button>
 
+
         <Button
           variant="ghost"
-          className="w-full h-12 justify-start text-destructive hover:text-destructive"
+          className="
+            w-full
+            h-12
+            justify-start
+            text-destructive
+            hover:text-destructive
+          "
           onClick={
             handleLogout
           }
         >
 
-          <LogOut className="w-4 h-4 mr-3" />
+          <LogOut className="
+            w-4
+            h-4
+            mr-3
+          " />
 
           Log Out
 
         </Button>
 
+
         <AlertDialog>
 
-          <AlertDialogTrigger asChild>
+          <AlertDialogTrigger
+            asChild
+          >
 
             <Button
               variant="ghost"
-              className="w-full h-12 justify-start text-destructive/70 hover:text-destructive hover:bg-destructive/5"
+              className="
+                w-full
+                h-12
+                justify-start
+                text-destructive/70
+                hover:text-destructive
+                hover:bg-destructive/5
+              "
             >
 
-              <Trash2 className="w-4 h-4 mr-3" />
+              <Trash2 className="
+                w-4
+                h-4
+                mr-3
+              " />
 
               Delete Account
 
             </Button>
 
           </AlertDialogTrigger>
+
 
           <AlertDialogContent>
 
@@ -702,10 +932,14 @@ export default function Profile() {
               </AlertDialogTitle>
 
               <AlertDialogDescription>
-                This will permanently delete your account and all associated data including your workout programs, logs, nutrition entries, and progress photos. This action cannot be undone.
+                This will permanently delete your account
+                and all associated data including your workout
+                programs, logs, nutrition entries, and progress
+                photos. This action cannot be undone.
               </AlertDialogDescription>
 
             </AlertDialogHeader>
+
 
             <AlertDialogFooter>
 
@@ -713,8 +947,13 @@ export default function Profile() {
                 Cancel
               </AlertDialogCancel>
 
+
               <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="
+                  bg-destructive
+                  text-destructive-foreground
+                  hover:bg-destructive/90
+                "
                 onClick={
                   handleDeleteAccount
                 }
@@ -730,19 +969,17 @@ export default function Profile() {
 
       </div>
 
-      {/* =====================================================
+
+      {/* ====================================================
           PRICING
-          ===================================================== */}
+          ==================================================== */}
 
-      <div className="pt-2">
-
-        <PricingSection
-          user={user}
-          onSubscriptionChanged={
-            handleSubscriptionChanged
-          }
-        />
-
+      <div className="
+        relative
+        z-0
+        pt-2
+      ">
+        <PricingSection />
       </div>
 
     </div>
