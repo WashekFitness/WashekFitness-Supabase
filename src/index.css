@@ -1,221 +1,282 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================
-   BASE APP STYLES
-   ============================================================ */
+/* =========================================================
+   WASHEK FITNESS THEME
+   Explicit dark/light themes only.
+   No system color preference can override the app.
+   ========================================================= */
 
-html,
-body,
-#root {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-  padding: 0;
+@layer base {
+  :root {
+    --font-heading: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+
+    /* Dark default */
+    --background: 220 20% 4%;
+    --foreground: 210 20% 95%;
+    --card: 220 18% 7%;
+    --card-foreground: 210 20% 95%;
+    --popover: 220 18% 7%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 15% 13%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 220 15% 11%;
+    --muted-foreground: 220 10% 50%;
+
+    --accent: 160 84% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 15% 15%;
+    --input: 220 15% 15%;
+    --ring: 210 100% 56%;
+
+    --chart-1: 210 100% 56%;
+    --chart-2: 160 84% 45%;
+    --chart-3: 280 70% 60%;
+    --chart-4: 35 92% 60%;
+    --chart-5: 0 72% 55%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 220 18% 7%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 210 100% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 13%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 220 15% 15%;
+    --sidebar-ring: 210 100% 56%;
+  }
+
+  html.dark {
+    --background: 220 20% 4%;
+    --foreground: 210 20% 95%;
+    --card: 220 18% 7%;
+    --card-foreground: 210 20% 95%;
+    --popover: 220 18% 7%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 15% 13%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 220 15% 11%;
+    --muted-foreground: 220 10% 50%;
+
+    --accent: 160 84% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 15% 15%;
+    --input: 220 15% 15%;
+    --ring: 210 100% 56%;
+
+    --chart-1: 210 100% 56%;
+    --chart-2: 160 84% 45%;
+    --chart-3: 280 70% 60%;
+    --chart-4: 35 92% 60%;
+    --chart-5: 0 72% 55%;
+
+    --sidebar-background: 220 18% 7%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 210 100% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 13%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 220 15% 15%;
+    --sidebar-ring: 210 100% 56%;
+  }
+
+  html.light {
+    --background: 0 0% 97%;
+    --foreground: 220 20% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 8%;
+
+    --primary: 210 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 20% 20%;
+
+    --muted: 220 15% 93%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 160 84% 38%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 15% 86%;
+    --input: 220 15% 86%;
+    --ring: 210 100% 50%;
+
+    --chart-1: 210 100% 50%;
+    --chart-2: 160 84% 38%;
+    --chart-3: 280 70% 55%;
+    --chart-4: 35 92% 55%;
+    --chart-5: 0 72% 50%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 8%;
+    --sidebar-primary: 210 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 92%;
+    --sidebar-accent-foreground: 220 20% 20%;
+    --sidebar-border: 220 15% 86%;
+    --sidebar-ring: 210 100% 50%;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  html {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+
+    margin: 0;
+    min-width: 320px;
+    overscroll-behavior: none;
+    font-family: var(--font-body);
+  }
+
+  button,
+  a,
+  svg {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
-html {
-  overflow-x: hidden;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-body {
-  overflow-x: hidden;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family: Inter, system-ui, sans-serif;
-}
-
-/* Prevent accidental horizontal expansion on mobile. */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-img,
-video,
-canvas,
-svg {
-  max-width: 100%;
-}
-
-/* ============================================================
-   SAFE-AREA HELPERS
-   ============================================================ */
-
-/*
- * These are used throughout the app for phones with:
- * - iPhone home indicators
- * - display cutouts/notches
- * - edge-to-edge browser/app layouts
- */
+/* =========================================================
+   SAFE AREA
+   ========================================================= */
 
 .safe-top {
-  padding-top: env(safe-area-inset-top);
+  padding-top: max(
+    3.25rem,
+    calc(env(safe-area-inset-top) + 0.75rem)
+  );
 }
 
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(
+    6rem,
+    calc(env(safe-area-inset-bottom) + 5rem)
+  );
 }
 
-.safe-left {
-  padding-left: env(safe-area-inset-left);
+.pb-safe {
+  padding-bottom: max(
+    6rem,
+    calc(env(safe-area-inset-bottom) + 5rem)
+  );
 }
 
-.safe-right {
-  padding-right: env(safe-area-inset-right);
-}
+/* =========================================================
+   MOBILE
+   ========================================================= */
 
-/* Minimum spacing plus the device safe area. */
-.safe-top-spaced {
-  padding-top: max(1rem, env(safe-area-inset-top));
-}
+@media (max-width: 639px) {
+  html,
+  body {
+    width: 100%;
+    overflow-x: hidden;
+  }
 
-.safe-bottom-spaced {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
-}
+  #root {
+    min-height: 100dvh;
+  }
 
-.safe-left-spaced {
-  padding-left: max(1rem, env(safe-area-inset-left));
-}
+  /*
+   * Give top content a little more room on phones,
+   * especially around browser/mobile safe areas.
+   */
+  .safe-top {
+    padding-top: max(
+      3.5rem,
+      calc(env(safe-area-inset-top) + 1rem)
+    );
+  }
 
-.safe-right-spaced {
-  padding-right: max(1rem, env(safe-area-inset-right));
-}
-
-/* ============================================================
-   MOBILE FOOTER CLEARANCE
-   ============================================================ */
-
-/*
- * The application has a fixed mobile bottom navigation bar.
- *
- * Without this clearance, the lowest footer links can sit
- * underneath that navigation bar and become partially or
- * completely inaccessible.
- *
- * Keep this rule scoped to mobile so desktop is unaffected.
- */
-
-@media (max-width: 767px) {
-  footer {
-    padding-bottom:
-      calc(
-        7rem +
-        env(safe-area-inset-bottom)
-      ) !important;
+  /*
+   * Keep bottom navigation from covering page content.
+   */
+  .safe-bottom,
+  .pb-safe {
+    padding-bottom: max(
+      6.5rem,
+      calc(env(safe-area-inset-bottom) + 5.5rem)
+    );
   }
 }
 
-/* ============================================================
-   MOBILE CONTENT CLEARANCE
-   ============================================================ */
+/* Desktop/tablet */
+@media (min-width: 640px) {
+  .safe-bottom {
+    padding-bottom: 1.5rem;
+  }
 
-/*
- * Give ordinary page content enough room to scroll above
- * the fixed mobile navigation.
- *
- * This does not visually add a large blank area in the
- * middle of the page; the extra space exists at the bottom
- * where it is needed for scrolling.
- */
-
-@media (max-width: 767px) {
-  main {
-    padding-bottom:
-      calc(
-        5rem +
-        env(safe-area-inset-bottom)
-      );
+  .pb-safe {
+    padding-bottom: 1.5rem;
   }
 }
 
-/* ============================================================
-   BUTTON / LINK TOUCH BEHAVIOR
-   ============================================================ */
+/* =========================================================
+   MODAL / DRAWER HELPERS
+   ========================================================= */
 
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Avoid iOS Safari automatically zooming small form controls. */
-input,
-textarea,
-select,
-button {
-  font-size: 16px;
-}
-
-/*
- * Restore intentionally smaller text where Tailwind applies
- * explicit typography classes.
- */
-input,
-textarea,
-select {
-  font-size: inherit;
-}
-
-/* ============================================================
-   SCROLLING
-   ============================================================ */
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  overscroll-behavior-x: none;
-}
-
-/* ============================================================
-   MOBILE VIEWPORT HEIGHT
-   ============================================================ */
-
-/*
- * Modern mobile browsers change the visible viewport when
- * their browser bars appear/disappear. dvh tracks the actual
- * dynamic viewport better than vh.
- */
-
-.min-h-screen-mobile {
-  min-height: 100dvh;
-}
-
-.h-screen-mobile {
-  height: 100dvh;
-}
-
-/* Fallback for browsers without dvh support. */
-@supports not (height: 100dvh) {
-  .min-h-screen-mobile {
-    min-height: 100vh;
-  }
-
-  .h-screen-mobile {
-    height: 100vh;
-  }
-}
-
-/* ============================================================
-   ACCESSIBILITY / REDUCED MOTION
-   ============================================================ */
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+[data-radix-popper-content-wrapper] {
+  z-index: 300 !important;
 }
