@@ -1,985 +1,671 @@
-import {
-  useState,
-  useEffect,
-} from 'react';
-
-import {
-  useNavigate,
-} from 'react-router-dom';
-
-import {
-  useQuery,
-} from '@tanstack/react-query';
-
-import {
-  Card,
-} from '@/components/ui/card';
+import { useState } from 'react';
 
 import {
   Button,
 } from '@/components/ui/button';
 
 import {
-  Badge,
-} from '@/components/ui/badge';
+  Input,
+} from '@/components/ui/input';
 
 import {
-  User,
-  Dumbbell,
-  Target,
-  RefreshCw,
-  LogOut,
-  Zap,
+  Card,
+} from '@/components/ui/card';
+
+import {
+  Check,
+  X,
+  Plus,
   Trash2,
 } from 'lucide-react';
 
-import AppSettingsModal from '@/components/AppSettingsModal';
 
-import ExpandableText from '@/components/ExpandableText';
-
-import PricingSection from '@/components/profile/PricingSection';
-
-import QuickAccess from '@/components/layout/QuickAccess';
-
-import {
-  supabaseApi,
-} from '@/lib/supabaseApi';
-
-import {
-  computeStats,
-} from '@/lib/messageLimit';
-
-import {
-  toast,
-} from 'sonner';
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-
-
-export default function Profile() {
-  const navigate =
-    useNavigate();
-
-
+export default function FoodEditModal({
+  foods,
+  imageUrl,
+  onConfirm,
+  onCancel,
+}) {
   const [
-    user,
-    setUser,
-  ] = useState(null);
+    items,
+    setItems,
+  ] = useState(
+    (foods || []).map(
+      (food) => ({
+        ...food,
+        image_url:
+          imageUrl,
+      })
+    )
+  );
 
 
-  const [
-    regenerating,
-    setRegenerating,
-  ] = useState(false);
-
-
-  useEffect(() => {
-    let active = true;
-
-    supabaseApi.auth.me()
-      .then(
-        (currentUser) => {
-          if (active) {
-            setUser(
-              currentUser
-            );
-          }
-        }
-      )
-      .catch(
-        (error) => {
-          console.error(
-            '[PROFILE] Unable to load user:',
-            error
-          );
-
-          if (active) {
-            toast.error(
-              error?.message ||
-              'Unable to load your profile.'
-            );
-          }
-        }
-      );
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-
-  const {
-    data: programs = [],
-  } =
-    useQuery({
-      queryKey: [
-        'programs',
-        user?.email,
-      ],
-
-      queryFn: () =>
-        supabaseApi.entities.WorkoutProgram.filter(
-          {
-            status:
-              'active',
-
-            created_by:
-              user.email,
-          },
-
-          '-created_date',
-
-          1
-        ),
-
-      enabled:
-        !!user?.email,
-    });
-
-
-  const {
-    data: logs = [],
-  } =
-    useQuery({
-      queryKey: [
-        'logs',
-        user?.email,
-      ],
-
-      queryFn: () =>
-        supabaseApi.entities.WorkoutLog.filter(
-          {
-            created_by:
-              user.email,
-          },
-
-          '-date',
-
-          999
-        ),
-
-      enabled:
-        !!user?.email,
-    });
-
-
-  const activeProgram =
-    programs[0];
-
-
-  const plan =
-    user?.subscription_plan ||
-    'free';
-
-
-  const stats =
-    user
-      ? computeStats(
-          user,
-          plan
+  const update = (
+    index,
+    field,
+    value
+  ) => {
+    setItems(
+      (previous) =>
+        previous.map(
+          (
+            item,
+            itemIndex
+          ) =>
+            itemIndex ===
+            index
+              ? {
+                  ...item,
+                  [field]:
+                    field ===
+                      'food_name' ||
+                    field ===
+                      'serving_size'
+                      ? value
+                      : parseFloat(
+                          value
+                        ) || 0,
+                }
+              : item
         )
-      : null;
-
-
-  const planLabels = {
-    free:
-      'Free',
-
-    progress:
-      'Progress',
-
-    performance:
-      'Performance',
-
-    elite:
-      'Elite',
+    );
   };
 
 
-  const planColors = {
-    free:
-      'bg-muted text-muted-foreground',
+  const addItem = () => {
+    setItems(
+      (previous) => [
+        ...previous,
 
-    progress:
-      'bg-accent/15 text-accent',
+        {
+          food_name:
+            '',
 
-    performance:
-      'bg-primary/15 text-primary',
+          serving_size:
+            '1 serving',
 
-    elite:
-      'bg-chart-4/15 text-chart-4',
+          calories:
+            0,
+
+          protein_g:
+            0,
+
+          carbs_g:
+            0,
+
+          fat_g:
+            0,
+
+          image_url:
+            imageUrl,
+        },
+      ]
+    );
   };
 
 
-  const handleRegenerate =
-    async () => {
-
-      if (
-        !user?.fitness_level ||
-        !user?.primary_goal
-      ) {
-        navigate(
-          '/onboarding'
-        );
-
-        return;
-      }
-
-
-      setRegenerating(
-        true
-      );
+  const removeItem = (
+    index
+  ) => {
+    setItems(
+      (previous) =>
+        previous.filter(
+          (
+            _,
+            itemIndex
+          ) =>
+            itemIndex !==
+            index
+        )
+    );
+  };
 
 
-      try {
-
-        if (
-          activeProgram
-        ) {
-          await supabaseApi.entities.WorkoutProgram.update(
-            activeProgram.id,
-
-            {
-              status:
-                'completed',
-            }
-          );
-        }
-
-
-        navigate(
-          '/onboarding'
-        );
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          '[PROFILE] Regeneration failed:',
-          error
-        );
-
-        toast.error(
-          error?.message ||
-          'Unable to start a new program.'
-        );
-
-      } finally {
-
-        setRegenerating(
-          false
-        );
-      }
-    };
+  const totalCals =
+    items.reduce(
+      (
+        total,
+        item
+      ) =>
+        total +
+        (
+          Number(
+            item.calories
+          ) || 0
+        ),
+      0
+    );
 
 
-  const handleLogout =
-    async () => {
-      try {
-
-        await supabaseApi.auth.logout();
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          '[PROFILE] Logout failed:',
-          error
-        );
-
-        toast.error(
-          error?.message ||
-          'Unable to log out.'
-        );
-      }
-    };
-
-
-  const handleDeleteAccount =
-    async () => {
-
-      try {
-
-        await supabaseApi.auth.updateMe({
-          deleted:
-            true,
-        });
-
-
-        await supabaseApi.auth.logout();
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          '[PROFILE] Account deletion failed:',
-          error
-        );
-
-        toast.error(
-          'Failed to delete account. Please try again.'
-        );
-      }
-    };
+  const validItems =
+    items.filter(
+      (item) =>
+        item?.food_name
+          ?.trim()
+    );
 
 
   return (
     <div
       className="
-        relative
-        z-0
-        px-5
-        safe-bottom
-        space-y-4
-        pt-2
+        fixed
+        inset-0
+        z-[1000]
+        bg-background/95
+        backdrop-blur-sm
+        flex
+        flex-col
+        overflow-hidden
+        pointer-events-auto
       "
     >
 
-      {/* ====================================================
-          PROFILE HEADER
-          ==================================================== */}
+      {/* =====================================================
+          HEADER
+          ===================================================== */}
 
       <div
         className="
           relative
-          z-[60]
+          z-10
+          shrink-0
           flex
           items-center
           justify-between
-          min-h-12
-          pointer-events-auto
+          px-5
+          pt-[max(0.75rem,env(safe-area-inset-top))]
+          pb-4
+          border-b
+          border-border
+          bg-background
         "
       >
 
-        <h1
+        <div>
+
+          <h2 className="
+            font-heading
+            font-bold
+            text-lg
+          ">
+            Review Scan
+          </h2>
+
+          <p className="
+            text-xs
+            text-muted-foreground
+          ">
+            Edit anything the AI got wrong
+          </p>
+
+        </div>
+
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="
+            relative
+            z-20
+            pointer-events-auto
+            touch-manipulation
+          "
+          onClick={
+            onCancel
+          }
+          aria-label="Close food review"
+        >
+
+          <X className="w-5 h-5 pointer-events-none" />
+
+        </Button>
+
+      </div>
+
+
+      {/* =====================================================
+          SCROLLING CONTENT
+          ===================================================== */}
+
+      <div
+        className="
+          flex-1
+          min-h-0
+          overflow-y-auto
+          overscroll-contain
+          px-5
+          py-4
+          space-y-4
+        "
+      >
+
+        {items.map(
+          (
+            item,
+            index
+          ) => (
+
+            <Card
+              key={
+                index
+              }
+              className="
+                p-4
+                space-y-3
+              "
+            >
+
+              <div className="
+                flex
+                items-center
+                justify-between
+              ">
+
+                <p className="
+                  text-xs
+                  font-bold
+                  text-muted-foreground
+                  uppercase
+                  tracking-wider
+                ">
+                  Item {index + 1}
+                </p>
+
+
+                {items.length >
+                  1 && (
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      removeItem(
+                        index
+                      )
+                    }
+                    className="
+                      relative
+                      z-10
+                      p-2
+                      -m-2
+                      text-destructive
+                      hover:opacity-70
+                      pointer-events-auto
+                      touch-manipulation
+                    "
+                    aria-label={`Remove item ${
+                      index + 1
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4 pointer-events-none" />
+                  </button>
+
+                )}
+
+              </div>
+
+
+              {/* Food name */}
+
+              <div>
+
+                <p className="
+                  text-[11px]
+                  text-muted-foreground
+                  mb-1
+                ">
+                  Food Name
+                </p>
+
+
+                <Input
+                  value={
+                    item.food_name ||
+                    ''
+                  }
+                  onChange={
+                    (event) =>
+                      update(
+                        index,
+                        'food_name',
+                        event.target.value
+                      )
+                  }
+                  className="
+                    h-10
+                    text-sm
+                  "
+                  placeholder="e.g. Grilled Chicken Breast"
+                />
+
+              </div>
+
+
+              {/* Serving */}
+
+              <div>
+
+                <p className="
+                  text-[11px]
+                  text-muted-foreground
+                  mb-1
+                ">
+                  Serving Size
+                </p>
+
+
+                <Input
+                  value={
+                    item.serving_size ||
+                    ''
+                  }
+                  onChange={
+                    (event) =>
+                      update(
+                        index,
+                        'serving_size',
+                        event.target.value
+                      )
+                  }
+                  className="
+                    h-10
+                    text-sm
+                  "
+                  placeholder="e.g. 1 cup, 150g"
+                />
+
+              </div>
+
+
+              {/* Macros */}
+
+              <div className="
+                grid
+                grid-cols-2
+                gap-2
+              ">
+
+                <div>
+
+                  <p className="
+                    text-[11px]
+                    text-muted-foreground
+                    mb-1
+                  ">
+                    Calories
+                  </p>
+
+
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={
+                      item.calories ??
+                      ''
+                    }
+                    onChange={
+                      (event) =>
+                        update(
+                          index,
+                          'calories',
+                          event.target.value
+                        )
+                    }
+                    className="
+                      h-10
+                      text-sm
+                    "
+                  />
+
+                </div>
+
+
+                <div>
+
+                  <p className="
+                    text-[11px]
+                    text-muted-foreground
+                    mb-1
+                  ">
+                    Protein (g)
+                  </p>
+
+
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={
+                      item.protein_g ??
+                      ''
+                    }
+                    onChange={
+                      (event) =>
+                        update(
+                          index,
+                          'protein_g',
+                          event.target.value
+                        )
+                    }
+                    className="
+                      h-10
+                      text-sm
+                    "
+                  />
+
+                </div>
+
+
+                <div>
+
+                  <p className="
+                    text-[11px]
+                    text-muted-foreground
+                    mb-1
+                  ">
+                    Carbs (g)
+                  </p>
+
+
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={
+                      item.carbs_g ??
+                      ''
+                    }
+                    onChange={
+                      (event) =>
+                        update(
+                          index,
+                          'carbs_g',
+                          event.target.value
+                        )
+                    }
+                    className="
+                      h-10
+                      text-sm
+                    "
+                  />
+
+                </div>
+
+
+                <div>
+
+                  <p className="
+                    text-[11px]
+                    text-muted-foreground
+                    mb-1
+                  ">
+                    Fat (g)
+                  </p>
+
+
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={
+                      item.fat_g ??
+                      ''
+                    }
+                    onChange={
+                      (event) =>
+                        update(
+                          index,
+                          'fat_g',
+                          event.target.value
+                        )
+                    }
+                    className="
+                      h-10
+                      text-sm
+                    "
+                  />
+
+                </div>
+
+              </div>
+
+            </Card>
+
+          )
+        )}
+
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           className="
             relative
             z-10
-            font-heading
-            text-2xl
-            font-bold
+            w-full
+            h-10
+            gap-2
+            pointer-events-auto
+            touch-manipulation
           "
+          onClick={
+            addItem
+          }
         >
-          Profile
-        </h1>
+
+          <Plus className="w-4 h-4 pointer-events-none" />
+
+          Add Another Item
+
+        </Button>
 
 
-        <div
+        {/* Space above the footer */}
+
+        <div className="h-4" />
+
+      </div>
+
+
+      {/* =====================================================
+          CONFIRMATION FOOTER
+          ===================================================== */}
+
+      <div
+        className="
+          relative
+          z-20
+          shrink-0
+          px-5
+          pt-3
+          bg-card
+          border-t
+          border-border
+          shadow-[0_-8px_24px_rgba(0,0,0,0.30)]
+        "
+        style={{
+          paddingBottom:
+            'max(1rem, env(safe-area-inset-bottom))',
+        }}
+      >
+
+        <div className="
+          flex
+          items-center
+          justify-between
+          mb-3
+        ">
+
+          <p className="
+            text-sm
+            text-muted-foreground
+          ">
+            Total
+          </p>
+
+
+          <p className="
+            font-heading
+            font-bold
+            text-sm
+          ">
+            {Math.round(
+              totalCals
+            )}{' '}
+            kcal ·{' '}
+            {items.length}{' '}
+            item
+            {items.length !==
+            1
+              ? 's'
+              : ''}
+          </p>
+
+        </div>
+
+
+        <p className="
+          text-[10px]
+          text-muted-foreground
+          mb-3
+          leading-relaxed
+        ">
+          ⚠️ AI estimates are approximate and may not be 100% accurate.
+          Portion sizes, cooking methods, and brand differences can affect
+          values. Always verify with a nutrition label if precision matters.
+        </p>
+
+
+        <Button
+          type="button"
           className="
             relative
-            z-[70]
-            flex
-            items-center
-            justify-center
-            pointer-events-auto
-          "
-          style={{
-            isolation:
-              'isolate',
-          }}
-        >
-
-          <AppSettingsModal />
-
-        </div>
-
-      </div>
-
-
-      {/* ====================================================
-          USER CARD
-          ==================================================== */}
-
-      <Card className="relative z-0 p-5">
-
-        <div className="flex items-center gap-4">
-
-          <div className="
-            w-16
-            h-16
-            rounded-2xl
-            bg-primary/15
-            flex
-            items-center
-            justify-center
-            shrink-0
-          ">
-
-            <User className="
-              w-8
-              h-8
-              text-primary
-            " />
-
-          </div>
-
-
-          <div className="flex-1 min-w-0">
-
-            <h2 className="
-              font-heading
-              font-bold
-              text-lg
-              truncate
-            ">
-              {
-                user?.full_name ||
-                'Athlete'
-              }
-            </h2>
-
-
-            <p className="
-              text-sm
-              text-muted-foreground
-              truncate
-            ">
-              {
-                user?.email
-              }
-            </p>
-
-
-            <Badge
-              className={
-                `
-                  mt-1
-                  border-0
-                  text-xs
-                  ${
-                    planColors[
-                      plan
-                    ]
-                  }
-                `
-              }
-            >
-              {
-                planLabels[
-                  plan
-                ]
-              }{' '}
-              Plan
-            </Badge>
-
-          </div>
-
-        </div>
-
-
-        {/* Message usage */}
-
-        {stats && (
-          <div className="
-            mt-4
-            pt-4
-            border-t
-            border-border
-          ">
-
-            <div className="
-              flex
-              items-center
-              justify-between
-              mb-1.5
-            ">
-
-              <span className="
-                text-xs
-                text-muted-foreground
-                flex
-                items-center
-                gap-1.5
-              ">
-
-                <Zap className="w-3.5 h-3.5" />
-
-                Kael Messages
-
-              </span>
-
-
-              <span className="
-                text-xs
-                font-semibold
-              ">
-                {stats.used} / {stats.limit}
-              </span>
-
-            </div>
-
-
-            <div className="
-              w-full
-              h-1.5
-              bg-muted
-              rounded-full
-              overflow-hidden
-            ">
-
-              <div
-                className={
-                  `
-                    h-full
-                    rounded-full
-                    transition-all
-                    ${
-                      stats.remaining === 0
-                        ? 'bg-destructive'
-                        : 'bg-primary'
-                    }
-                  `
-                }
-
-                style={{
-                  width:
-                    `${Math.min(
-                      (
-                        stats.used /
-                        stats.limit
-                      ) *
-                        100,
-                      100
-                    )}%`,
-                }}
-              />
-
-            </div>
-
-
-            <p className="
-              text-[10px]
-              text-muted-foreground
-              mt-1
-            ">
-              {
-                stats.remaining
-              }{' '}
-              messages remaining · resets monthly
-            </p>
-
-          </div>
-        )}
-
-      </Card>
-
-
-      {/* ====================================================
-          TRAINING PROFILE
-          ==================================================== */}
-
-      <Card className="relative z-0 p-4">
-
-        <h3 className="
-          font-heading
-          font-bold
-          text-sm
-          mb-3
-          text-muted-foreground
-          uppercase
-          tracking-wider
-        ">
-          Training Profile
-        </h3>
-
-
-        <div className="space-y-3">
-
-          <div className="
-            flex
-            items-center
-            justify-between
-          ">
-
-            <div className="
-              flex
-              items-center
-              gap-2
-            ">
-
-              <Dumbbell className="
-                w-4
-                h-4
-                text-muted-foreground
-              " />
-
-              <span className="text-sm">
-                Level
-              </span>
-
-            </div>
-
-
-            <span className="
-              text-sm
-              font-medium
-              capitalize
-            ">
-              {
-                user?.fitness_level ||
-                '—'
-              }
-            </span>
-
-          </div>
-
-
-          <div className="
-            flex
-            flex-col
-            gap-1
-          ">
-
-            <div className="
-              flex
-              items-center
-              gap-2
-            ">
-
-              <Target className="
-                w-4
-                h-4
-                text-muted-foreground
-              " />
-
-              <span className="text-sm">
-                Primary Goal
-              </span>
-
-            </div>
-
-
-            <div className="pl-6">
-
-              <ExpandableText
-                text={
-                  user?.primary_goal
-                }
-                limit={
-                  80
-                }
-                className="
-                  text-sm
-                  font-medium
-                  text-foreground/80
-                "
-              />
-
-            </div>
-
-          </div>
-
-
-          <div className="
-            flex
-            items-center
-            justify-between
-          ">
-
-            <div className="
-              flex
-              items-center
-              gap-2
-            ">
-
-              <Zap className="
-                w-4
-                h-4
-                text-muted-foreground
-              " />
-
-              <span className="text-sm">
-                Total Workouts
-              </span>
-
-            </div>
-
-
-            <span className="
-              text-sm
-              font-medium
-            ">
-              {
-                logs.length
-              }
-            </span>
-
-          </div>
-
-        </div>
-
-      </Card>
-
-
-      {/* ====================================================
-          ACTIVE PROGRAM
-          ==================================================== */}
-
-      {activeProgram && (
-        <Card className="
-          relative
-          z-0
-          p-4
-        ">
-
-          <h3 className="
-            font-heading
-            font-bold
-            text-sm
-            mb-3
-            text-muted-foreground
-            uppercase
-            tracking-wider
-          ">
-            Active Program
-          </h3>
-
-
-          <p className="
-            font-heading
-            font-bold
-          ">
-            {
-              activeProgram.program_name
-            }
-          </p>
-
-
-          <p className="
-            text-sm
-            text-muted-foreground
-            mt-1
-          ">
-            Week{' '}
-            {
-              activeProgram.current_week
-            }{' '}
-            of{' '}
-            {
-              activeProgram.duration_weeks
-            }
-          </p>
-
-
-          <div className="
-            w-full
-            h-2
-            bg-muted
-            rounded-full
-            mt-3
-            overflow-hidden
-          ">
-
-            <div
-              className="
-                h-full
-                bg-primary
-                rounded-full
-              "
-              style={{
-                width:
-                  `${
-                    (
-                      (
-                        activeProgram.current_week ||
-                        1
-                      ) /
-                      (
-                        activeProgram.duration_weeks ||
-                        12
-                      )
-                    ) *
-                    100
-                  }%`,
-              }}
-            />
-
-          </div>
-
-        </Card>
-      )}
-
-
-      {/* ====================================================
-          QUICK ACCESS
-          ==================================================== */}
-
-      <div className="relative z-0">
-        <QuickAccess />
-      </div>
-
-
-      {/* ====================================================
-          ACTIONS
-          ==================================================== */}
-
-      <div className="
-        relative
-        z-0
-        space-y-2
-      ">
-
-        <Button
-          variant="outline"
-          className="
+            z-[30]
             w-full
             h-12
-            justify-start
+            min-h-12
+            font-heading
+            font-semibold
+            gap-2
+            pointer-events-auto
+            touch-manipulation
           "
-          onClick={
-            handleRegenerate
+          onClick={() =>
+            onConfirm(
+              validItems
+            )
           }
           disabled={
-            regenerating
+            validItems.length ===
+            0
           }
         >
 
-          <RefreshCw
-            className={
-              `
-                w-4
-                h-4
-                mr-3
-                ${
-                  regenerating
-                    ? 'animate-spin'
-                    : ''
-                }
-              `
-            }
-          />
+          <Check className="w-4 h-4 pointer-events-none" />
 
-          Generate New Program
+          Save to Log
 
         </Button>
 
+        <div className="h-1" />
 
-        <Button
-          variant="ghost"
-          className="
-            w-full
-            h-12
-            justify-start
-            text-destructive
-            hover:text-destructive
-          "
-          onClick={
-            handleLogout
-          }
-        >
-
-          <LogOut className="
-            w-4
-            h-4
-            mr-3
-          " />
-
-          Log Out
-
-        </Button>
-
-
-        <AlertDialog>
-
-          <AlertDialogTrigger
-            asChild
-          >
-
-            <Button
-              variant="ghost"
-              className="
-                w-full
-                h-12
-                justify-start
-                text-destructive/70
-                hover:text-destructive
-                hover:bg-destructive/5
-              "
-            >
-
-              <Trash2 className="
-                w-4
-                h-4
-                mr-3
-              " />
-
-              Delete Account
-
-            </Button>
-
-          </AlertDialogTrigger>
-
-
-          <AlertDialogContent>
-
-            <AlertDialogHeader>
-
-              <AlertDialogTitle>
-                Delete Account
-              </AlertDialogTitle>
-
-              <AlertDialogDescription>
-                This will permanently delete your account
-                and all associated data including your workout
-                programs, logs, nutrition entries, and progress
-                photos. This action cannot be undone.
-              </AlertDialogDescription>
-
-            </AlertDialogHeader>
-
-
-            <AlertDialogFooter>
-
-              <AlertDialogCancel>
-                Cancel
-              </AlertDialogCancel>
-
-
-              <AlertDialogAction
-                className="
-                  bg-destructive
-                  text-destructive-foreground
-                  hover:bg-destructive/90
-                "
-                onClick={
-                  handleDeleteAccount
-                }
-              >
-                Delete My Account
-              </AlertDialogAction>
-
-            </AlertDialogFooter>
-
-          </AlertDialogContent>
-
-        </AlertDialog>
-
-      </div>
-
-
-      {/* ====================================================
-          PRICING
-          ==================================================== */}
-
-      <div className="
-        relative
-        z-0
-        pt-2
-      ">
-        <PricingSection />
       </div>
 
     </div>
