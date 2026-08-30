@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   Settings,
@@ -532,12 +533,13 @@ export default function AppSettingsModal() {
           MODAL
           ===================================================== */}
 
-      {open && (
-        <div
-          className="
-            fixed
-            inset-0
-            z-[10000]
+      {open &&
+        createPortal(
+          <div
+            className="
+              fixed
+              inset-0
+              z-[10000]
             pointer-events-auto
             flex
             items-end
@@ -593,11 +595,14 @@ export default function AppSettingsModal() {
                 env(safe-area-inset-bottom)
               )]
 
+              flex
+              flex-col
+
               max-h-[calc(100dvh-0.5rem)]
 
               sm:max-h-[90vh]
 
-              overflow-y-auto
+              overflow-hidden
               overscroll-contain
               pointer-events-auto
             "
@@ -655,6 +660,10 @@ export default function AppSettingsModal() {
             {/* Settings body */}
 
             <div className="
+              flex-1
+              min-h-0
+              overflow-y-auto
+              overscroll-contain
               space-y-5
               pb-1
             ">
@@ -988,7 +997,9 @@ export default function AppSettingsModal() {
 
           </div>
 
-        </div>
+          </div>,
+          document.body
+        )
       )}
 
     </>
