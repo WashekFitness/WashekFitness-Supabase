@@ -1,4 +1,5 @@
 import { useState } from 'react';
+
 import {
   Settings,
   X,
@@ -9,7 +10,9 @@ import {
   Ruler,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import {
+  Button,
+} from '@/components/ui/button';
 
 import {
   useAppSettings,
@@ -21,7 +24,9 @@ import {
   getCountryDefaults,
 } from '@/lib/countries';
 
-import { cn } from '@/lib/utils';
+import {
+  cn,
+} from '@/lib/utils';
 
 
 function SearchableDropdown({
@@ -40,22 +45,28 @@ function SearchableDropdown({
     setSearch,
   ] = useState('');
 
+
   const filtered =
     options
-      .filter((option) =>
-        option
-          .toLowerCase()
-          .includes(
-            search.toLowerCase()
-          )
+      .filter(
+        (option) =>
+          option
+            .toLowerCase()
+            .includes(
+              search.toLowerCase()
+            )
       )
       .slice(
         0,
         200
       );
 
+
   return (
-    <div className="relative">
+    <div className="
+      relative
+      z-10
+    ">
 
       <button
         type="button"
@@ -65,9 +76,13 @@ function SearchableDropdown({
               !current
           );
 
-          setSearch('');
+          setSearch(
+            ''
+          );
         }}
         className="
+          relative
+          z-10
           w-full
           h-11
           px-3
@@ -82,8 +97,11 @@ function SearchableDropdown({
           justify-between
           hover:border-primary/40
           transition-all
+          pointer-events-auto
+          touch-manipulation
         "
       >
+
         <span
           className={
             value
@@ -91,42 +109,53 @@ function SearchableDropdown({
               : 'text-muted-foreground'
           }
         >
-          {value ||
-            placeholder}
+          {
+            value ||
+            placeholder
+          }
         </span>
 
-        <span className="text-muted-foreground text-xs">
+        <span className="
+          text-muted-foreground
+          text-xs
+        ">
           ▾
         </span>
+
       </button>
 
 
       {open && (
-        <div
-          className="
-            absolute
-            z-[120]
-            top-full
-            mt-1
-            w-full
-            bg-card
-            border
-            border-border
-            rounded-xl
-            shadow-xl
-            overflow-hidden
-          "
-        >
+        <div className="
+          absolute
+          z-[1050]
+          top-full
+          mt-1
+          w-full
+          bg-card
+          border
+          border-border
+          rounded-xl
+          shadow-xl
+          overflow-hidden
+        ">
 
-          <div className="p-2 border-b border-border">
+          <div className="
+            p-2
+            border-b
+            border-border
+          ">
 
             <input
               autoFocus
-              value={search}
-              onChange={(e) =>
-                setSearch(
-                  e.target.value
-                )
+              value={
+                search
+              }
+              onChange={
+                (event) =>
+                  setSearch(
+                    event.target.value
+                  )
               }
               placeholder="Search..."
               className="
@@ -137,17 +166,20 @@ function SearchableDropdown({
                 bg-muted
                 rounded-lg
                 outline-none
-                placeholder:text-muted-foreground
               "
             />
 
           </div>
 
 
-          <div className="max-h-52 overflow-y-auto">
+          <div className="
+            max-h-52
+            overflow-y-auto
+          ">
 
             {filtered.map(
               (option) => (
+
                 <button
                   type="button"
                   key={
@@ -175,7 +207,9 @@ function SearchableDropdown({
                       text-left
                       hover:bg-muted/80
                       transition-all
+                      pointer-events-auto
                     `,
+
                     option ===
                       value &&
                       `
@@ -189,13 +223,19 @@ function SearchableDropdown({
                     option
                   }
                 </button>
+
               )
             )}
 
 
             {filtered.length ===
               0 && (
-              <p className="px-3 py-3 text-xs text-muted-foreground">
+              <p className="
+                px-3
+                py-3
+                text-xs
+                text-muted-foreground
+              ">
                 No results
               </p>
             )}
@@ -224,12 +264,14 @@ function CountryDropdown({
     setSearch,
   ] = useState('');
 
+
   const selected =
     COUNTRIES.find(
       (country) =>
         country.code ===
         value
     );
+
 
   const filtered =
     COUNTRIES.filter(
@@ -241,8 +283,12 @@ function CountryDropdown({
           )
     );
 
+
   return (
-    <div className="relative">
+    <div className="
+      relative
+      z-10
+    ">
 
       <button
         type="button"
@@ -252,9 +298,13 @@ function CountryDropdown({
               !current
           );
 
-          setSearch('');
+          setSearch(
+            ''
+          );
         }}
         className="
+          relative
+          z-10
           w-full
           h-11
           px-3
@@ -269,6 +319,8 @@ function CountryDropdown({
           justify-between
           hover:border-primary/40
           transition-all
+          pointer-events-auto
+          touch-manipulation
         "
       >
 
@@ -279,11 +331,16 @@ function CountryDropdown({
               : 'text-muted-foreground'
           }
         >
-          {selected?.name ||
-            'Select country…'}
+          {
+            selected?.name ||
+            'Select country…'
+          }
         </span>
 
-        <span className="text-muted-foreground text-xs">
+        <span className="
+          text-muted-foreground
+          text-xs
+        ">
           ▾
         </span>
 
@@ -291,31 +348,36 @@ function CountryDropdown({
 
 
       {open && (
-        <div
-          className="
-            absolute
-            z-[120]
-            top-full
-            mt-1
-            w-full
-            bg-card
-            border
-            border-border
-            rounded-xl
-            shadow-xl
-            overflow-hidden
-          "
-        >
+        <div className="
+          absolute
+          z-[1050]
+          top-full
+          mt-1
+          w-full
+          bg-card
+          border
+          border-border
+          rounded-xl
+          shadow-xl
+          overflow-hidden
+        ">
 
-          <div className="p-2 border-b border-border">
+          <div className="
+            p-2
+            border-b
+            border-border
+          ">
 
             <input
               autoFocus
-              value={search}
-              onChange={(e) =>
-                setSearch(
-                  e.target.value
-                )
+              value={
+                search
+              }
+              onChange={
+                (event) =>
+                  setSearch(
+                    event.target.value
+                  )
               }
               placeholder="Search country..."
               className="
@@ -326,17 +388,20 @@ function CountryDropdown({
                 bg-muted
                 rounded-lg
                 outline-none
-                placeholder:text-muted-foreground
               "
             />
 
           </div>
 
 
-          <div className="max-h-52 overflow-y-auto">
+          <div className="
+            max-h-52
+            overflow-y-auto
+          ">
 
             {filtered.map(
               (country) => (
+
                 <button
                   type="button"
                   key={
@@ -364,7 +429,9 @@ function CountryDropdown({
                       text-left
                       hover:bg-muted/80
                       transition-all
+                      pointer-events-auto
                     `,
+
                     country.code ===
                       value &&
                       `
@@ -378,13 +445,19 @@ function CountryDropdown({
                     country.name
                   }
                 </button>
+
               )
             )}
 
 
             {filtered.length ===
               0 && (
-              <p className="px-3 py-3 text-xs text-muted-foreground">
+              <p className="
+                px-3
+                py-3
+                text-xs
+                text-muted-foreground
+              ">
                 No results
               </p>
             )}
@@ -406,10 +479,12 @@ export default function AppSettingsModal() {
   } =
     useAppSettings();
 
+
   const [
     open,
     setOpen,
   ] = useState(false);
+
 
   const [
     local,
@@ -469,38 +544,11 @@ export default function AppSettingsModal() {
     };
 
 
-  const handleThemeChange =
-    (
-      theme
-    ) => {
-      setLocal(
-        (previous) => ({
-          ...previous,
-          theme,
-        })
-      );
-
-      /*
-       * Apply immediately so the user can see
-       * the change before pressing Save.
-       */
-      updateSettings({
-        theme,
-      });
-    };
-
-
   const save =
     () => {
-      updateSettings({
-        ...local,
-
-        theme:
-          local.theme ===
-          'light'
-            ? 'light'
-            : 'dark',
-      });
+      updateSettings(
+        local
+      );
 
       setOpen(
         false
@@ -511,35 +559,46 @@ export default function AppSettingsModal() {
   return (
     <>
 
-      {/* SETTINGS BUTTON */}
+      {/* ===================================================
+          SETTINGS BUTTON
+          =================================================== */}
 
       <button
         type="button"
         onClick={
           openModal
         }
+        aria-label="App Settings"
         className="
-          w-10
-          h-10
-          rounded-xl
+          relative
+          z-[110]
           flex
           items-center
           justify-center
+          w-11
+          h-11
+          min-w-11
+          min-h-11
+          rounded-xl
           bg-muted/60
-          hover:bg-muted
-          transition-all
           border
           border-border
+          hover:bg-muted
+          active:bg-muted
+          transition-all
+          pointer-events-auto
+          touch-manipulation
+          shrink-0
         "
-        aria-label="App Settings"
       >
-        <Settings
-          className="
-            w-[18px]
-            h-[18px]
-            text-muted-foreground
-          "
-        />
+
+        <Settings className="
+          w-5
+          h-5
+          text-muted-foreground
+          pointer-events-none
+        " />
+
       </button>
 
 
@@ -548,15 +607,18 @@ export default function AppSettingsModal() {
           className="
             fixed
             inset-0
-            z-[100]
+            z-[1000]
+            pointer-events-auto
             flex
             items-end
             sm:items-center
             justify-center
           "
+          role="dialog"
+          aria-modal="true"
         >
 
-          {/* BACKDROP */}
+          {/* Backdrop */}
 
           <button
             type="button"
@@ -564,9 +626,10 @@ export default function AppSettingsModal() {
             className="
               absolute
               inset-0
+              z-0
               bg-black/60
               backdrop-blur-sm
-              cursor-default
+              pointer-events-auto
             "
             onClick={
               closeModal
@@ -574,12 +637,12 @@ export default function AppSettingsModal() {
           />
 
 
-          {/* SETTINGS PANEL */}
+          {/* Panel */}
 
           <div
             className="
               relative
-              z-[101]
+              z-10
               w-full
               max-w-sm
               bg-card
@@ -588,27 +651,31 @@ export default function AppSettingsModal() {
               rounded-t-3xl
               sm:rounded-2xl
               shadow-2xl
-              p-6
+              px-6
+              pt-5
+              pb-[calc(1rem+env(safe-area-inset-bottom))]
               max-h-[calc(100dvh-1rem)]
               sm:max-h-[90vh]
               overflow-y-auto
               overscroll-contain
-              pb-[calc(1.5rem+env(safe-area-inset-bottom))]
+              pointer-events-auto
             "
           >
 
-            {/* HEADER */}
+            {/* Header */}
 
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-                mb-5
-              "
-            >
+            <div className="
+              flex
+              items-center
+              justify-between
+              mb-5
+            ">
 
-              <h2 className="font-heading font-bold text-lg">
+              <h2 className="
+                font-heading
+                font-bold
+                text-lg
+              ">
                 App Settings
               </h2>
 
@@ -618,19 +685,29 @@ export default function AppSettingsModal() {
                 onClick={
                   closeModal
                 }
+                aria-label="Close settings"
                 className="
-                  w-8
-                  h-8
-                  rounded-xl
-                  bg-muted
+                  relative
+                  z-20
                   flex
                   items-center
                   justify-center
+                  w-9
+                  h-9
+                  rounded-xl
+                  bg-muted
                   hover:bg-muted/80
+                  pointer-events-auto
+                  touch-manipulation
                 "
-                aria-label="Close settings"
               >
-                <X className="w-4 h-4" />
+
+                <X className="
+                  w-4
+                  h-4
+                  pointer-events-none
+                " />
+
               </button>
 
             </div>
@@ -638,7 +715,7 @@ export default function AppSettingsModal() {
 
             <div className="space-y-5">
 
-              {/* APPEARANCE */}
+              {/* Appearance */}
 
               <div>
 
@@ -654,7 +731,11 @@ export default function AppSettingsModal() {
                 </p>
 
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="
+                  grid
+                  grid-cols-2
+                  gap-2
+                ">
 
                   {[
                     {
@@ -665,6 +746,7 @@ export default function AppSettingsModal() {
                       icon:
                         Moon,
                     },
+
                     {
                       value:
                         'light',
@@ -687,8 +769,14 @@ export default function AppSettingsModal() {
                           value
                         }
                         onClick={() =>
-                          handleThemeChange(
-                            value
+                          setLocal(
+                            (
+                              previous
+                            ) => ({
+                              ...previous,
+                              theme:
+                                value,
+                            })
                           )
                         }
                         className={cn(
@@ -703,7 +791,10 @@ export default function AppSettingsModal() {
                             text-sm
                             font-semibold
                             transition-all
+                            pointer-events-auto
+                            touch-manipulation
                           `,
+
                           local.theme ===
                             value
                             ? `
@@ -719,7 +810,7 @@ export default function AppSettingsModal() {
                         )}
                       >
 
-                        <Icon className="w-4 h-4" />
+                        <Icon className="w-4 h-4 pointer-events-none" />
 
                         {
                           label
@@ -732,18 +823,10 @@ export default function AppSettingsModal() {
 
                 </div>
 
-                <p className="
-                  text-[10px]
-                  text-muted-foreground
-                  mt-1.5
-                ">
-                  Theme changes immediately.
-                </p>
-
               </div>
 
 
-              {/* COUNTRY */}
+              {/* Country */}
 
               <div>
 
@@ -758,8 +841,11 @@ export default function AppSettingsModal() {
                   items-center
                   gap-1.5
                 ">
+
                   <Globe className="w-3 h-3" />
+
                   Country
+
                 </p>
 
 
@@ -772,19 +858,10 @@ export default function AppSettingsModal() {
                   }
                 />
 
-
-                <p className="
-                  text-[10px]
-                  text-muted-foreground
-                  mt-1
-                ">
-                  Changing country auto-sets language & units.
-                </p>
-
               </div>
 
 
-              {/* LANGUAGE */}
+              {/* Language */}
 
               <div>
 
@@ -799,8 +876,11 @@ export default function AppSettingsModal() {
                   items-center
                   gap-1.5
                 ">
+
                   <Languages className="w-3 h-3" />
+
                   Language
+
                 </p>
 
 
@@ -808,14 +888,17 @@ export default function AppSettingsModal() {
                   value={
                     local.language
                   }
-                  onChange={(value) =>
-                    setLocal(
-                      (previous) => ({
-                        ...previous,
-                        language:
-                          value,
-                      })
-                    )
+                  onChange={
+                    (value) =>
+                      setLocal(
+                        (
+                          previous
+                        ) => ({
+                          ...previous,
+                          language:
+                            value,
+                        })
+                      )
                   }
                   options={
                     LANGUAGES
@@ -826,7 +909,7 @@ export default function AppSettingsModal() {
               </div>
 
 
-              {/* UNITS */}
+              {/* Units */}
 
               <div>
 
@@ -841,12 +924,19 @@ export default function AppSettingsModal() {
                   items-center
                   gap-1.5
                 ">
+
                   <Ruler className="w-3 h-3" />
+
                   Measurement System
+
                 </p>
 
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="
+                  grid
+                  grid-cols-2
+                  gap-2
+                ">
 
                   {[
                     {
@@ -855,6 +945,7 @@ export default function AppSettingsModal() {
                       label:
                         'Metric (kg, cm)',
                     },
+
                     {
                       value:
                         'imperial',
@@ -887,12 +978,15 @@ export default function AppSettingsModal() {
                           `
                             h-12
                             rounded-xl
-                            border-2
                             px-2
                             text-xs
                             font-semibold
+                            border-2
                             transition-all
+                            pointer-events-auto
+                            touch-manipulation
                           `,
+
                           local.unit ===
                             value
                             ? `
@@ -922,29 +1016,37 @@ export default function AppSettingsModal() {
             </div>
 
 
-            {/* SAVE BUTTON */}
+            {/* =================================================
+                SAVE FOOTER
+                ================================================= */}
 
             <div
               className="
                 sticky
                 bottom-0
-                pt-4
-                mt-2
+                z-20
+                mt-5
+                pt-3
                 bg-card
               "
             >
 
               <Button
                 type="button"
-                className="
-                  w-full
-                  h-12
-                  font-heading
-                  font-semibold
-                "
                 onClick={
                   save
                 }
+                className="
+                  relative
+                  z-30
+                  w-full
+                  h-12
+                  min-h-12
+                  font-heading
+                  font-semibold
+                  pointer-events-auto
+                  touch-manipulation
+                "
               >
                 Save Settings
               </Button>
