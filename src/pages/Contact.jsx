@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import {
+  useState,
+} from 'react';
 
 import {
   Link,
@@ -30,32 +32,29 @@ import {
   supabaseApi,
 } from '@/lib/supabaseApi';
 
+
 export default function Contact() {
   const {
     toast,
   } =
     useToast();
 
+
   const [
     form,
     setForm,
-  ] =
-    useState({
-      name:
-        '',
+  ] = useState({
+    name: '',
+    email: '',
+    message: '',
+  });
 
-      email:
-        '',
-
-      message:
-        '',
-    });
 
   const [
     submitting,
     setSubmitting,
-  ] =
-    useState(false);
+  ] = useState(false);
+
 
   const handleSubmit =
     async (
@@ -63,29 +62,26 @@ export default function Contact() {
     ) => {
       e.preventDefault();
 
-      if (
-        submitting
-      ) {
-        return;
-      }
-
       setSubmitting(
         true
       );
 
+
       try {
+
         await supabaseApi.email.send(
           {
-            to:
-              'washekfitness@gmail.com',
+            name:
+              form.name,
 
-            subject:
-              `New message from ${form.name}`,
+            email:
+              form.email,
 
-            body:
-              `Name: ${form.name}\nEmail: ${form.email}\n\nMessage:\n${form.message}`,
+            message:
+              form.message,
           }
         );
+
 
         setForm({
           name:
@@ -98,20 +94,24 @@ export default function Contact() {
             '',
         });
 
+
         toast({
           title:
             'Message sent',
 
           description:
-            "Thanks for reaching out — We'll try to get back to you as soon as possible!",
+            'Thanks for reaching out — Adrian will get back to you soon.',
         });
+
       } catch (
         err
       ) {
+
         console.error(
           '[Contact] Email failed:',
           err
         );
+
 
         toast({
           title:
@@ -123,71 +123,191 @@ export default function Contact() {
           variant:
             'destructive',
         });
+
       } finally {
+
         setSubmitting(
           false
         );
       }
     };
 
-  return (
-    <div className="px-5 pb-4 max-w-2xl mx-auto">
 
-      <div className="flex items-center gap-3 mb-6 pt-2">
+  return (
+    <div
+      className="
+        relative
+        z-0
+        px-5
+        pb-4
+        max-w-2xl
+        mx-auto
+      "
+    >
+
+      {/* Header */}
+
+      <div
+        className="
+          relative
+          z-30
+          flex
+          items-center
+          gap-3
+          mb-6
+          pt-2
+          pointer-events-auto
+        "
+      >
 
         <Link
           to="/"
-          className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Back to home"
+          className="
+            relative
+            z-40
+            flex
+            items-center
+            justify-center
+            w-10
+            h-10
+            -ml-2
+            rounded-xl
+            text-muted-foreground
+            hover:text-foreground
+            hover:bg-muted/60
+            active:bg-muted
+            transition-colors
+            pointer-events-auto
+            touch-manipulation
+          "
         >
 
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft
+            className="
+              w-5
+              h-5
+              pointer-events-none
+            "
+          />
 
         </Link>
 
-        <div className="flex items-center gap-2">
+
+        <Link
+          to="/"
+          className="
+            relative
+            z-30
+            flex
+            items-center
+            gap-2
+            pointer-events-auto
+          "
+        >
 
           <img
             src="/washek-fitness-logo.jpg"
             alt="Washek Fitness"
-            className="w-8 h-8 rounded-xl object-contain"
+            className="
+              w-8
+              h-8
+              rounded-xl
+              object-contain
+              pointer-events-none
+            "
           />
 
-          <span className="font-heading font-bold text-sm">
+          <span className="
+            font-heading
+            font-bold
+            text-sm
+          ">
             Washek Fitness
           </span>
 
-        </div>
+        </Link>
 
       </div>
 
-      <h1 className="font-heading text-3xl font-bold tracking-tight mb-3">
+
+      <h1 className="
+        font-heading
+        text-3xl
+        font-bold
+        tracking-tight
+        mb-3
+      ">
         Contact Us
       </h1>
 
-      <p className="text-muted-foreground mb-8">
-        Questions, feedback, or partnership ideas? We'd love to hear from you.
+
+      <p className="
+        text-muted-foreground
+        mb-8
+      ">
+        Questions, feedback, or partnership ideas?
+        We'd love to hear from you.
       </p>
+
 
       <div className="space-y-6">
 
+        {/* Email */}
+
         <a
           href="mailto:washekfitness@gmail.com"
-          className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+          className="
+            relative
+            z-10
+            flex
+            items-center
+            gap-3
+            rounded-xl
+            border
+            border-border
+            bg-card
+            p-4
+            hover:border-primary/40
+            transition-colors
+            pointer-events-auto
+            touch-manipulation
+          "
         >
 
-          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
+          <div className="
+            w-10
+            h-10
+            rounded-xl
+            bg-primary/15
+            flex
+            items-center
+            justify-center
+          ">
 
-            <Mail className="w-5 h-5 text-primary" />
+            <Mail className="
+              w-5
+              h-5
+              text-primary
+              pointer-events-none
+            " />
 
           </div>
 
+
           <div>
 
-            <p className="font-semibold text-sm">
+            <p className="
+              font-semibold
+              text-sm
+            ">
               Email
             </p>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="
+              text-xs
+              text-muted-foreground
+            ">
               washekfitness@gmail.com
             </p>
 
@@ -195,50 +315,83 @@ export default function Contact() {
 
         </a>
 
+
+        {/* Contact form */}
+
         <form
           onSubmit={
             handleSubmit
           }
-          className="space-y-4 rounded-xl border border-border bg-card p-5"
+          className="
+            relative
+            z-10
+            space-y-4
+            rounded-xl
+            border
+            border-border
+            bg-card
+            p-5
+          "
         >
 
-          <h2 className="font-heading font-semibold text-lg">
+          <h2 className="
+            font-heading
+            font-semibold
+            text-lg
+          ">
             Send a Message
           </h2>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+
+          <div className="
+            grid
+            sm:grid-cols-2
+            gap-3
+          ">
 
             <div>
 
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+              <label className="
+                text-xs
+                font-medium
+                text-muted-foreground
+                mb-1.5
+                block
+              ">
                 Name
               </label>
+
 
               <Input
                 required
                 value={
                   form.name
                 }
-                onChange={e =>
-                  setForm(
-                    previous => ({
-                      ...previous,
-
-                      name:
-                        e.target.value,
-                    })
-                  )
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    name:
+                      e.target.value,
+                  })
                 }
                 placeholder="Your name"
               />
 
             </div>
 
+
             <div>
 
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+              <label className="
+                text-xs
+                font-medium
+                text-muted-foreground
+                mb-1.5
+                block
+              ">
                 Email
               </label>
+
 
               <Input
                 required
@@ -246,15 +399,12 @@ export default function Contact() {
                 value={
                   form.email
                 }
-                onChange={e =>
-                  setForm(
-                    previous => ({
-                      ...previous,
-
-                      email:
-                        e.target.value,
-                    })
-                  )
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    email:
+                      e.target.value,
+                  })
                 }
                 placeholder="you@example.com"
               />
@@ -263,44 +413,67 @@ export default function Contact() {
 
           </div>
 
+
           <div>
 
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+            <label className="
+              text-xs
+              font-medium
+              text-muted-foreground
+              mb-1.5
+              block
+            ">
               Message
             </label>
+
 
             <Textarea
               required
               value={
                 form.message
               }
-              onChange={e =>
-                setForm(
-                  previous => ({
-                    ...previous,
-
-                    message:
-                      e.target.value,
-                  })
-                )
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  message:
+                    e.target.value,
+                })
               }
               placeholder="How can we help?"
-              className="min-h-[120px] resize-none"
+              className="
+                min-h-[120px]
+                resize-none
+              "
             />
 
           </div>
+
 
           <Button
             type="submit"
             disabled={
               submitting
             }
-            className="w-full h-11"
+            className="
+              relative
+              z-10
+              w-full
+              h-11
+              pointer-events-auto
+            "
           >
 
             {submitting ? (
 
-              <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+              <div className="
+                w-4
+                h-4
+                border-2
+                border-primary-foreground
+                border-t-transparent
+                rounded-full
+                animate-spin
+              " />
 
             ) : (
 
@@ -308,7 +481,11 @@ export default function Contact() {
 
                 Send Message
 
-                <Send className="ml-2 w-4 h-4" />
+                <Send className="
+                  ml-2
+                  w-4
+                  h-4
+                " />
 
               </>
 
