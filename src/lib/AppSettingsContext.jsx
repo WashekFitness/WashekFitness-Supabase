@@ -1,52 +1,123 @@
-
-import { createContext, useContext, useState, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 
 const SETTINGS_KEY = 'washek_app_settings';
 
 const defaultSettings = {
   country: 'US',
   language: 'English',
-  unit: 'imperial', // 'metric' | 'imperial'
-  theme: 'dark',    // 'dark' | 'light'
+  unit: 'imperial',
+  theme: 'dark',
 };
 
+function normalizeTheme(value) {
+  return value === 'light' ? 'light' : 'dark';
+}
+
+function applyTheme(theme) {
+  const normalizedTheme = normalizeTheme(theme);
+
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const root = document.documentElement;
+
+  // Explicitly control the two classes.
+  root.classList.remove('light', 'dark');
+  root.classList.add(normalizedTheme);
+
+  // Prevent the browser's own color preference from overriding the app.
+  root.style.colorScheme = normalizedTheme;
+
+  // Keep this available for any components that want to inspect it.
+  root.dataset.theme = normalizedTheme;
+
+  // Also update browser UI color where supported.
+  const themeColor =
+    normalizedTheme === 'light'
+      ? '#f7f7f8'
+      : '#05070b';
+
+  let meta = document.querySelector(
+    'meta[name="theme-color"]'
+  );
+
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    document.head.appendChild(meta);
+  }
+
+  meta.setAttribute('content', themeColor);
+}
+
 function getInitialSettings() {
-  const fallback = { ...defaultSettings };
+  const fallback = {
+    ...defaultSettings,
+  };
 
   if (typeof window === 'undefined') {
     return fallback;
   }
 
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = window.localStorage.getItem(
+      SETTINGS_KEY
+    );
 
     if (!raw) {
+      applyTheme(fallback.theme);
       return fallback;
     }
 
     const parsed = JSON.parse(raw);
 
-    return {
+    const settings = {
       ...fallback,
-      ...parsed,
-      theme: parsed.theme === 'light' ? 'light' : 'dark',
+      ...(parsed && typeof parsed === 'object'
+        ? parsed
+        : {}),
+      theme: normalizeTheme(parsed?.theme),
     };
+
+    applyTheme(settings.theme);
+
+    return settings;
   } catch {
+    applyTheme(fallback.theme);
     return fallback;
   }
 }
 
-/*
- * Apply the saved theme immediately, before React renders.
- *
- * This is important because otherwise the browser can briefly render the
- * system/light theme before AppSettingsProvider's useEffect runs.
- *
- * Saved user preference always wins.
- */
-if (typeof document !== 'undefined') {
+function saveSettings(settings) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    window.localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify(settings)
+    );
+  } catch {
+    // Never allow local-storage problems to break settings.
+  }
+}
+
+// Apply the saved theme before React renders.
+if (
+  typeof window !== 'undefined' &&
+  typeof document !== 'undefined'
+) {
+  try {
+    const raw = window.localStorage.getItem(
+      SETTINGS_KEY
+    );
 
     let theme = defaultSettings.theme;
 
@@ -60,50 +131,98 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    document.documentElement.classList.toggle('light', theme === 'light');
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    applyTheme(theme);
   } catch {
-    document.documentElement.classList.add('dark');
-    document.documentElement.classList.remove('light');
-  }
-}
-
-function saveSettings(settings) {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage errors so changing settings never breaks the UI.
+    applyTheme(defaultSettings.theme);
   }
 }
 
 const AppSettingsContext = createContext(null);
 
 export function AppSettingsProvider({ children }) {
-  const [settings, setSettings] = useState(getInitialSettings);
+  const [settings, setSettings] = useState(
+    getInitialSettings
+  );
 
-  // Apply theme whenever the setting changes.
   useEffect(() => {
-    const root = document.documentElement;
-    const isLight = settings.theme === 'light';
+    applyTheme(settings.theme);
+    saveSettings(settings);
+  }, [settings]);
 
-    root.classList.toggle('light', isLight);
-    root.classList.toggle('dark', !isLight);
-  }, [settings.theme]);
-
-  // Apply language to <html> lang attribute.
   useEffect(() => {
-    document.documentElement.lang = settings.language || 'en';
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang =
+        settings.language || 'en';
+    }
   }, [settings.language]);
 
-  const updateSettings = (patch) => {
+  // Keep settings synchronized if another tab/window
+  // changes the saved preference.
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleStorage = (event) => {
+      if (event.key !== SETTINGS_KEY) {
+        return;
+      }
+
+      try {
+        if (!event.newValue) {
+          setSettings({
+            ...defaultSettings,
+          });
+          return;
+        }
+
+        const parsed = JSON.parse(event.newValue);
+
+        setSettings({
+          ...defaultSettings,
+          ...(parsed && typeof parsed === 'object'
+            ? parsed
+            : {}),
+          theme: normalizeTheme(parsed?.theme),
+        });
+      } catch {
+        // Ignore malformed storage events.
+      }
+    };
+
+    window.addEventListener(
+      'storage',
+      handleStorage
+    );
+
+    return () => {
+      window.removeEventListener(
+        'storage',
+        handleStorage
+      );
+    };
+  }, []);
+
+  const updateSettings = (patch = {}) => {
     setSettings((previous) => {
       const next = {
         ...previous,
         ...patch,
       };
 
-      if (patch.theme === 'light' || patch.theme === 'dark') {
+      if (
+        patch.theme === 'light' ||
+        patch.theme === 'dark'
+      ) {
         next.theme = patch.theme;
+      } else {
+        next.theme = normalizeTheme(previous.theme);
+      }
+
+      // Apply immediately so the UI does not wait for
+      // another render/effect cycle.
+      if (patch.theme) {
+        applyTheme(next.theme);
       }
 
       saveSettings(next);
@@ -130,55 +249,73 @@ export function useAppSettings() {
 
 // ── Unit display helpers ──────────────────────────────────
 
-/** Convert a weight value stored in lbs to display string */
 export function displayWeight(value, unit) {
-  if (!value && value !== 0) return '—';
+  if (!value && value !== 0) {
+    return '—';
+  }
 
   if (unit === 'metric') {
-    return `${(parseFloat(value) * 0.453592).toFixed(1)} kg`;
+    return `${(
+      parseFloat(value) * 0.453592
+    ).toFixed(1)} kg`;
   }
 
   return `${value} lbs`;
 }
 
-/** Convert a weight INPUT: if user is in metric, they typed kg — convert to lbs for storage */
 export function inputWeightToLbs(value, unit) {
-  if (unit === 'metric') {
-    return (parseFloat(value) / 0.453592).toFixed(1);
+  const numeric = parseFloat(value);
+
+  if (!Number.isFinite(numeric)) {
+    return null;
   }
 
-  return parseFloat(value);
+  if (unit === 'metric') {
+    return (numeric / 0.453592).toFixed(1);
+  }
+
+  return numeric;
 }
 
-/** Convert stored lbs to display input value */
 export function lbsToInputWeight(lbs, unit) {
-  if (unit === 'metric') {
-    return (parseFloat(lbs) * 0.453592).toFixed(1);
+  const numeric = parseFloat(lbs);
+
+  if (!Number.isFinite(numeric)) {
+    return '';
   }
 
-  return lbs;
+  if (unit === 'metric') {
+    return (numeric * 0.453592).toFixed(1);
+  }
+
+  return numeric;
 }
 
-/** Convert stored inches to display string */
 export function displayHeight(inches, unit) {
-  if (!inches && inches !== 0) return '—';
-
-  if (unit === 'metric') {
-    return `${(parseFloat(inches) * 2.54).toFixed(0)} cm`;
+  if (!inches && inches !== 0) {
+    return '—';
   }
 
-  const ft = Math.floor(inches / 12);
-  const inch = Math.round(inches % 12);
+  const numeric = parseFloat(inches);
+
+  if (!Number.isFinite(numeric)) {
+    return '—';
+  }
+
+  if (unit === 'metric') {
+    return `${(numeric * 2.54).toFixed(0)} cm`;
+  }
+
+  const ft = Math.floor(numeric / 12);
+  const inch = Math.round(numeric % 12);
 
   return `${ft}'${inch}"`;
 }
 
-/** Weight unit label */
 export function weightUnit(unit) {
   return unit === 'metric' ? 'kg' : 'lbs';
 }
 
-/** Height unit label */
 export function heightUnit(unit) {
   return unit === 'metric' ? 'cm' : 'ft / in';
 }
