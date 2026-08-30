@@ -34,6 +34,12 @@ function errorFrom(
 }
 
 
+/*
+ * ------------------------------------------------------------
+ * AUTH
+ * ------------------------------------------------------------
+ */
+
 async function requireUser() {
   const {
     data,
@@ -43,13 +49,13 @@ async function requireUser() {
   if (error) {
     throw errorFrom(
       error,
-      'Unable to read the signed-in user.'
+      'Unable to read your login session.'
     );
   }
 
   if (!data?.user) {
     throw new Error(
-      'You must be signed in to do that.'
+      'Your login session is missing. Please sign in again.'
     );
   }
 
@@ -57,24 +63,48 @@ async function requireUser() {
 }
 
 
-async function getProfile(userId) {
+/*
+ * ------------------------------------------------------------
+ * PROFILE
+ * ------------------------------------------------------------
+ */
+
+async function getProfile(
+  userId
+) {
   const {
     data,
     error
-  } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+  } =
+    await supabase
+      .from('profiles')
+      .select('*')
+      .eq(
+        'id',
+        userId
+      )
+      .maybeSingle();
 
   if (error) {
     throw errorFrom(
       error,
-      'Unable to load your profile.'
+      'Unable to load your Washek Fitness profile.'
     );
   }
 
-  return data || {};
+  /*
+   * IMPORTANT:
+   *
+   * A missing row is NOT treated as a Free account.
+   * That was masking the actual problem.
+   */
+  if (!data) {
+    throw new Error(
+      'Your Washek Fitness profile could not be found. Your login still exists, but your profile record is missing or inaccessible.'
+    );
+  }
+
+  return data;
 }
 
 
@@ -102,8 +132,11 @@ function normalizeUser(
     'Athlete';
 
   return {
-    id: authUser.id,
-    email: authUser.email,
+    id:
+      authUser.id,
+
+    email:
+      authUser.email,
 
     role:
       profile.role ||
@@ -124,33 +157,33 @@ function normalizeUser(
 }
 
 
+/*
+ * ------------------------------------------------------------
+ * CURRENT USER
+ * ------------------------------------------------------------
+ */
+
 async function currentUser() {
-  const {
-    data,
-    error
-  } = await supabase.auth.getUser();
+  const user =
+    await requireUser();
 
-  if (error) {
-    throw errorFrom(
-      error,
-      'Unable to read authentication state.'
+  const profile =
+    await getProfile(
+      user.id
     );
-  }
-
-  if (!data?.user) {
-    throw new Error(
-      'Not authenticated.'
-    );
-  }
 
   return normalizeUser(
-    data.user,
-    await getProfile(
-      data.user.id
-    )
+    user,
+    profile
   );
 }
 
+
+/*
+ * ------------------------------------------------------------
+ * FILTERING
+ * ------------------------------------------------------------
+ */
 
 const ORDER_ALIASES = {
   created_date:
@@ -166,16 +199,16 @@ function applyFilters(
   filters = {},
   userId
 ) {
-  let q = query;
+  let q =
+    query;
 
   for (
     const [
       key,
       value
-    ]
-      of Object.entries(
-        filters || {}
-      )
+    ] of Object.entries(
+      filters || {}
+    )
   ) {
     if (
       key ===
@@ -185,14 +218,18 @@ function applyFilters(
     }
 
     if (
-      value === undefined ||
-      value === null
+      value ===
+        undefined ||
+      value ===
+        null
     ) {
       continue;
     }
 
     if (
-      Array.isArray(value)
+      Array.isArray(
+        value
+      )
     ) {
       q =
         q.in(
@@ -220,7 +257,15 @@ function applyFilters(
 }
 
 
-function entity(table) {
+/*
+ * ------------------------------------------------------------
+ * GENERIC ENTITIES
+ * ------------------------------------------------------------
+ */
+
+function entity(
+  table
+) {
   return {
 
     async list(
@@ -276,7 +321,8 @@ function entity(table) {
       const {
         data,
         error
-      } = await q;
+      } =
+        await q;
 
       if (error) {
         throw errorFrom(
@@ -342,7 +388,8 @@ function entity(table) {
       const {
         data,
         error
-      } = await q;
+      } =
+        await q;
 
       if (error) {
         throw errorFrom(
@@ -398,7 +445,7 @@ function entity(table) {
         await requireUser();
 
       const row = {
-        ...payload
+        ...payload,
       };
 
       delete row.user_id;
@@ -462,11 +509,17 @@ function entity(table) {
       }
 
       return true;
-    }
+    },
 
   };
 }
 
+
+/*
+ * ------------------------------------------------------------
+ * STORAGE
+ * ------------------------------------------------------------
+ */
 
 async function uploadFile(
   input,
@@ -490,7 +543,10 @@ async function uploadFile(
     await requireUser();
 
   const safeName =
-    file.name.replace(
+    String(
+      file.name ||
+      'upload'
+    ).replace(
       /[^a-zA-Z0-9._-]/g,
       '_'
     );
@@ -549,18 +605,17 @@ async function uploadFile(
     file_url:
       data.publicUrl,
 
-    path
+    path,
   };
 }
 
 
 /*
+ * ------------------------------------------------------------
  * AI
- *
- * The server now determines the user's subscription plan
- * and enforces monthly limits. The optional client-side model
- * argument is retained only for backwards compatibility.
+ * ------------------------------------------------------------
  */
+
 async function invokeAI({
   prompt,
   file_urls = [],
@@ -570,26 +625,34 @@ async function invokeAI({
   type = 'general',
 } = {}) {
 
+  /*
+   * Get the current authenticated session first.
+   * supabase-js will send the JWT when invoking the function.
+   */
+
+  await requireUser();
+
   const {
     data,
     error
   } =
-    await supabase.functions.invoke(
-      AI_FUNCTION,
-      {
-        body: {
-          type,
-          prompt,
-          file_urls,
-          model,
-          schema:
-            schema ||
-            response_json_schema ||
-            null,
-        },
-      }
-    );
-
+    await supabase
+      .functions
+      .invoke(
+        AI_FUNCTION,
+        {
+          body: {
+            type,
+            prompt,
+            file_urls,
+            model,
+            schema:
+              schema ||
+              response_json_schema ||
+              null,
+          },
+        }
+      );
 
   if (error) {
     throw errorFrom(
@@ -597,7 +660,6 @@ async function invokeAI({
       'AI generation failed.'
     );
   }
-
 
   if (
     data?.success ===
@@ -613,18 +675,16 @@ async function invokeAI({
       data.error_code ||
       null;
 
-    err.usage =
-      data.usage ||
+    err.status =
+      data.status ||
       null;
 
     throw err;
   }
 
-
   const result =
     data?.result ??
     data;
-
 
   if (
     result == null
@@ -634,15 +694,20 @@ async function invokeAI({
     );
   }
 
-
   return result;
 }
 
 
+/*
+ * ------------------------------------------------------------
+ * EMAIL
+ * ------------------------------------------------------------
+ */
+
 async function sendEmail({
   name,
   email,
-  message
+  message,
 } = {}) {
 
   const cleanName =
@@ -663,13 +728,11 @@ async function sendEmail({
       ? message.trim()
       : '';
 
-
   if (!cleanName) {
     throw new Error(
       'Your name is required.'
     );
   }
-
 
   if (!cleanEmail) {
     throw new Error(
@@ -677,34 +740,35 @@ async function sendEmail({
     );
   }
 
-
   if (!cleanMessage) {
     throw new Error(
       'Your message is required.'
     );
   }
 
+  await requireUser();
 
   const {
     data,
     error
   } =
-    await supabase.functions.invoke(
-      EMAIL_FUNCTION,
-      {
-        body: {
-          name:
-            cleanName,
+    await supabase
+      .functions
+      .invoke(
+        EMAIL_FUNCTION,
+        {
+          body: {
+            name:
+              cleanName,
 
-          email:
-            cleanEmail,
+            email:
+              cleanEmail,
 
-          message:
-            cleanMessage,
-        },
-      }
-    );
-
+            message:
+              cleanMessage,
+          },
+        }
+      );
 
   if (error) {
     throw errorFrom(
@@ -712,7 +776,6 @@ async function sendEmail({
       'Email could not be sent.'
     );
   }
-
 
   if (
     data?.success ===
@@ -724,10 +787,15 @@ async function sendEmail({
     );
   }
 
-
   return data;
 }
 
+
+/*
+ * ------------------------------------------------------------
+ * EXPORTED API
+ * ------------------------------------------------------------
+ */
 
 export const supabaseApi = {
 
@@ -737,6 +805,13 @@ export const supabaseApi = {
       currentUser,
 
 
+    /*
+     * IMPORTANT:
+     *
+     * updateMe ONLY updates the authenticated user's existing
+     * profile. It will NOT create a replacement profile and
+     * will NOT overwrite subscription fields.
+     */
     updateMe:
       async (
         patch
@@ -745,11 +820,24 @@ export const supabaseApi = {
         const user =
           await requireUser();
 
-        const profilePatch = {
+        const safePatch = {
           ...patch,
-          id:
-            user.id
         };
+
+        /*
+         * NEVER allow profile editing to alter these fields.
+         * Stripe is the authority for subscription state.
+         */
+        delete safePatch.id;
+        delete safePatch.user_id;
+
+        delete safePatch.subscription_plan;
+        delete safePatch.subscription_status;
+        delete safePatch.stripe_customer_id;
+        delete safePatch.stripe_subscription_id;
+        delete safePatch.stripe_price_id;
+        delete safePatch.subscription_cancelled_at;
+        delete safePatch.subscription_updated_at;
 
         const {
           data,
@@ -757,12 +845,12 @@ export const supabaseApi = {
         } =
           await supabase
             .from('profiles')
-            .upsert(
-              profilePatch,
-              {
-                onConflict:
-                  'id'
-              }
+            .update(
+              safePatch
+            )
+            .eq(
+              'id',
+              user.id
             )
             .select()
             .single();
@@ -774,9 +862,15 @@ export const supabaseApi = {
           );
         }
 
+        if (!data) {
+          throw new Error(
+            'Your profile could not be found.'
+          );
+        }
+
         return normalizeUser(
           user,
-          data || {}
+          data
         );
       },
 
@@ -805,7 +899,7 @@ export const supabaseApi = {
         window.location.assign(
           '/login'
         );
-      }
+      },
 
   },
 
@@ -845,31 +939,31 @@ export const supabaseApi = {
     KaelMessage:
       entity(
         'kael_messages'
-      )
+      ),
 
   },
 
 
   storage: {
-    uploadFile
+    uploadFile,
   },
 
 
   ai: {
     invoke:
-      invokeAI
+      invokeAI,
   },
 
 
   email: {
     send:
-      sendEmail
-  }
+      sendEmail,
+  },
 
 };
 
 
 export {
   requireUser,
-  currentUser
+  currentUser,
 };
