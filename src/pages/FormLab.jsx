@@ -45,9 +45,632 @@ import {
   buildFormAnalysisPrompt,
 } from '@/lib/formAnalysis';
 
+/*
+ * ============================================================
+ * FORM ANALYSIS SCHEMA
+ * ============================================================
+ */
+
+const FORM_ANALYSIS_SCHEMA = {
+  type: 'object',
+
+  additionalProperties: false,
+
+  properties: {
+    camera_angle_ok: {
+      type: 'boolean',
+    },
+
+    camera_angle_note: {
+      type: 'string',
+    },
+
+    score: {
+      type: 'number',
+    },
+
+    rep_count: {
+      type: [
+        'number',
+        'null',
+      ],
+    },
+
+    hold_time_seconds: {
+      type: [
+        'number',
+        'null',
+      ],
+    },
+
+    active_range_start: {
+      type: [
+        'number',
+        'null',
+      ],
+    },
+
+    active_range_end: {
+      type: [
+        'number',
+        'null',
+      ],
+    },
+
+    overall_assessment: {
+      type: 'string',
+    },
+
+    issues: {
+      type: 'array',
+
+      items: {
+        type: 'object',
+
+        additionalProperties: false,
+
+        properties: {
+          area: {
+            type: 'string',
+          },
+
+          problem: {
+            type: 'string',
+          },
+
+          severity: {
+            type: 'string',
+
+            enum: [
+              'minor',
+              'moderate',
+              'major',
+              'critical',
+            ],
+          },
+
+          fix: {
+            type: 'string',
+          },
+
+          corrective_exercises: {
+            type: 'array',
+
+            items: {
+              type: 'string',
+            },
+          },
+        },
+
+        required: [
+          'area',
+          'problem',
+          'severity',
+          'fix',
+          'corrective_exercises',
+        ],
+      },
+    },
+
+    priority_focus: {
+      type: 'array',
+
+      items: {
+        type: 'string',
+      },
+    },
+  },
+
+  required: [
+    'camera_angle_ok',
+    'camera_angle_note',
+    'score',
+    'rep_count',
+    'hold_time_seconds',
+    'active_range_start',
+    'active_range_end',
+    'overall_assessment',
+    'issues',
+    'priority_focus',
+  ],
+};
+
+/*
+ * ============================================================
+ * VIDEO → STILL FRAMES
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * The video itself is NOT sent to OpenRouter.
+ *
+ * This creates JPEG frames in the browser and uploads those
+ * images instead. That avoids the $1 video-balance requirement
+ * on your zero-balance OpenRouter account.
+ */
+
+async function videoFileToFrames(
+  file,
+  startTime,
+  endTime
+) {
+  if (
+    !file
+  ) {
+    throw new Error(
+      'No video file was provided.'
+    );
+  }
+
+  const blobUrl =
+    URL.createObjectURL(
+      file
+    );
+
+  const video =
+    document.createElement(
+      'video'
+    );
+
+  video.preload =
+    'auto';
+
+  video.muted =
+    true;
+
+  video.playsInline =
+    true;
+
+  video.src =
+    blobUrl;
+
+  try {
+    /*
+     * --------------------------------------------------------
+     * LOAD VIDEO
+     * --------------------------------------------------------
+     */
+
+    await new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        const handleLoaded =
+          () =>
+            resolve();
+
+        const handleError =
+          () =>
+            reject(
+              new Error(
+                'The video could not be read by the browser.'
+              )
+            );
+
+        video.addEventListener(
+          'loadedmetadata',
+          handleLoaded,
+          {
+            once: true,
+          }
+        );
+
+        video.addEventListener(
+          'error',
+          handleError,
+          {
+            once: true,
+          }
+        );
+
+        video.load();
+      }
+    );
+
+    /*
+     * --------------------------------------------------------
+     * DURATION
+     * --------------------------------------------------------
+     */
+
+    const duration =
+      Number.isFinite(
+        video.duration
+      )
+        ? video.duration
+        : 0;
+
+    if (
+      duration <=
+      0
+    ) {
+      throw new Error(
+        'The video duration could not be determined.'
+      );
+    }
+
+    /*
+     * --------------------------------------------------------
+     * ANALYSIS WINDOW
+     * --------------------------------------------------------
+     */
+
+    const start =
+      Math.max(
+        0,
+        Math.min(
+          Number(
+            startTime
+          ) || 0,
+          duration
+        )
+      );
+
+    const end =
+      Math.max(
+        start,
+        Math.min(
+          Number(
+            endTime
+          ) || duration,
+          duration
+        )
+      );
+
+    const windowDuration =
+      Math.max(
+        0.1,
+        end - start
+      );
+
+    /*
+     * --------------------------------------------------------
+     * NUMBER OF FRAMES
+     * --------------------------------------------------------
+     *
+     * Keep this reasonable so the request remains small enough
+     * for free AI.
+     */
+
+    let frameCount;
+
+    if (
+      windowDuration <=
+      3
+    ) {
+      frameCount =
+        8;
+    } else if (
+      windowDuration <=
+      6
+    ) {
+      frameCount =
+        10;
+    } else if (
+      windowDuration <=
+      10
+    ) {
+      frameCount =
+        12;
+    } else if (
+      windowDuration <=
+      15
+    ) {
+      frameCount =
+        14;
+    } else {
+      frameCount =
+        16;
+    }
+
+    /*
+     * --------------------------------------------------------
+     * TIMESTAMPS
+     * --------------------------------------------------------
+     */
+
+    const timestamps =
+      [];
+
+    if (
+      frameCount ===
+      1
+    ) {
+      timestamps.push(
+        start
+      );
+    } else {
+      for (
+        let i = 0;
+        i <
+        frameCount;
+        i += 1
+      ) {
+        const ratio =
+          i /
+          (
+            frameCount -
+            1
+          );
+
+        const timestamp =
+          start +
+          (
+            windowDuration *
+            ratio
+          );
+
+        timestamps.push(
+          Math.max(
+            start,
+            Math.min(
+              end,
+              timestamp
+            )
+          )
+        );
+      }
+    }
+
+    /*
+     * --------------------------------------------------------
+     * CANVAS
+     * --------------------------------------------------------
+     *
+     * Limit width to keep images reasonably small.
+     */
+
+    const maxWidth =
+      1280;
+
+    const videoWidth =
+      video.videoWidth ||
+      1280;
+
+    const videoHeight =
+      video.videoHeight ||
+      720;
+
+    const scale =
+      videoWidth >
+      maxWidth
+        ? maxWidth /
+          videoWidth
+        : 1;
+
+    const canvas =
+      document.createElement(
+        'canvas'
+      );
+
+    canvas.width =
+      Math.max(
+        1,
+        Math.round(
+          videoWidth *
+            scale
+        )
+      );
+
+    canvas.height =
+      Math.max(
+        1,
+        Math.round(
+          videoHeight *
+            scale
+        )
+      );
+
+    const ctx =
+      canvas.getContext(
+        '2d'
+      );
+
+    if (
+      !ctx
+    ) {
+      throw new Error(
+        'Your browser could not prepare video frames.'
+      );
+    }
+
+    /*
+     * --------------------------------------------------------
+     * EXTRACT FRAMES
+     * --------------------------------------------------------
+     */
+
+    const frames =
+      [];
+
+    for (
+      let i = 0;
+      i <
+      timestamps.length;
+      i += 1
+    ) {
+      const timestamp =
+        timestamps[i];
+
+      video.currentTime =
+        timestamp;
+
+      await new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+          let settled =
+            false;
+
+          const cleanup =
+            () => {
+              video.removeEventListener(
+                'seeked',
+                handleSeeked
+              );
+
+              video.removeEventListener(
+                'error',
+                handleError
+              );
+            };
+
+          const handleSeeked =
+            () => {
+              if (
+                settled
+              ) {
+                return;
+              }
+
+              settled =
+                true;
+
+              cleanup();
+              resolve();
+            };
+
+          const handleError =
+            () => {
+              if (
+                settled
+              ) {
+                return;
+              }
+
+              settled =
+                true;
+
+              cleanup();
+
+              reject(
+                new Error(
+                  `Frame ${i + 1} could not be read from the video.`
+                )
+              );
+            };
+
+          video.addEventListener(
+            'seeked',
+            handleSeeked,
+            {
+              once: true,
+            }
+          );
+
+          video.addEventListener(
+            'error',
+            handleError,
+            {
+              once: true,
+            }
+          );
+        }
+      );
+
+      ctx.drawImage(
+        video,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      const blob =
+        await new Promise(
+          (
+            resolve,
+            reject
+          ) => {
+            canvas.toBlob(
+              output => {
+                if (
+                  output
+                ) {
+                  resolve(
+                    output
+                  );
+                } else {
+                  reject(
+                    new Error(
+                      `Frame ${i + 1} could not be encoded.`
+                    )
+                  );
+                }
+              },
+              'image/jpeg',
+              0.78
+            );
+          }
+        );
+
+      const frameFile =
+        new File(
+          [
+            blob,
+          ],
+          `form-frame-${String(
+            i + 1
+          ).padStart(
+            2,
+            '0'
+          )}.jpg`,
+          {
+            type:
+              'image/jpeg',
+          }
+        );
+
+      frames.push({
+        index:
+          i + 1,
+
+        timestamp,
+
+        file:
+          frameFile,
+      });
+    }
+
+    return {
+      frames,
+
+      duration,
+
+      start,
+
+      end,
+    };
+  } finally {
+    URL.revokeObjectURL(
+      blobUrl
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * MAIN COMPONENT
+ * ============================================================
+ */
+
 export default function FormLab() {
   const navigate =
     useNavigate();
+
+  const [
+    searchParams,
+    setSearchParams,
+  ] =
+    useSearchParams();
+
+  const step =
+    searchParams.get(
+      'step'
+    ) ||
+    'select';
 
   const [
     user,
@@ -60,6 +683,18 @@ export default function FormLab() {
     setExercise,
   ] =
     useState('');
+
+  /*
+   * Keep BOTH the original video File and uploaded URL.
+   *
+   * The File is required later to extract frames.
+   */
+
+  const [
+    videoFile,
+    setVideoFile,
+  ] =
+    useState(null);
 
   const [
     videoUrl,
@@ -78,6 +713,12 @@ export default function FormLab() {
     setAnalyzing,
   ] =
     useState(false);
+
+  const [
+    progressText,
+    setProgressText,
+  ] =
+    useState('');
 
   const [
     result,
@@ -118,55 +759,46 @@ export default function FormLab() {
   const videoRef =
     useRef(null);
 
-  const [
-    searchParams,
-    setSearchParams,
-  ] =
-    useSearchParams();
-
-  const step =
-    searchParams.get(
-      'step'
-    ) ||
-    'select';
-
   /*
    * ==========================================================
    * LOAD USER
    * ==========================================================
    */
 
-  useEffect(() => {
-    let mounted =
-      true;
+  useEffect(
+    () => {
+      let mounted =
+        true;
 
-    supabaseApi.auth
-      .me()
-      .then(
-        (currentUser) => {
-          if (
-            mounted
-          ) {
-            setUser(
-              currentUser
+      supabaseApi.auth
+        .me()
+        .then(
+          currentUser => {
+            if (
+              mounted
+            ) {
+              setUser(
+                currentUser
+              );
+            }
+          }
+        )
+        .catch(
+          error => {
+            console.error(
+              '[FormLab] User load failed:',
+              error
             );
           }
-        }
-      )
-      .catch(
-        (error) => {
-          console.error(
-            '[FormLab] User load failed:',
-            error
-          );
-        }
-      );
+        );
 
-    return () => {
-      mounted =
-        false;
-    };
-  }, []);
+      return () => {
+        mounted =
+          false;
+      };
+    },
+    []
+  );
 
   /*
    * ==========================================================
@@ -184,8 +816,8 @@ export default function FormLab() {
 
   const selectedEx =
     FORM_EXERCISES.find(
-      (item) =>
-        item.name ===
+      ex =>
+        ex.name ===
         exercise
     );
 
@@ -195,7 +827,7 @@ export default function FormLab() {
 
   /*
    * ==========================================================
-   * LOCK SCREEN
+   * LOADING USER
    * ==========================================================
    */
 
@@ -204,10 +836,18 @@ export default function FormLab() {
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+
       </div>
     );
   }
+
+  /*
+   * ==========================================================
+   * ELITE LOCK
+   * ==========================================================
+   */
 
   if (
     !isElite
@@ -227,10 +867,10 @@ export default function FormLab() {
 
         <p className="text-muted-foreground text-sm max-w-xs mb-6">
           AI-powered form analysis with
-          video analysis, form scoring,
-          rep/hold counting, and corrective
-          drills. Unlock it with the Elite
-          plan.
+          frame-level precision. Record any
+          calisthenics movement and get a
+          score, rep/hold assessment, and
+          corrective drills.
         </p>
 
         <Button
@@ -243,7 +883,9 @@ export default function FormLab() {
           className="h-12 px-8 font-heading font-semibold"
         >
           <Crown className="w-4 h-4 mr-2" />
+
           Upgrade to Elite
+
         </Button>
 
       </div>
@@ -257,9 +899,7 @@ export default function FormLab() {
    */
 
   const handleVideoSelected =
-    async (
-      file
-    ) => {
+    async file => {
       if (
         !file
       ) {
@@ -282,7 +922,21 @@ export default function FormLab() {
         false
       );
 
+      setVideoFile(
+        file
+      );
+
       try {
+        if (
+          !file.type.startsWith(
+            'video/'
+          )
+        ) {
+          throw new Error(
+            'Please choose a video file.'
+          );
+        }
+
         const uploaded =
           await supabaseApi.storage.uploadFile(
             {
@@ -327,6 +981,14 @@ export default function FormLab() {
           error?.message ||
             'The video could not be uploaded.'
         );
+
+        setVideoFile(
+          null
+        );
+
+        setVideoUrl(
+          null
+        );
       } finally {
         setUploading(
           false
@@ -347,6 +1009,16 @@ export default function FormLab() {
           ?.duration ||
         0;
 
+      if (
+        !Number.isFinite(
+          duration
+        ) ||
+        duration <=
+          0
+      ) {
+        return;
+      }
+
       setVideoDuration(
         duration
       );
@@ -362,61 +1034,79 @@ export default function FormLab() {
 
   /*
    * ==========================================================
-   * TRIM START
+   * TRIM CONTROLS
    * ==========================================================
    */
 
   const handleTrimStart =
-    (
-      value
-    ) => {
+    value => {
+      const next =
+        Math.min(
+          Math.max(
+            0,
+            Number(
+              value
+            ) || 0
+          ),
+          Math.max(
+            0,
+            trimEnd -
+              0.1
+          )
+        );
+
       setTrimStart(
-        value
+        next
       );
 
       if (
-        videoRef.current &&
-        value <
-          trimEnd
+        videoRef.current
       ) {
         videoRef.current.currentTime =
-          value;
+          next;
       }
     };
-
-  /*
-   * ==========================================================
-   * TRIM END
-   * ==========================================================
-   */
 
   const handleTrimEnd =
-    (
-      value
-    ) => {
+    value => {
+      const next =
+        Math.max(
+          Math.min(
+            videoDuration,
+            Number(
+              value
+            ) ||
+              videoDuration
+          ),
+          Math.min(
+            videoDuration,
+            trimStart +
+              0.1
+          )
+        );
+
       setTrimEnd(
-        value
+        next
       );
 
       if (
-        videoRef.current &&
-        value >
-          trimStart
+        videoRef.current
       ) {
         videoRef.current.currentTime =
-          value;
+          next;
       }
     };
 
   /*
    * ==========================================================
-   * ANALYZE
+   * ANALYZE FORM
    * ==========================================================
    */
 
   const handleAnalyze =
     async () => {
       if (
+        !videoFile ||
         !videoUrl ||
         !exercise ||
         analyzing
@@ -424,236 +1114,307 @@ export default function FormLab() {
         return;
       }
 
-      /*
-       * Clear previous result/error.
-       */
-      setErrorMessage(
-        ''
+      setAnalyzing(
+        true
       );
 
       setResult(
         null
       );
 
-      setAnalyzing(
-        true
+      setErrorMessage(
+        ''
       );
 
       try {
         /*
-         * Build the specialist form-analysis prompt.
+         * ------------------------------------------------------
+         * STEP 1 — EXTRACT FRAMES
+         * ------------------------------------------------------
          */
-        const prompt =
-          buildFormAnalysisPrompt(
-            exercise,
-            exCategory,
-            user,
+
+        setProgressText(
+          'Preparing video frames…'
+        );
+
+        const {
+          frames,
+          duration,
+          start,
+          end,
+        } =
+          await videoFileToFrames(
+            videoFile,
             trimStart,
-            trimEnd
+            trimEnd ||
+              videoDuration
           );
 
         /*
-         * Ask the AI to produce exactly the fields
-         * required by AnalysisResults.jsx.
+         * ------------------------------------------------------
+         * STEP 2 — UPLOAD FRAMES
+         * ------------------------------------------------------
          */
+
+        setProgressText(
+          `Uploading ${frames.length} analysis frames…`
+        );
+
+        const uploadedFrames =
+          [];
+
+        for (
+          let i = 0;
+          i <
+          frames.length;
+          i += 1
+        ) {
+          const frame =
+            frames[i];
+
+          const uploaded =
+            await supabaseApi.storage.uploadFile(
+              {
+                file:
+                  frame.file,
+
+                folder:
+                  'form-analysis-frames',
+              }
+            );
+
+          if (
+            !uploaded?.file_url
+          ) {
+            throw new Error(
+              `Analysis frame ${frame.index} could not be uploaded.`
+            );
+          }
+
+          uploadedFrames.push({
+            url:
+              uploaded.file_url,
+
+            timestamp:
+              frame.timestamp,
+
+            index:
+              frame.index,
+          });
+        }
+
+        /*
+         * ------------------------------------------------------
+         * STEP 3 — BUILD TIMELINE
+         * ------------------------------------------------------
+         */
+
+        setProgressText(
+          'Kael is analyzing your movement…'
+        );
+
+        const frameTimeline =
+          uploadedFrames
+            .map(
+              frame =>
+                `Frame ${frame.index}: ${frame.timestamp.toFixed(
+                  2
+                )} seconds`
+            )
+            .join(
+              '\n'
+            );
+
+        const prompt =
+          `${buildFormAnalysisPrompt(
+            exercise,
+            exCategory,
+            user,
+            start,
+            end
+          )}
+
+IMPORTANT:
+The original video is NOT being sent to the AI.
+
+Instead, the AI receives chronological still frames extracted from the selected analysis window.
+
+FULL VIDEO DURATION:
+${duration.toFixed(
+  2
+)} seconds
+
+SELECTED WINDOW:
+${start.toFixed(
+  2
+)}s to ${end.toFixed(
+  2
+)}s
+
+FRAME TIMELINE:
+${frameTimeline}
+
+Analyze all supplied frames together as ONE chronological movement.
+
+Use the supplied frame timestamps when estimating the active range.
+
+Do not claim continuous-frame precision that the sampled images cannot support.
+
+Return ONLY the requested JSON object.
+`;
+
+        /*
+         * ------------------------------------------------------
+         * STEP 4 — AI
+         * ------------------------------------------------------
+         */
+
+        const frameUrls =
+          uploadedFrames.map(
+            frame =>
+              frame.url
+          );
+
         const response =
           await supabaseApi.ai.invoke(
             {
               prompt,
 
-              file_urls: [
-                videoUrl,
-              ],
+              file_urls:
+                frameUrls,
 
               type:
                 'form_analysis',
 
-              response_json_schema: {
-                type:
-                  'object',
-
-                additionalProperties:
-                  false,
-
-                properties: {
-                  camera_angle_ok: {
-                    type:
-                      'boolean',
-                  },
-
-                  camera_angle_note: {
-                    type:
-                      'string',
-                  },
-
-                  score: {
-                    type:
-                      'number',
-                  },
-
-                  rep_count: {
-                    type:
-                      [
-                        'number',
-                        'null',
-                      ],
-                  },
-
-                  hold_time_seconds: {
-                    type:
-                      [
-                        'number',
-                        'null',
-                      ],
-                  },
-
-                  active_range_start: {
-                    type:
-                      [
-                        'number',
-                        'null',
-                      ],
-                  },
-
-                  active_range_end: {
-                    type:
-                      [
-                        'number',
-                        'null',
-                      ],
-                  },
-
-                  overall_assessment: {
-                    type:
-                      'string',
-                  },
-
-                  issues: {
-                    type:
-                      'array',
-
-                    items: {
-                      type:
-                        'object',
-
-                      additionalProperties:
-                        false,
-
-                      properties: {
-                        area: {
-                          type:
-                            'string',
-                        },
-
-                        problem: {
-                          type:
-                            'string',
-                        },
-
-                        severity: {
-                          type:
-                            'string',
-
-                          enum: [
-                            'minor',
-                            'moderate',
-                            'major',
-                            'critical',
-                          ],
-                        },
-
-                        fix: {
-                          type:
-                            'string',
-                        },
-
-                        corrective_exercises: {
-                          type:
-                            'array',
-
-                          items: {
-                            type:
-                              'string',
-                          },
-                        },
-                      },
-
-                      required: [
-                        'area',
-                        'problem',
-                        'severity',
-                        'fix',
-                        'corrective_exercises',
-                      ],
-                    },
-                  },
-
-                  priority_focus: {
-                    type:
-                      'array',
-
-                    items: {
-                      type:
-                        'string',
-                    },
-                  },
-                },
-
-                required: [
-                  'camera_angle_ok',
-                  'camera_angle_note',
-                  'score',
-                  'rep_count',
-                  'hold_time_seconds',
-                  'active_range_start',
-                  'active_range_end',
-                  'overall_assessment',
-                  'issues',
-                  'priority_focus',
-                ],
-              },
+              response_json_schema:
+                FORM_ANALYSIS_SCHEMA,
             }
           );
 
         /*
-         * Defensive validation.
+         * ------------------------------------------------------
+         * STEP 5 — VALIDATE RESULT
+         * ------------------------------------------------------
          */
+
         if (
           !response
         ) {
           throw new Error(
-            'The AI returned no analysis.'
+            'Kael returned no form analysis.'
           );
         }
 
         if (
           typeof response.score !==
-            'number'
+          'number'
         ) {
           throw new Error(
-            'The AI response did not contain a valid form score.'
+            'Kael did not return a valid form score.'
           );
         }
 
         if (
           typeof response.overall_assessment !==
-            'string'
+          'string'
         ) {
           throw new Error(
-            'The AI response did not contain an overall assessment.'
+            'Kael did not return an overall assessment.'
           );
         }
 
         /*
-         * Put result on screen immediately.
+         * ------------------------------------------------------
+         * STEP 6 — CLEAN RESULT
+         * ------------------------------------------------------
          */
-        setResult(
-          response
-        );
+
+        const cleanedResult =
+          {
+            camera_angle_ok:
+              Boolean(
+                response.camera_angle_ok
+              ),
+
+            camera_angle_note:
+              String(
+                response.camera_angle_note ||
+                  ''
+              ),
+
+            score:
+              Math.max(
+                1,
+                Math.min(
+                  100,
+                  Number(
+                    response.score
+                  )
+                )
+              ),
+
+            rep_count:
+              response.rep_count ==
+              null
+                ? null
+                : Number(
+                    response.rep_count
+                  ),
+
+            hold_time_seconds:
+              response.hold_time_seconds ==
+              null
+                ? null
+                : Number(
+                    response.hold_time_seconds
+                  ),
+
+            active_range_start:
+              response.active_range_start ==
+              null
+                ? start
+                : Number(
+                    response.active_range_start
+                  ),
+
+            active_range_end:
+              response.active_range_end ==
+              null
+                ? end
+                : Number(
+                    response.active_range_end
+                  ),
+
+            overall_assessment:
+              String(
+                response.overall_assessment
+              ),
+
+            issues:
+              Array.isArray(
+                response.issues
+              )
+                ? response.issues
+                : [],
+
+            priority_focus:
+              Array.isArray(
+                response.priority_focus
+              )
+                ? response.priority_focus
+                : [],
+          };
 
         /*
-         * Switch to results view.
+         * ------------------------------------------------------
+         * STEP 7 — SHOW RESULT
+         * ------------------------------------------------------
          */
+
+        setResult(
+          cleanedResult
+        );
+
         const nextParams =
           new URLSearchParams(
             searchParams
@@ -669,22 +1430,23 @@ export default function FormLab() {
         );
 
         /*
-         * Auto-set detected active range when valid.
+         * Auto-set active range when valid.
          */
+
         if (
-          response.active_range_start !=
+          cleanedResult.active_range_start !=
             null &&
-          response.active_range_end !=
+          cleanedResult.active_range_end !=
             null &&
-          response.active_range_end >
-            response.active_range_start
+          cleanedResult.active_range_end >
+            cleanedResult.active_range_start
         ) {
           setTrimStart(
-            response.active_range_start
+            cleanedResult.active_range_start
           );
 
           setTrimEnd(
-            response.active_range_end
+            cleanedResult.active_range_end
           );
 
           setAutoDetected(
@@ -693,15 +1455,25 @@ export default function FormLab() {
         }
 
         /*
-         * Save analysis.
+         * ------------------------------------------------------
+         * STEP 8 — SAVE ANALYSIS
+         * ------------------------------------------------------
          *
-         * This should NOT prevent the user from seeing the result.
+         * History saving should never make an already-successful
+         * analysis disappear.
          */
+
+        setProgressText(
+          'Saving your analysis…'
+        );
+
         try {
           const today =
             new Date()
               .toISOString()
-              .split('T')[0];
+              .split(
+                'T'
+              )[0];
 
           await supabaseApi.entities.FormAnalysis.create(
             {
@@ -715,19 +1487,19 @@ export default function FormLab() {
                 exCategory,
 
               score:
-                response.score,
+                cleanedResult.score,
 
               rep_count:
-                response.rep_count,
+                cleanedResult.rep_count,
 
               hold_time_seconds:
-                response.hold_time_seconds,
+                cleanedResult.hold_time_seconds,
 
               analysis:
-                response.overall_assessment,
+                cleanedResult.overall_assessment,
 
               issues:
-                response.issues,
+                cleanedResult.issues,
 
               date:
                 today,
@@ -736,10 +1508,6 @@ export default function FormLab() {
         } catch (
           saveError
         ) {
-          /*
-           * Saving history failing should not make
-           * a successful AI analysis disappear.
-           */
           console.error(
             '[FormLab] Could not save analysis history:',
             saveError
@@ -758,8 +1526,16 @@ export default function FormLab() {
             'Form analysis failed. Please try again.'
         );
       } finally {
+        /*
+         * ALWAYS clear loading state.
+         */
+
         setAnalyzing(
           false
+        );
+
+        setProgressText(
+          ''
         );
       }
     };
@@ -772,6 +1548,10 @@ export default function FormLab() {
 
   const reset =
     () => {
+      setVideoFile(
+        null
+      );
+
       setVideoUrl(
         null
       );
@@ -804,6 +1584,10 @@ export default function FormLab() {
         false
       );
 
+      setProgressText(
+        ''
+      );
+
       setSearchParams(
         {}
       );
@@ -811,14 +1595,12 @@ export default function FormLab() {
 
   /*
    * ==========================================================
-   * TIME FORMAT
+   * FORMAT TIME
    * ==========================================================
    */
 
   const fmtTime =
-    (
-      seconds
-    ) => {
+    seconds => {
       const safe =
         Number.isFinite(
           seconds
@@ -831,15 +1613,17 @@ export default function FormLab() {
 
       const minutes =
         Math.floor(
-          safe / 60
+          safe /
+            60
         );
 
-      const secondsPart =
+      const secs =
         Math.floor(
-          safe % 60
+          safe %
+            60
         );
 
-      return `${minutes}:${secondsPart
+      return `${minutes}:${secs
         .toString()
         .padStart(
           2,
@@ -856,7 +1640,7 @@ export default function FormLab() {
   return (
     <div className="px-5 safe-bottom">
 
-      {/* Header */}
+      {/* HEADER */}
       <div className="flex items-center gap-3 mb-1">
 
         <div className="w-10 h-10 rounded-2xl bg-primary/15 flex items-center justify-center border border-primary/20">
@@ -881,13 +1665,14 @@ export default function FormLab() {
 
       <p className="text-sm text-muted-foreground mb-5">
         Record or upload any calisthenics
-        movement. Kael analyzes your
-        technique, counts reps or hold
-        time, scores your form, and gives
-        you specific corrections.
+        movement. Kael extracts chronological
+        frames from your selected video section
+        and analyzes your technique, form score,
+        visible reps or hold quality, and
+        corrective priorities.
       </p>
 
-      {/* Error */}
+      {/* ERROR */}
       {errorMessage && (
         <Card className="mb-4 p-4 border-destructive/30 bg-destructive/5">
 
@@ -901,8 +1686,10 @@ export default function FormLab() {
                 Form analysis couldn't be completed
               </p>
 
-              <p className="text-xs text-muted-foreground mt-1">
-                {errorMessage}
+              <p className="text-xs text-muted-foreground mt-1 break-words">
+                {
+                  errorMessage
+                }
               </p>
 
             </div>
@@ -912,8 +1699,9 @@ export default function FormLab() {
         </Card>
       )}
 
-      {/* Step 1 */}
-      {(step === 'select' ||
+      {/* SELECT STEP */}
+      {(step ===
+        'select' ||
         !videoUrl) && (
         <div className="space-y-4">
 
@@ -927,11 +1715,10 @@ export default function FormLab() {
               value={
                 exercise
               }
-              onChange={(
-                event
-              ) =>
+              onChange={e =>
                 setExercise(
-                  event.target.value
+                  e.target
+                    .value
                 )
               }
               placeholder="e.g. Push-up, Pull-up, Handstand…"
@@ -994,15 +1781,15 @@ export default function FormLab() {
             <ul className="text-xs text-muted-foreground space-y-1">
 
               <li>
-                • Film from the
+                • Film from the{' '}
                 <span className="font-semibold text-foreground">
                   side
-                </span>
+                </span>{' '}
                 at torso height
               </li>
 
               <li>
-                • Keep your
+                • Keep your{' '}
                 <span className="font-semibold text-foreground">
                   full body in frame
                 </span>
@@ -1027,7 +1814,7 @@ export default function FormLab() {
         </div>
       )}
 
-      {/* Preview / analysis */}
+      {/* PREVIEW / RESULTS */}
       {videoUrl &&
         step !==
           'select' && (
@@ -1040,7 +1827,9 @@ export default function FormLab() {
               <Video className="w-4 h-4 text-primary" />
 
               <span className="font-heading font-bold text-sm">
-                {exercise}
+                {
+                  exercise
+                }
               </span>
 
             </div>
@@ -1057,13 +1846,16 @@ export default function FormLab() {
               }
               className="text-muted-foreground"
             >
+
               <RotateCcw className="w-3.5 h-3.5 mr-1" />
+
               New video
+
             </Button>
 
           </div>
 
-          {/* Video */}
+          {/* VIDEO */}
           <video
             ref={
               videoRef
@@ -1079,7 +1871,7 @@ export default function FormLab() {
             }
           />
 
-          {/* Trim */}
+          {/* TRIM */}
           {videoDuration >
             1 && (
             <Card className="p-4">
@@ -1124,19 +1916,20 @@ export default function FormLab() {
                     aria-label="Trim start time"
                     type="range"
                     min={0}
-                    max={
-                      videoDuration
-                    }
+                    max={Math.max(
+                      0,
+                      trimEnd -
+                        0.1
+                    )}
                     step={0.1}
                     value={
                       trimStart
                     }
-                    onChange={(
-                      event
-                    ) =>
+                    onChange={e =>
                       handleTrimStart(
                         parseFloat(
-                          event.target.value
+                          e.target
+                            .value
                         )
                       )
                     }
@@ -1169,7 +1962,11 @@ export default function FormLab() {
                   <input
                     aria-label="Trim end time"
                     type="range"
-                    min={0}
+                    min={Math.min(
+                      videoDuration,
+                      trimStart +
+                        0.1
+                    )}
                     max={
                       videoDuration
                     }
@@ -1177,12 +1974,11 @@ export default function FormLab() {
                     value={
                       trimEnd
                     }
-                    onChange={(
-                      event
-                    ) =>
+                    onChange={e =>
                       handleTrimEnd(
                         parseFloat(
-                          event.target.value
+                          e.target
+                            .value
                         )
                       )
                     }
@@ -1195,8 +1991,11 @@ export default function FormLab() {
                 </div>
 
                 <p className="text-[11px] text-muted-foreground">
-                  Kael analyzes only this
-                  section of the video.
+                  The selected video section is
+                  converted into chronological
+                  still frames before AI analysis.
+                  This keeps Form Analysis compatible
+                  with your free AI setup.
                 </p>
 
               </div>
@@ -1204,18 +2003,16 @@ export default function FormLab() {
             </Card>
           )}
 
-          {/* Analyze */}
-          {step !==
+          {/* ANALYZE */}
+          {(step !==
             'results' ||
-            !result ? (
+            !result) && (
             <Button
               type="button"
               className="w-full h-12 font-heading font-semibold"
               disabled={
                 analyzing ||
-                uploading ||
-                !videoUrl ||
-                !exercise
+                !videoFile
               }
               onClick={
                 handleAnalyze
@@ -1224,32 +2021,40 @@ export default function FormLab() {
 
               {analyzing ? (
                 <>
+
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Analyzing your form…
+
+                  {
+                    progressText ||
+                    'Analyzing your form…'
+                  }
+
                 </>
               ) : (
                 <>
+
                   <Eye className="w-4 h-4 mr-2" />
+
                   Analyze my form
+
                 </>
               )}
 
             </Button>
-          ) : null}
+          )}
 
           {analyzing && (
             <div className="text-center text-xs text-muted-foreground px-4">
 
-              Kael is analyzing your video
-              for alignment, joint position,
-              range of motion, scapular
-              mechanics, and exercise-specific
-              technique.
+              {
+                progressText ||
+                'Preparing your analysis…'
+              }
 
             </div>
           )}
 
-          {/* Results */}
+          {/* RESULTS */}
           {result &&
             step ===
               'results' && (
@@ -1306,8 +2111,11 @@ export default function FormLab() {
                   );
                 }}
               >
+
                 <RotateCcw className="w-4 h-4 mr-2" />
+
                 Re-analyze with new trim
+
               </Button>
 
             </>
