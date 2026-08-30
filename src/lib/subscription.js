@@ -1,6 +1,7 @@
 /**
- * Washek Fitness subscription entitlements.
+ * Washek Fitness subscription feature gates.
  *
+ * Plans:
  * free < progress < performance < elite
  */
 
@@ -8,61 +9,136 @@ export const PLAN_HIERARCHY = [
   'free',
   'progress',
   'performance',
-  'elite',
+  'elite'
 ];
 
+
 export const AI_MESSAGE_LIMITS = {
-  free: 25,
-  progress: 300,
-  performance: 800,
-  elite: 2000,
+  free:
+    25,
+
+  progress:
+    300,
+
+  performance:
+    800,
+
+  elite:
+    2000
 };
 
-export function hasPlan(userPlan, requiredPlan) {
-  const userIdx = PLAN_HIERARCHY.indexOf(userPlan || 'free');
-  const reqIdx = PLAN_HIERARCHY.indexOf(requiredPlan);
 
-  if (userIdx < 0 || reqIdx < 0) return false;
+export function hasPlan(
+  userPlan,
+  requiredPlan
+) {
+  const userIndex =
+    PLAN_HIERARCHY.indexOf(
+      userPlan ||
+      'free'
+    );
 
-  return userIdx >= reqIdx;
+  const requiredIndex =
+    PLAN_HIERARCHY.indexOf(
+      requiredPlan
+    );
+
+  return (
+    userIndex >=
+      0 &&
+
+    requiredIndex >=
+      0 &&
+
+    userIndex >=
+      requiredIndex
+  );
 }
+
 
 export const FEATURE_PLANS = {
-  snap_food: 'progress',
-  scan_barcode: 'progress',
-  progress_photos: 'progress',
 
-  ai_body_analysis: 'performance',
+  /*
+   * Progress+
+   */
+  snap_food:
+    'progress',
 
-  // Progress promise:
-  // "Full custom workout adjustments"
-  live_workout_adjustments: 'progress',
+  scan_barcode:
+    'progress',
 
-  // Elite-only enhanced path:
-  elite_realtime_adjustments: 'elite',
+  progress_photos:
+    'progress',
 
-  // Free for everybody.
-  live_workout: 'free',
+  live_workout_adjustments:
+    'progress',
 
-  kael_elite_tips: 'elite',
 
-  workout_analytics: 'performance',
-  nutrition_insights: 'performance',
+  /*
+   * Performance+
+   */
+  ai_body_analysis:
+    'performance',
 
-  deep_recovery_insights: 'elite',
+  workout_analytics:
+    'performance',
+
+  nutrition_insights:
+    'performance',
+
+
+  /*
+   * Elite
+   */
+  progress_graph:
+    'elite',
+
+  elite_realtime_adjustments:
+    'elite',
+
+  kael_elite_tips:
+    'elite',
+
+  deep_recovery_insights:
+    'elite',
+
+
+  /*
+   * Free
+   */
+  live_workout:
+    'free'
 };
 
-export function canAccess(userPlan, feature) {
-  const requiredPlan = FEATURE_PLANS[feature];
 
-  if (!requiredPlan) return false;
+export function canAccess(
+  userPlan,
+  feature
+) {
+  const requiredPlan =
+    FEATURE_PLANS[
+      feature
+    ];
 
-  return hasPlan(userPlan, requiredPlan);
+  if (!requiredPlan) {
+    return false;
+  }
+
+  return hasPlan(
+    userPlan,
+    requiredPlan
+  );
 }
 
-export function getPlanAiLimit(plan) {
+
+export function getPlanAiLimit(
+  plan
+) {
   return (
-    AI_MESSAGE_LIMITS[plan || 'free'] ??
+    AI_MESSAGE_LIMITS[
+      plan ||
+      'free'
+    ] ??
     AI_MESSAGE_LIMITS.free
   );
 }
