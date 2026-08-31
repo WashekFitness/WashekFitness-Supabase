@@ -457,33 +457,49 @@ function buildFoodPrompt() {
   return `
 You are Kael, the nutrition-analysis system for Washek Fitness.
 
-Analyze the supplied food photograph as accurately as possible.
+Analyze the supplied food photograph as a careful nutrition estimator. The goal is a realistic, defensible estimate for the FOOD AND PORTION ACTUALLY VISIBLE in the image, not a generic serving from memory.
 
-IDENTIFY:
-- Every distinct visible food item that can reasonably be identified.
-- Specific food names when the image supports them.
-- Visible sauces, dressings, oils, toppings, breading, or other visible ingredients.
+STEP 1 — IDENTIFY THE FOOD:
+- Identify every distinct visible food item.
+- Be specific when the image supports it (for example, grilled chicken breast rather than "meat").
+- Identify visible toppings, breading, cheese, sauces, dressings, oils, spreads, and cooking fats when they are visible or strongly supported.
+- Do not invent ingredients that cannot reasonably be inferred from the image.
+- If a food cannot be identified confidently, use a conservative generic description.
 
-ESTIMATE:
-- Visible serving size.
-- Calories.
-- Protein grams.
-- Carbohydrate grams.
-- Fat grams.
+STEP 2 — ESTIMATE THE PORTION:
+- Estimate the amount actually shown in the photo, not an assumed restaurant serving.
+- Use visual size, plate/bowl/container dimensions, thickness, count of pieces, and relative scale.
+- For countable foods, use the visible count when possible.
+- For mixed dishes, estimate the major components separately when they are visually distinguishable.
+- State the estimated portion in a useful unit such as "6 oz cooked", "1 cup", "2 eggs", or "1 medium banana".
+- Do not silently multiply a standard serving by an arbitrary factor.
 
-IMPORTANT ACCURACY RULES:
-- A photograph does not provide laboratory precision.
-- Do not pretend an exact value is known when it is not.
-- Do not invent hidden ingredients.
-- Prefer a realistic estimate over an extreme guess.
-- Calories and macros should be reasonably consistent.
-- If the portion size is uncertain, make the best defensible estimate from the visible food.
+STEP 3 — ESTIMATE NUTRITION:
+- Estimate calories, protein, carbs, and fat for THAT estimated visible portion.
+- Prefer realistic nutrition values from common food composition knowledge.
+- Account for calorie-dense visible additions such as oil, butter, cheese, sauces, dressings, nuts, and breading.
+- For cooked meat/starches, distinguish cooked portion from raw weight when estimating.
+- Do not make protein, carbohydrate, or fat values unrealistically high or low just to hit a calorie number.
+- Do not assume a food is "diet", "low fat", or "high protein" unless the image or known product information supports it.
+
+STEP 4 — RECONCILE THE NUMBERS:
+- Check that the reported macros are plausible for the identified food and portion.
+- As a sanity check, 4 kcal/g protein + 4 kcal/g carbs + 9 kcal/g fat should be reasonably close to the reported calories.
+- Small differences are expected because fiber, rounding, sugar alcohols, and food composition can affect calorie totals.
+- If the first estimate produces a large calorie/macro mismatch, revise the MACROS AND/OR CALORIES before returning the result.
+- Never report a calorie number that is obviously incompatible with the reported macros.
+- The calorie total must represent the same portion as the macro values.
+
+ACCURACY / UNCERTAINTY:
+- A photograph cannot provide laboratory precision. Give the best defensible estimate rather than false precision.
+- When portion size is uncertain, use visual evidence and choose a reasonable midpoint instead of an extreme guess.
+- Do not invent a brand, recipe, ingredient, or exact nutrition label.
+- Previous corrections below are reference examples only. Use them only when the same food is visibly present and the portion is comparable.
 
 Return ONLY valid JSON.
-
 Do not use Markdown.
-Do not add an explanation before or after the JSON.
-Do not wrap the JSON in \`\`\` fences.
+Do not add commentary outside the JSON.
+Do not wrap the JSON in code fences.
 
 Return exactly this structure:
 
@@ -491,7 +507,7 @@ Return exactly this structure:
   "foods": [
     {
       "food_name": "specific food name",
-      "serving_size": "estimated visible serving",
+      "serving_size": "estimated visible portion",
       "calories": 0,
       "protein_g": 0,
       "carbs_g": 0,
@@ -499,6 +515,12 @@ Return exactly this structure:
     }
   ]
 }
+
+Before returning JSON, internally double-check:
+1. The portion matches what is visible.
+2. Every major visible calorie source is accounted for.
+3. The macros are plausible for that food.
+4. Calories and macros are reasonably reconciled.
 
 ${buildMemoryContext()}
 `;
@@ -1063,7 +1085,7 @@ export default function FoodScanner({
    */
 
   const handleConfirm =
-    (
+    async (
       items
     ) => {
       const foods =
@@ -1081,37 +1103,48 @@ export default function FoodScanner({
         return;
       }
 
-      /*
-       * Remember corrected values for future scans.
-       */
-
-      saveFoodMemory(
-        foods
-      );
-
-
-      /*
-       * Send each detected food back to the nutrition
-       * tracker exactly as before.
-       */
-
-      for (
-        const food of
-        foods
-      ) {
-        onFoodDetected(
-          food
-        );
-      }
-
-
-      setPendingFoods(
-        null
-      );
-
       setError(
         ''
       );
+
+      try {
+        /*
+         * Wait for every database save to finish before closing
+         * the review screen. If any save fails, keep the edited
+         * values on screen so the user can retry.
+         */
+        for (
+          const food of
+          foods
+        ) {
+          await onFoodDetected(
+            food
+          );
+        }
+
+        /*
+         * Only remember values after the database save succeeds.
+         */
+        saveFoodMemory(
+          foods
+        );
+
+        setPendingFoods(
+          null
+        );
+      } catch (
+        caught
+      ) {
+        console.error(
+          '[FoodScanner] Failed to save food to log:',
+          caught
+        );
+
+        setError(
+          caught?.message ||
+            'Could not save the food to your log. Please try again.'
+        );
+      }
     };
 
 
