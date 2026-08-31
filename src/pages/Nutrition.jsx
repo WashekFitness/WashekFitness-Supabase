@@ -292,7 +292,6 @@ export default function Nutrition() {
             carbs_g: Number(data.carbs_g) || 0,
             fat_g: Number(data.fat_g) || 0,
             meal_type: data.meal_type || mealType,
-            image_url: data.image_url || null,
           }
         ),
       onSuccess: () => {
