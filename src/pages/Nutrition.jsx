@@ -279,6 +279,30 @@ export default function Nutrition() {
     });
 
 
+  const updateMutation =
+    useMutation({
+      mutationFn: ({ id, data }) =>
+        supabaseApi.entities.NutritionEntry.update(
+          id,
+          {
+            food_name: data.food_name,
+            serving_size: data.serving_size,
+            calories: Number(data.calories) || 0,
+            protein_g: Number(data.protein_g) || 0,
+            carbs_g: Number(data.carbs_g) || 0,
+            fat_g: Number(data.fat_g) || 0,
+            meal_type: data.meal_type || mealType,
+            image_url: data.image_url || null,
+          }
+        ),
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: ['nutrition', today, user?.email],
+        });
+        toast.success('Food updated!');
+      },
+    });
+
   const deleteMutation =
     useMutation({
       mutationFn:
@@ -781,7 +805,7 @@ export default function Nutrition() {
           <FoodScanner
             onFoodDetected={
               (food) =>
-                createMutation.mutateAsync(
+                createMutation.mutate(
                   food
                 )
             }
@@ -824,6 +848,13 @@ export default function Nutrition() {
                   deleteMutation.mutate(
                     id
                   )
+              }
+              onEdit={
+                (id, data) =>
+                  updateMutation.mutateAsync({
+                    id,
+                    data,
+                  })
               }
             />
 
