@@ -76,6 +76,9 @@ export const FEATURE_PLANS = {
   advanced_macro_tracking:
     'progress',
 
+  adaptive_programming:
+    'progress',
+
 
   /*
    * Performance+
