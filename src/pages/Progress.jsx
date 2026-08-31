@@ -2,10 +2,16 @@ import { supabaseApi } from '@/lib/supabaseApi';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { Trophy, Flame, Clock, TrendingUp } from 'lucide-react';
+import { Trophy, Flame, Clock, TrendingUp, Lock } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
+import { useAppSettings } from '@/lib/AppSettingsContext';
+import { canAccess } from '@/lib/subscription';
 
 export default function Progress() {
+  const { settings } = useAppSettings();
+  const plan = settings?.subscription_plan || 'free';
+  const hasWorkoutAnalytics = canAccess(plan, 'workout_analytics');
+
   const { data: logs = [] } = useQuery({
     queryKey: ['logs'],
     queryFn: () => supabaseApi.entities.WorkoutLog.list('-date', 60),
@@ -114,7 +120,7 @@ export default function Progress() {
       </Card>
 
       {/* Calorie chart */}
-      <Card className="p-4">
+      <Card className="p-4 mb-4">
         <div className="flex items-center gap-2 mb-4">
           <Flame className="w-4 h-4 text-accent" />
           <p className="font-heading font-bold text-sm">Daily Calories (7 days)</p>
@@ -134,6 +140,48 @@ export default function Progress() {
             <Bar dataKey="calories" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </Card>
+
+      {/* Performance workout analytics */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="w-4 h-4 text-primary" />
+          <p className="font-heading font-bold text-sm">Workout Analytics</p>
+        </div>
+        {hasWorkoutAnalytics ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] text-muted-foreground">Avg. workouts / week</p>
+              <p className="font-heading font-bold text-xl">
+                {(totalWorkouts / 8).toFixed(1)}
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] text-muted-foreground">Avg. session time</p>
+              <p className="font-heading font-bold text-xl">
+                {totalWorkouts ? Math.round(totalMinutes / totalWorkouts) : 0} min
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] text-muted-foreground">8-week total</p>
+              <p className="font-heading font-bold text-xl">{totalWorkouts}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] text-muted-foreground">Best week</p>
+              <p className="font-heading font-bold text-xl">
+                {Math.max(...weeklyData.map(w => w.workouts), 0)} workouts
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-center">
+            <Lock className="w-5 h-5 mx-auto mb-2 text-muted-foreground" />
+            <p className="font-heading font-bold text-sm">Performance Analytics</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Upgrade to Performance to unlock deeper workout analytics.
+            </p>
+          </div>
+        )}
       </Card>
     </div>
   );
