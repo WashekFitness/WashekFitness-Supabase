@@ -73,6 +73,9 @@ export const FEATURE_PLANS = {
   live_workout_adjustments:
     'progress',
 
+  advanced_macro_tracking:
+    'progress',
+
 
   /*
    * Performance+
