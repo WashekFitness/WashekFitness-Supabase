@@ -393,21 +393,24 @@ export default function WeeklyPlan({
               };
             }
 
+            // Keep the raw input while the user is editing.
+            // Converting '' to 0 here makes the zero impossible to erase.
+            if (value === '') {
+              return {
+                ...exercise,
+                [field]: '',
+              };
+            }
+
             const numeric =
               Number(value);
 
             return {
               ...exercise,
-
               [field]:
-                Number.isFinite(
-                  numeric
-                )
-                  ? Math.max(
-                      0,
-                      numeric
-                    )
-                  : 0,
+                Number.isFinite(numeric)
+                  ? Math.max(0, numeric)
+                  : '',
             };
           }
         )
