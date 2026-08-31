@@ -4,12 +4,14 @@ import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { Trophy, Flame, Clock, TrendingUp, Lock } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
-import { useAppSettings } from '@/lib/AppSettingsContext';
 import { canAccess } from '@/lib/subscription';
 
 export default function Progress() {
-  const { settings } = useAppSettings();
-  const plan = settings?.subscription_plan || 'free';
+  const { data: user } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => supabaseApi.auth.me(),
+  });
+  const plan = user?.subscription_plan || 'free';
   const hasWorkoutAnalytics = canAccess(plan, 'workout_analytics');
 
   const { data: logs = [] } = useQuery({
@@ -22,7 +24,6 @@ export default function Progress() {
     queryFn: () => supabaseApi.entities.NutritionEntry.list('-date', 200),
   });
 
-  // Weekly workout count for last 8 weeks
   const weeklyData = (() => {
     const weeks = [];
     for (let i = 7; i >= 0; i--) {
@@ -38,7 +39,6 @@ export default function Progress() {
     return weeks;
   })();
 
-  // Daily calorie data for last 7 days
   const calorieData = (() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -85,7 +85,6 @@ export default function Progress() {
       <PageHeader title="Progress" subtitle="Your journey at a glance" />
       <div className="mb-5" />
 
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {stats.map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="p-3 text-center">
@@ -96,7 +95,6 @@ export default function Progress() {
         ))}
       </div>
 
-      {/* Workout frequency chart */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-4 h-4 text-primary" />
@@ -106,20 +104,12 @@ export default function Progress() {
           <BarChart data={weeklyData}>
             <XAxis dataKey="week" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
             <YAxis hide />
-            <Tooltip
-              contentStyle={{
-                background: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '8px',
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }} />
             <Bar dataKey="workouts" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </Card>
 
-      {/* Calorie chart */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-2 mb-4">
           <Flame className="w-4 h-4 text-accent" />
@@ -129,20 +119,12 @@ export default function Progress() {
           <BarChart data={calorieData}>
             <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
             <YAxis hide />
-            <Tooltip
-              contentStyle={{
-                background: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '8px',
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }} />
             <Bar dataKey="calories" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </Card>
 
-      {/* Performance workout analytics */}
       <Card className="p-4">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-4 h-4 text-primary" />
@@ -150,36 +132,16 @@ export default function Progress() {
         </div>
         {hasWorkoutAnalytics ? (
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-[10px] text-muted-foreground">Avg. workouts / week</p>
-              <p className="font-heading font-bold text-xl">
-                {(totalWorkouts / 8).toFixed(1)}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-[10px] text-muted-foreground">Avg. session time</p>
-              <p className="font-heading font-bold text-xl">
-                {totalWorkouts ? Math.round(totalMinutes / totalWorkouts) : 0} min
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-[10px] text-muted-foreground">8-week total</p>
-              <p className="font-heading font-bold text-xl">{totalWorkouts}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-[10px] text-muted-foreground">Best week</p>
-              <p className="font-heading font-bold text-xl">
-                {Math.max(...weeklyData.map(w => w.workouts), 0)} workouts
-              </p>
-            </div>
+            <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Avg. workouts / week</p><p className="font-heading font-bold text-xl">{(totalWorkouts / 8).toFixed(1)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Avg. session time</p><p className="font-heading font-bold text-xl">{totalWorkouts ? Math.round(totalMinutes / totalWorkouts) : 0} min</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">8-week total</p><p className="font-heading font-bold text-xl">{totalWorkouts}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Best week</p><p className="font-heading font-bold text-xl">{Math.max(...weeklyData.map(w => w.workouts), 0)} workouts</p></div>
           </div>
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-center">
             <Lock className="w-5 h-5 mx-auto mb-2 text-muted-foreground" />
             <p className="font-heading font-bold text-sm">Performance Analytics</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Upgrade to Performance to unlock deeper workout analytics.
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Upgrade to Performance to unlock deeper workout analytics.</p>
           </div>
         )}
       </Card>
