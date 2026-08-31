@@ -23,7 +23,6 @@ import {
 
 export default function FoodEditModal({
   foods,
-  imageUrl,
   onConfirm,
   onCancel,
   title = 'Review Scan',
@@ -37,11 +36,15 @@ export default function FoodEditModal({
     setItems,
   ] = useState(
     (foods || []).map(
-      (food) => ({
-        ...food,
-        image_url:
-          imageUrl,
-      })
+      (food) =>
+        Object.fromEntries(
+          Object.entries(
+            food || {}
+          ).filter(
+            ([key]) =>
+              key !== 'image_url'
+          )
+        )
     )
   );
 
@@ -114,9 +117,6 @@ export default function FoodEditModal({
 
           fat_g:
             0,
-
-          image_url:
-            imageUrl,
         },
       ]
     );
