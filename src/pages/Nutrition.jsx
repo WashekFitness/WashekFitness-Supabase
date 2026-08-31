@@ -29,8 +29,6 @@ import {
   Drumstick,
   Wheat,
   Droplets,
-  Lock,
-  Sparkles,
 } from 'lucide-react';
 
 import {
@@ -41,119 +39,11 @@ import {
   calcNutritionGoals,
 } from '@/lib/nutritionGoals';
 
-import {
-  canAccess,
-} from '@/lib/subscription';
-
 import PageHeader from '@/components/layout/PageHeader';
 
 import {
   getLocalDateKey,
 } from '@/lib/messageLimit';
-
-
-function NutritionInsights({
-  entries,
-  totals,
-  goals,
-  userPlan,
-}) {
-  const unlocked = canAccess(
-    userPlan,
-    'nutrition_insights'
-  );
-
-  const insights = [];
-
-  if (unlocked) {
-    const calorieGoal = Number(goals?.calories) || 0;
-    const proteinGoal = Number(goals?.protein) || 0;
-    const calories = Number(totals?.calories) || 0;
-    const protein = Number(totals?.protein) || 0;
-    const carbs = Number(totals?.carbs) || 0;
-    const fat = Number(totals?.fat) || 0;
-
-    if (calorieGoal > 0) {
-      const remaining = calorieGoal - calories;
-      if (remaining > 150) {
-        insights.push(`You have about ${Math.round(remaining)} calories remaining today. A balanced meal can help you close the gap without overshooting.`);
-      } else if (remaining < -150) {
-        insights.push(`You're about ${Math.round(Math.abs(remaining))} calories over today's target. Keep your next meal lighter and protein-focused if you're still hungry.`);
-      } else {
-        insights.push("You're currently close to your calorie target for the day. Keep portions consistent with your goal.");
-      }
-    }
-
-    if (proteinGoal > 0) {
-      const proteinRemaining = proteinGoal - protein;
-      if (proteinRemaining > 10) {
-        insights.push(`You're about ${Math.round(proteinRemaining)}g short of your protein target. Prioritize a protein-rich food in your next meal.`);
-      } else {
-        insights.push('Protein intake is on track for your daily target.');
-      }
-    }
-
-    if (calories > 0) {
-      const carbCalories = carbs * 4;
-      const fatCalories = fat * 9;
-      const macroCalories = carbCalories + fatCalories + protein * 4;
-      if (macroCalories > 0) {
-        const fatShare = fatCalories / macroCalories;
-        if (fatShare > 0.40) {
-          insights.push('A relatively large share of today’s logged calories is coming from fat. Consider adding lean protein or higher-fiber carbs if that fits your goal.');
-        } else if (carbCalories / macroCalories < 0.25) {
-          insights.push('Carbohydrate intake is relatively low today. If training performance is a priority, consider adding a quality carb source around your workout.');
-        }
-      }
-    }
-
-    if ((entries?.length || 0) === 0) {
-      insights.push('Start logging meals throughout the day so Kael can give you more useful nutrition guidance.');
-    } else if ((entries?.length || 0) < 3) {
-      insights.push('You have only a few meals logged today. More complete logging makes these insights more useful.');
-    }
-  }
-
-  return (
-    <div className="mb-6 rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-primary" />
-          <h3 className="font-heading font-bold text-sm">
-            Nutrition Insights
-          </h3>
-        </div>
-        {!unlocked && (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Performance+
-          </span>
-        )}
-      </div>
-
-      {unlocked ? (
-        <div className="space-y-2.5">
-          {insights.map((insight, index) => (
-            <div
-              key={index}
-              className="rounded-xl bg-muted/40 border border-border/60 px-3 py-2.5"
-            >
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {insight}
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-xl bg-muted/40 border border-border/60 p-3 flex items-start gap-3">
-          <Lock className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Performance unlocks daily nutrition insights and actionable suggestions based on your calories, macros, and logged meals.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 
 export default function Nutrition() {
@@ -821,14 +711,6 @@ export default function Nutrition() {
         </div>
 
 
-        <NutritionInsights
-          entries={entries}
-          totals={totals}
-          goals={goals}
-          userPlan={user?.subscription_plan || 'free'}
-        />
-
-
         {/* Meal type */}
 
         <div className="
@@ -899,7 +781,7 @@ export default function Nutrition() {
           <FoodScanner
             onFoodDetected={
               (food) =>
-                createMutation.mutate(
+                createMutation.mutateAsync(
                   food
                 )
             }
