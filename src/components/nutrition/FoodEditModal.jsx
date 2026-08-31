@@ -26,7 +26,12 @@ export default function FoodEditModal({
   imageUrl,
   onConfirm,
   onCancel,
+  title = 'Review Scan',
+  subtitle = 'Edit anything the AI got wrong',
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
   const [
     items,
     setItems,
@@ -232,7 +237,7 @@ export default function FoodEditModal({
                     font-bold
                     text-lg
                   ">
-                    Review Scan
+                    {title}
                   </h2>
 
 
@@ -240,7 +245,7 @@ export default function FoodEditModal({
                     text-xs
                     text-muted-foreground
                   ">
-                    Edit anything the AI got wrong
+                    {subtitle}
                   </p>
 
                 </div>
@@ -687,14 +692,29 @@ export default function FoodEditModal({
                 </p>
 
 
+                {saveError && (
+                  <p className="text-sm text-destructive mb-3" role="alert">
+                    {saveError}
+                  </p>
+                )}
+
                 <Button
                   type="button"
-                  onClick={() =>
-                    onConfirm(
-                      validItems
-                    )
-                  }
+                  onClick={async () => {
+                    if (saving || validItems.length === 0) return;
+                    setSaving(true);
+                    setSaveError('');
+                    try {
+                      await onConfirm(validItems);
+                    } catch (error) {
+                      console.error('[FoodEditModal] Save failed:', error);
+                      setSaveError(error?.message || 'Could not save this food. Please try again.');
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
                   disabled={
+                    saving ||
                     validItems.length ===
                     0
                   }
@@ -715,7 +735,7 @@ export default function FoodEditModal({
                     h-4
                   " />
 
-                  Save to Log
+                  {saving ? 'Saving...' : 'Save to Log'}
 
                 </Button>
 
