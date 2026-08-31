@@ -23,6 +23,7 @@ import {
 
 export default function FoodEditModal({
   foods,
+  imageUrl,
   onConfirm,
   onCancel,
   title = 'Review Scan',
@@ -71,20 +72,16 @@ export default function FoodEditModal({
               return item;
             }
 
+            const textField =
+              field === 'food_name' ||
+              field === 'serving_size';
+
             return {
               ...item,
-
               [field]:
-                field ===
-                  'food_name' ||
-                field ===
-                  'serving_size'
+                textField
                   ? value
-                  : (
-                      parseFloat(
-                        value
-                      ) || 0
-                    ),
+                  : value,
             };
           }
         )
@@ -117,6 +114,9 @@ export default function FoodEditModal({
 
           fat_g:
             0,
+
+          image_url:
+            imageUrl,
         },
       ]
     );
@@ -705,7 +705,22 @@ export default function FoodEditModal({
                     setSaving(true);
                     setSaveError('');
                     try {
-                      await onConfirm(validItems);
+                      const normalizedItems =
+                        validItems.map(
+                          (item) => ({
+                            ...item,
+                            calories:
+                              Number(item.calories) || 0,
+                            protein_g:
+                              Number(item.protein_g) || 0,
+                            carbs_g:
+                              Number(item.carbs_g) || 0,
+                            fat_g:
+                              Number(item.fat_g) || 0,
+                          })
+                        );
+
+                      await onConfirm(normalizedItems);
                     } catch (error) {
                       console.error('[FoodEditModal] Save failed:', error);
                       setSaveError(error?.message || 'Could not save this food. Please try again.');
