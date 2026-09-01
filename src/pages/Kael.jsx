@@ -210,6 +210,17 @@ export default function Kael() {
 
 
   /*
+   * Keeps the Kael input ready for typing.
+   *
+   * After Kael finishes responding, focus automatically returns
+   * to the message box so the user can immediately start typing
+   * without clicking it again.
+   */
+  const inputRef =
+    useRef(null);
+
+
+  /*
    * Used to cancel a typewriter animation if the user sends
    * another message or leaves the page while Kael is typing.
    */
@@ -323,6 +334,31 @@ export default function Kael() {
     messages[
       messages.length - 1
     ]?.content,
+  ]);
+
+
+  /*
+   * Keep the message box ready for typing.
+   *
+   * After Kael finishes responding, focus returns to the input
+   * automatically so the user can immediately start typing
+   * without clicking the box again.
+   */
+
+  useEffect(() => {
+    if (
+      !loading &&
+      !editingMessage &&
+      !atLimit
+    ) {
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+    }
+  }, [
+    loading,
+    editingMessage,
+    atLimit,
   ]);
 
 
@@ -881,26 +917,77 @@ export default function Kael() {
         );
 
       } finally {
-
-        typingCancelledRef.current =
-          false;
-
-        setLoading(
-          false
-        );
+        setLoading(false);
       }
     };
 
 
   /*
    * ==========================================================
-   * KEYBOARD
+   * EDIT MESSAGE
+   * ==========================================================
+   */
+
+  const handleEdit =
+    (message) => {
+      if (
+        loading ||
+        !message ||
+        message.role !==
+          'user'
+      ) {
+        return;
+      }
+
+      setEditingMessage(
+        message
+      );
+
+      setInput(
+        message.content ||
+          ''
+      );
+
+      window.setTimeout(
+        () => {
+          inputRef.current?.focus();
+        },
+        0
+      );
+    };
+
+
+  /*
+   * ==========================================================
+   * CANCEL EDIT
+   * ==========================================================
+   */
+
+  const cancelEdit =
+    () => {
+      setEditingMessage(
+        null
+      );
+
+      setInput('');
+
+      window.setTimeout(
+        () => {
+          inputRef.current?.focus();
+        },
+        0
+      );
+    };
+
+
+  /*
+   * ==========================================================
+   * KEYBOARD HANDLING
    * ==========================================================
    */
 
   const handleKeyDown =
     (event) => {
-
       if (
         event.key ===
           'Enter' &&
@@ -915,170 +1002,124 @@ export default function Kael() {
 
   /*
    * ==========================================================
-   * EDIT CONTROLS
-   * ==========================================================
-   */
-
-  const cancelEdit =
-    () => {
-      setEditingMessage(
-        null
-      );
-
-      setInput('');
-    };
-
-
-  const handleEdit =
-    (message) => {
-
-      if (
-        loading
-      ) {
-        return;
-      }
-
-      setEditingMessage(
-        message
-      );
-
-      setInput(
-        message.content
-      );
-    };
-
-
-  /*
-   * ==========================================================
    * GREETING
    * ==========================================================
    */
 
   const greeting = {
+    id:
+      'kael-greeting',
+
     role:
       'assistant',
 
     content:
       `Hey${
         firstName
-          ? `, ${firstName}`
+          ? ` ${firstName}`
           : ''
-      }! I'm **Kael**, your coach. What do you need? 💪`,
+      } — I'm Kael. What's on your mind?`,
   };
 
 
+  /*
+   * ==========================================================
+   * RENDER
+   * ==========================================================
+   */
+
   return (
-    <div className="
-      flex
-      flex-col
-      h-[calc(100vh-3rem)]
-    ">
+    <div
+      className="
+        flex
+        flex-col
+        h-[calc(100vh-4rem)]
+        bg-background
+      "
+    >
 
       {/* ======================================================
           HEADER
           ====================================================== */}
 
       <div className="
-        px-5
-        pb-3
+        flex-shrink-0
+        px-4
+        py-3
         border-b
         border-border
-        bg-card/50
+        bg-card/80
         backdrop-blur-sm
-        flex-shrink-0
       ">
 
         <div className="
           flex
           items-center
+          justify-between
           gap-3
         ">
 
           <div className="
-            w-10
-            h-10
-            rounded-2xl
-            bg-primary/15
             flex
             items-center
-            justify-center
-            border
-            border-primary/20
+            gap-3
           ">
 
-            <Zap className="
-              w-5
-              h-5
-              text-primary
-            " />
-
-          </div>
-
-
-          <div>
-
-            <h1 className="
-              font-heading
-              font-bold
-              text-lg
-              leading-tight
+            <div className="
+              w-10
+              h-10
+              rounded-2xl
+              bg-primary/15
+              flex
+              items-center
+              justify-center
+              flex-shrink-0
             ">
-              Kael
-            </h1>
 
-            <p className="
-              text-xs
-              text-muted-foreground
-            ">
-              AI Fitness Coach · Always available
-            </p>
+              <Zap className="
+                w-5
+                h-5
+                text-primary
+              " />
+
+            </div>
+
+
+            <div>
+
+              <h1 className="
+                font-heading
+                font-bold
+                text-lg
+              ">
+                Kael
+              </h1>
+
+              <p className="
+                text-[10px]
+                text-muted-foreground
+              ">
+                Your AI fitness coach
+              </p>
+
+            </div>
 
           </div>
 
 
           <div className="
-            ml-auto
             flex
             items-center
             gap-2
           ">
 
-            <div className="
-              w-2
-              h-2
-              rounded-full
-              bg-accent
-              animate-pulse
-            " />
-
-
             {stats && (
-              <span
-                className={cn(
-                  `
-                    text-[10px]
-                    font-semibold
-                    px-2
-                    py-0.5
-                    rounded-full
-                    border
-                  `,
-                  atLimit
-                    ? `
-                      border-destructive/40
-                      text-destructive
-                      bg-destructive/10
-                    `
-                    : `
-                      border-border
-                      text-muted-foreground
-                      bg-muted/50
-                    `
-                )}
-              >
-                {
-                  stats.remaining
-                }{' '}
+              <span className="
+                text-[10px]
+                text-muted-foreground
+                whitespace-nowrap
+              ">
+                {stats.remaining}{' '}
                 msg left
               </span>
             )}
@@ -1160,25 +1201,6 @@ export default function Kael() {
                   }
                 />
 
-
-                {/* Small active typing cursor */}
-
-                {isTypingMessage && (
-                  <span
-                    aria-hidden="true"
-                    className="
-                      inline-block
-                      ml-[3.35rem]
-                      mt-1
-                      w-1
-                      h-4
-                      rounded-full
-                      bg-primary
-                      animate-pulse
-                    "
-                  />
-                )}
-
               </div>
             );
           }
@@ -1209,66 +1231,36 @@ export default function Kael() {
                 flex
                 items-center
                 justify-center
-                mr-2
-                flex-shrink-0
-                mt-0.5
-              ">
-
-                <Zap className="
-                  w-3.5
-                  h-3.5
-                  text-primary
-                " />
-
-              </div>
-
-
-              <div className="
-                bg-card
-                border
-                border-border
-                rounded-2xl
-                rounded-tl-sm
-                px-4
-                py-3
+                gap-1
               ">
 
                 <div className="
-                  flex
-                  gap-1.5
-                  items-center
-                  h-5
-                ">
-
-                  <div className="
-                    w-1.5
-                    h-1.5
-                    bg-muted-foreground/60
-                    rounded-full
-                    animate-bounce
-                  " />
+                  w-1.5
+                  h-1.5
+                  bg-muted-foreground/60
+                  rounded-full
+                  animate-bounce
+                " />
 
 
-                  <div className="
-                    w-1.5
-                    h-1.5
-                    bg-muted-foreground/60
-                    rounded-full
-                    animate-bounce
-                    [animation-delay:150ms]
-                  " />
+                <div className="
+                  w-1.5
+                  h-1.5
+                  bg-muted-foreground/60
+                  rounded-full
+                  animate-bounce
+                  [animation-delay:150ms]
+                " />
 
 
-                  <div className="
-                    w-1.5
-                    h-1.5
-                    bg-muted-foreground/60
-                    rounded-full
-                    animate-bounce
-                    [animation-delay:300ms]
-                  " />
-
-                </div>
+                <div className="
+                  w-1.5
+                  h-1.5
+                  bg-muted-foreground/60
+                  rounded-full
+                  animate-bounce
+                  [animation-delay:300ms]
+                " />
 
               </div>
 
@@ -1450,6 +1442,9 @@ export default function Kael() {
         ">
 
           <Textarea
+            ref={
+              inputRef
+            }
             value={
               input
             }
