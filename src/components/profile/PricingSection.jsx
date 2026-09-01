@@ -189,7 +189,8 @@ export default function PricingSection() {
           setCurrentPlan(
             PAID_PLANS.includes(
               plan
-            )
+            ) &&
+            data?.status !== 'canceled'
               ? plan
               : 'free'
           );
@@ -271,8 +272,47 @@ export default function PricingSection() {
           return;
         }
 
+        if (
+          data?.success &&
+          data?.action === 'changed'
+        ) {
+          setCurrentPlan(
+            data.plan ||
+              plan.planKey
+          );
+
+          setSubscription(
+            (previous) =>
+              previous
+                ? {
+                    ...previous,
+                    plan:
+                      data.plan ||
+                      plan.planKey,
+                    plan_key:
+                      data.plan ||
+                      plan.planKey,
+                    status:
+                      'active',
+                  }
+                : {
+                    plan:
+                      data.plan ||
+                      plan.planKey,
+                    plan_key:
+                      data.plan ||
+                      plan.planKey,
+                    status:
+                      'active',
+                  }
+          );
+
+          return;
+        }
+
         throw new Error(
-          'Unable to start checkout.'
+          data?.error ||
+            'Unable to start checkout.'
         );
       } catch (
         checkoutError
@@ -299,6 +339,15 @@ export default function PricingSection() {
       if (
         cancelling
       ) {
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          'Cancel your current subscription? Your paid access will end immediately, and you can subscribe again at any time.'
+        );
+
+      if (!confirmed) {
         return;
       }
 
@@ -336,16 +385,23 @@ export default function PricingSection() {
         }
 
         setSubscription(
-          (
-            previous
-          ) =>
+          (previous) =>
             previous
               ? {
                   ...previous,
                   cancel_at_period_end:
-                    true,
+                    false,
+                  status:
+                    'canceled',
                 }
-              : previous
+              : {
+                  status:
+                    'canceled',
+                }
+        );
+
+        setCurrentPlan(
+          'free'
         );
       } catch (
         cancelError
