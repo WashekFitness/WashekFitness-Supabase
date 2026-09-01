@@ -137,7 +137,7 @@ export default function Program() {
 
   /*
    * ==========================================================
-   * SELECT LATEST ACTIVE PROGRAM
+   * SELECT ACTIVE PROGRAM
    * ==========================================================
    */
 
@@ -307,9 +307,21 @@ export default function Program() {
         {/* HEADER */}
         {/* -------------------------------------------------- */}
 
-        <div className="mb-5 flex items-start justify-between gap-3">
+        <div
+          className="
+            relative
+            z-0
+            mb-5
+            flex
+            items-start
+            justify-between
+            gap-3
+          "
+        >
 
-          <div className="min-w-0">
+          {/* Program information */}
+
+          <div className="min-w-0 flex-1">
 
             <h1 className="font-heading text-2xl font-bold break-words">
               {program.program_name ||
@@ -338,56 +350,99 @@ export default function Program() {
           </div>
 
           {/*
-           * The Live link intentionally has its own stacking
-           * context and pointer/touch handling.
+           * ==================================================
+           * LIVE WORKOUT BUTTON
+           * ==================================================
            *
-           * This prevents another element from sitting over
-           * part of the visible button on mobile.
+           * The entire right-side wrapper is now its own
+           * isolated stacking context.
+           *
+           * The touch target is larger than the visible button,
+           * so the whole visible control is guaranteed to be
+           * inside the clickable area.
            */}
 
-          <Link
-            to="/live-workout"
-            aria-label="Open Live Workout"
+          <div
             className="
               relative
-              z-50
-              inline-flex
+              z-[9999]
+              isolate
               shrink-0
-              items-center
-              justify-center
-              gap-1.5
-              rounded-xl
-              bg-primary
-              px-3
-              py-2
-              text-sm
-              font-heading
-              font-semibold
-              text-primary-foreground
-              shadow-sm
-              transition-colors
-              hover:bg-primary/90
-              focus-visible:outline-none
-              focus-visible:ring-2
-              focus-visible:ring-ring
-              focus-visible:ring-offset-2
-              active:scale-[0.98]
-              cursor-pointer
               pointer-events-auto
               touch-manipulation
-              select-none
             "
+            style={{
+              position: 'relative',
+              zIndex: 999999,
+              pointerEvents: 'auto',
+              touchAction: 'manipulation',
+            }}
           >
 
-            <Play
-              className="w-3.5 h-3.5 pointer-events-none"
-            />
+            <Link
+              to="/live-workout"
+              aria-label="Open Live Workout"
+              className="
+                relative
+                z-[9999]
+                flex
+                min-h-[44px]
+                min-w-[64px]
+                items-center
+                justify-center
+                rounded-xl
+                p-1
+                pointer-events-auto
+                touch-manipulation
+                cursor-pointer
+                select-none
+              "
+              style={{
+                position: 'relative',
+                zIndex: 999999,
+                pointerEvents: 'auto',
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor:
+                  'transparent',
+              }}
+            >
 
-            <span className="pointer-events-none">
-              Live
-            </span>
+              <span
+                className="
+                  inline-flex
+                  h-8
+                  items-center
+                  justify-center
+                  gap-1.5
+                  rounded-xl
+                  bg-primary
+                  px-3
+                  text-xs
+                  font-heading
+                  font-semibold
+                  text-primary-foreground
+                  shadow
+                  pointer-events-none
+                "
+              >
 
-          </Link>
+                <Play
+                  className="
+                    w-3.5
+                    h-3.5
+                    shrink-0
+                  "
+                />
+
+                <span>
+                  Live
+                </span>
+
+              </span>
+
+            </Link>
+
+          </div>
 
         </div>
 
