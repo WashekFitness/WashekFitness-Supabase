@@ -16,6 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { useAppSettings } from '@/lib/AppSettingsContext';
+import { canAccess } from '@/lib/subscription';
 
 
 // ============================================================
@@ -185,6 +186,18 @@ function normalizeAIResponse(raw) {
     adjusted_microcycle:
       result.adjusted_microcycle ||
       null,
+
+    nutrition_insight:
+      string(result.nutrition_insight) ||
+      string(result.nutrition_summary) ||
+      string(result.nutrition_observation),
+
+    nutrition_suggestions:
+      Array.isArray(result.nutrition_suggestions)
+        ? result.nutrition_suggestions
+            .map((item) => string(item))
+            .filter(Boolean)
+        : [],
   };
 }
 
@@ -209,6 +222,11 @@ export default function WeeklyUpdate({
   const [generated, setGenerated] = useState(false);
 
   const monday = isMonday();
+
+  const hasNutritionInsights = canAccess(
+    user?.subscription_plan,
+    'nutrition_insights'
+  );
 
   const previousWeek = useMemo(
     () => getPreviousWeekRange(),
@@ -599,6 +617,40 @@ export default function WeeklyUpdate({
 
 
   // ============================================================
+  // PERFORMANCE NUTRITION INSIGHT DATA
+  // ============================================================
+
+  const nutritionMetrics = useMemo(() => {
+    const trackedDays = unique(
+      previousWeekNutrition.map((entry) =>
+        string(entry?.date).slice(0, 10)
+      )
+    ).length;
+
+    const totals = previousWeekNutrition.reduce(
+      (acc, entry) => {
+        acc.calories += number(entry?.calories);
+        acc.protein += number(entry?.protein ?? entry?.protein_grams);
+        acc.carbs += number(entry?.carbs ?? entry?.carbohydrates);
+        acc.fat += number(entry?.fat ?? entry?.fat_grams);
+        acc.water += number(entry?.water ?? entry?.water_oz);
+        return acc;
+      },
+      { calories: 0, protein: 0, carbs: 0, fat: 0, water: 0 }
+    );
+
+    return {
+      trackedDays,
+      averageCalories: trackedDays ? Math.round(totals.calories / trackedDays) : 0,
+      averageProtein: trackedDays ? Math.round(totals.protein / trackedDays) : 0,
+      averageCarbs: trackedDays ? Math.round(totals.carbs / trackedDays) : 0,
+      averageFat: trackedDays ? Math.round(totals.fat / trackedDays) : 0,
+      averageWater: trackedDays ? Math.round(totals.water / trackedDays) : 0,
+    };
+  }, [previousWeekNutrition]);
+
+
+  // ============================================================
   // PAIN / DISCOMFORT QUICK DETECTION
   //
   // This isn't replacing Kael.
@@ -980,6 +1032,24 @@ ${JSON.stringify(
   2
 )}
 
+PERFORMANCE NUTRITION METRICS:
+Tracked days: ${nutritionMetrics.trackedDays}
+Average calories: ${nutritionMetrics.averageCalories || 'Not available'}
+Average protein: ${nutritionMetrics.averageProtein || 'Not available'} g/day
+Average carbs: ${nutritionMetrics.averageCarbs || 'Not available'} g/day
+Average fat: ${nutritionMetrics.averageFat || 'Not available'} g/day
+Average water: ${nutritionMetrics.averageWater || 'Not available'} oz/day
+
+NUTRITION INSIGHT RULES:
+
+For Performance/Elite users, analyze the logged nutrition specifically.
+Connect the observed intake to the athlete's stated goal and training demands.
+Identify meaningful patterns in calories, protein, carbs, fat, hydration, meal consistency,
+or nutrition adherence when the data supports them. Give practical suggestions.
+Do NOT invent calorie or macro targets that are not present in the athlete profile.
+Do NOT diagnose deficiencies or medical conditions. If there is not enough data, say so.
+For Free/Progress users, return an empty nutrition_insight and an empty nutrition_suggestions array.
+
 ============================================================
 CURRENT PROGRAM
 ============================================================
@@ -1205,6 +1275,12 @@ Use exactly this structure:
 
   "motivation": "One short, genuine motivational sentence that relates to this athlete's actual week.",
 
+  "nutrition_insight": "For Performance/Elite users only: a specific observation about the athlete's logged nutrition, tied to their goal. Return an empty string for Free/Progress users.",
+
+  "nutrition_suggestions": [
+    "For Performance/Elite users only: a practical suggestion supported by the logged nutrition data."
+  ],
+
   "adjusted_microcycle": null
 }
 
@@ -1261,6 +1337,17 @@ Never diagnose a medical condition.
                 type: 'string',
               },
 
+              nutrition_insight: {
+                type: 'string',
+              },
+
+              nutrition_suggestions: {
+                type: 'array',
+                items: {
+                  type: 'string',
+                },
+              },
+
               adjusted_microcycle: {
                 type: [
                   'object',
@@ -1275,6 +1362,8 @@ Never diagnose a medical condition.
               'improve',
               'next_recommendation',
               'motivation',
+              'nutrition_insight',
+              'nutrition_suggestions',
               'adjusted_microcycle',
             ],
           },
@@ -1396,6 +1485,16 @@ Never diagnose a medical condition.
 
         motivation:
           result.motivation,
+
+        nutrition_insight:
+          hasNutritionInsights
+            ? result.nutrition_insight
+            : '',
+
+        nutrition_suggestions:
+          hasNutritionInsights
+            ? result.nutrition_suggestions
+            : [],
       };
 
 
@@ -1930,6 +2029,47 @@ Never diagnose a medical condition.
                 </p>
 
               </div>
+
+
+              {/* =================================================
+                  PERFORMANCE NUTRITION INSIGHTS
+                  ================================================= */}
+
+              {hasNutritionInsights &&
+                (insight.nutrition_insight ||
+                  insight.nutrition_suggestions?.length > 0) && (
+
+                <div className="p-4 rounded-xl bg-background/80 border border-primary/20">
+
+                  <div className="flex items-center gap-2 mb-2">
+                    <Utensils className="w-4 h-4 text-primary" />
+                    <p className="text-xs font-bold text-primary uppercase tracking-wider">
+                      Nutrition Insights
+                    </p>
+                  </div>
+
+                  {insight.nutrition_insight && (
+                    <p className="text-sm leading-relaxed">
+                      {insight.nutrition_insight}
+                    </p>
+                  )}
+
+                  {insight.nutrition_suggestions?.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {insight.nutrition_suggestions.map((suggestion, index) => (
+                        <div
+                          key={`${index}-${suggestion}`}
+                          className="flex items-start gap-2 text-sm leading-relaxed"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                          <span>{suggestion}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              )}
 
 
               {/* =================================================
