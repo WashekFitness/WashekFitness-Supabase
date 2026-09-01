@@ -20,7 +20,9 @@ import {
   Minus,
   Sparkles,
   Zap,
+  RotateCcw,
   Lock,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppSettings } from '@/lib/AppSettingsContext';
@@ -34,9 +36,7 @@ function useTimer() {
 
   useEffect(() => {
     if (running) {
-      ref.current = setInterval(() => {
-        setSeconds((s) => s + 1);
-      }, 1000);
+      ref.current = setInterval(() => setSeconds(s => s + 1), 1000);
     } else {
       clearInterval(ref.current);
     }
@@ -45,16 +45,9 @@ function useTimer() {
   }, [running]);
 
   const fmt = (s) =>
-    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(
-      s % 60
-    ).padStart(2, '0')}`;
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
-  return {
-    seconds,
-    running,
-    setRunning,
-    fmt,
-  };
+  return { seconds, running, setRunning, fmt };
 }
 
 function RestTimer({ seconds: restSecs, onDone }) {
@@ -86,7 +79,7 @@ function RestTimer({ seconds: restSecs, onDone }) {
     }, 250);
 
     return () => clearInterval(interval);
-  }, [restSecs]);
+  }, []);
 
   return (
     <div className="flex flex-col items-center justify-center py-8 gap-3">
@@ -194,18 +187,10 @@ function baselineHasWeights(tt) {
 }
 
 function baselineHasWeightedCali(tt) {
-  return (
-    tt === 'weighted_calisthenics' ||
-    tt === 'hybrid'
-  );
+  return tt === 'weighted_calisthenics' || tt === 'hybrid';
 }
 
-function MovementInput({
-  label,
-  unit,
-  value,
-  onChange,
-}) {
+function MovementInput({ label, unit, value, onChange }) {
   return (
     <div className="bg-card border border-border rounded-2xl p-3">
       <p className="text-xs text-muted-foreground mb-1">
@@ -216,7 +201,7 @@ function MovementInput({
         <Input
           type="number"
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           placeholder="0"
           className="h-9 text-sm"
         />
@@ -235,9 +220,7 @@ function MovementBaseline({ trainingType }) {
   const queryClient = useQueryClient();
   const { settings } = useAppSettings();
 
-  const today = new Date()
-    .toISOString()
-    .split('T')[0];
+  const today = new Date().toISOString().split('T')[0];
 
   const [values, setValues] = useState({});
   const [customEntries, setCustomEntries] = useState([]);
@@ -245,118 +228,79 @@ function MovementBaseline({ trainingType }) {
   const [newCustomVal, setNewCustomVal] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const showCalisthenics =
-    baselineHasCalisthenics(trainingType);
-
-  const showWeights =
-    baselineHasWeights(trainingType);
-
-  const showWeightedCali =
-    baselineHasWeightedCali(trainingType);
+  const showCalisthenics = baselineHasCalisthenics(trainingType);
+  const showWeights = baselineHasWeights(trainingType);
+  const showWeightedCali = baselineHasWeightedCali(trainingType);
 
   const weightUnit =
-    settings?.unit === 'metric'
-      ? 'kg'
-      : 'lbs';
+    settings?.unit === 'metric' ? 'kg' : 'lbs';
 
-  const { data: baselines = [] } =
-    useQuery({
-      queryKey: ['baselines'],
-      queryFn: () =>
-        supabaseApi.entities.MovementBaseline.list(
-          '-recorded_date',
-          1
-        ),
-    });
+  const { data: baselines = [] } = useQuery({
+    queryKey: ['baselines'],
+    queryFn: () =>
+      supabaseApi.entities.MovementBaseline.list(
+        '-recorded_date',
+        1
+      ),
+  });
 
   useEffect(() => {
-    if (!baselines[0]) return;
+    if (baselines[0]) {
+      const b = baselines[0];
+      const v = {};
 
-    const b = baselines[0];
-    const v = {};
-
-    ALL_BASELINE_MOVEMENTS.forEach(
-      (movement) => {
-        if (b[movement.key] != null) {
-          v[movement.key] =
-            b[movement.key];
+      ALL_BASELINE_MOVEMENTS.forEach(m => {
+        if (b[m.key] != null) {
+          v[m.key] = b[m.key];
         }
+      });
+
+      setValues(v);
+
+      if (b.custom_entries) {
+        setCustomEntries(b.custom_entries);
       }
-    );
-
-    setValues(v);
-
-    if (Array.isArray(b.custom_entries)) {
-      setCustomEntries(
-        b.custom_entries
-      );
     }
   }, [baselines]);
 
   const saveBaseline = async () => {
     setSaving(true);
 
-    try {
-      const data = {
-        recorded_date: today,
-        custom_entries: customEntries,
-      };
+    const data = {
+      recorded_date: today,
+      custom_entries: customEntries,
+    };
 
-      ALL_BASELINE_MOVEMENTS.forEach(
-        (movement) => {
-          if (
-            values[movement.key] !==
-            undefined &&
-            values[movement.key] !== ''
-          ) {
-            data[movement.key] =
-              parseFloat(
-                values[movement.key]
-              );
-          }
-        }
-      );
-
-      if (
-        baselines[0]?.recorded_date ===
-        today
-      ) {
-        await supabaseApi.entities.MovementBaseline.update(
-          baselines[0].id,
-          data
-        );
-      } else {
-        await supabaseApi.entities.MovementBaseline.create(
-          data
-        );
+    ALL_BASELINE_MOVEMENTS.forEach(m => {
+      if (values[m.key]) {
+        data[m.key] = parseFloat(values[m.key]);
       }
+    });
 
-      queryClient.invalidateQueries({
-        queryKey: ['baselines'],
-      });
-
-      toast.success(
-        'Baseline saved! Kael will use this to adjust your workouts.'
+    if (baselines[0]?.recorded_date === today) {
+      await supabaseApi.entities.MovementBaseline.update(
+        baselines[0].id,
+        data
       );
-    } catch (error) {
-      console.error(
-        '[LiveWorkout] Failed to save baseline:',
-        error
-      );
-
-      toast.error(
-        error?.message ||
-          'Unable to save your baseline.'
-      );
-    } finally {
-      setSaving(false);
+    } else {
+      await supabaseApi.entities.MovementBaseline.create(data);
     }
+
+    queryClient.invalidateQueries({
+      queryKey: ['baselines'],
+    });
+
+    toast.success(
+      'Baseline saved! Kael will use this to adjust your workouts.'
+    );
+
+    setSaving(false);
   };
 
   const addCustom = () => {
     if (!newCustomName.trim()) return;
 
-    setCustomEntries((prev) => [
+    setCustomEntries(prev => [
       ...prev,
       {
         name: newCustomName.trim(),
@@ -373,11 +317,9 @@ function MovementBaseline({ trainingType }) {
       <div className="bg-muted/40 rounded-2xl p-4 border border-border">
         <p className="text-xs text-muted-foreground leading-relaxed">
           Log your current maxes here. This{' '}
-          <strong>
-            doesn't affect your live workout
-          </strong>{' '}
-          — it's just so Kael knows where you're at
-          and can program smarter.
+          <strong>doesn't affect your live workout</strong> — it's
+          just so Kael knows where you're at and can program
+          smarter.
         </p>
       </div>
 
@@ -389,20 +331,16 @@ function MovementBaseline({ trainingType }) {
 
           <div className="grid grid-cols-2 gap-3">
             {CALISTHENICS_MOVEMENTS.map(
-              ({
-                key,
-                label,
-                unit,
-              }) => (
+              ({ key, label, unit }) => (
                 <MovementInput
                   key={key}
                   label={label}
                   unit={unit}
                   value={values[key]}
-                  onChange={(value) =>
-                    setValues((prev) => ({
+                  onChange={v =>
+                    setValues(prev => ({
                       ...prev,
-                      [key]: value,
+                      [key]: v,
                     }))
                   }
                 />
@@ -419,22 +357,20 @@ function MovementBaseline({ trainingType }) {
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
-            {WEIGHT_MOVEMENTS.map(
-              ({ key, label }) => (
-                <MovementInput
-                  key={key}
-                  label={label}
-                  unit={weightUnit}
-                  value={values[key]}
-                  onChange={(value) =>
-                    setValues((prev) => ({
-                      ...prev,
-                      [key]: value,
-                    }))
-                  }
-                />
-              )
-            )}
+            {WEIGHT_MOVEMENTS.map(({ key, label }) => (
+              <MovementInput
+                key={key}
+                label={label}
+                unit={weightUnit}
+                value={values[key]}
+                onChange={v =>
+                  setValues(prev => ({
+                    ...prev,
+                    [key]: v,
+                  }))
+                }
+              />
+            ))}
           </div>
         </div>
       )}
@@ -442,8 +378,7 @@ function MovementBaseline({ trainingType }) {
       {showWeightedCali && (
         <div className="space-y-3">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Weighted Calisthenics PRs
-            (Max Added Weight)
+            Weighted Calisthenics PRs (Max Added Weight)
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
@@ -454,10 +389,10 @@ function MovementBaseline({ trainingType }) {
                   label={label}
                   unit={weightUnit}
                   value={values[key]}
-                  onChange={(value) =>
-                    setValues((prev) => ({
+                  onChange={v =>
+                    setValues(prev => ({
                       ...prev,
-                      [key]: value,
+                      [key]: v,
                     }))
                   }
                 />
@@ -476,10 +411,8 @@ function MovementBaseline({ trainingType }) {
           <Input
             placeholder="e.g. Typewriter Pull Up"
             value={newCustomName}
-            onChange={(e) =>
-              setNewCustomName(
-                e.target.value
-              )
+            onChange={e =>
+              setNewCustomName(e.target.value)
             }
             className="h-9 text-sm flex-1"
           />
@@ -487,10 +420,8 @@ function MovementBaseline({ trainingType }) {
           <Input
             placeholder="e.g. 3 reps"
             value={newCustomVal}
-            onChange={(e) =>
-              setNewCustomVal(
-                e.target.value
-              )
+            onChange={e =>
+              setNewCustomVal(e.target.value)
             }
             className="h-9 text-sm w-28"
           />
@@ -504,41 +435,31 @@ function MovementBaseline({ trainingType }) {
           </Button>
         </div>
 
-        {customEntries.map(
-          (entry, index) => (
-            <div
-              key={`${entry.name}-${index}`}
-              className="flex items-center justify-between text-sm"
-            >
-              <span>
-                {entry.name}
+        {customEntries.map((c, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between text-sm"
+          >
+            <span>{c.name}</span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">
+                {c.value}
               </span>
 
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">
-                  {entry.value}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCustomEntries(
-                      (prev) =>
-                        prev.filter(
-                          (_, j) =>
-                            j !== index
-                        )
-                    )
-                  }
-                  className="text-destructive hover:text-destructive/80"
-                  aria-label={`Remove ${entry.name}`}
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button
+                onClick={() =>
+                  setCustomEntries(prev =>
+                    prev.filter((_, j) => j !== i)
+                  )
+                }
+                className="text-destructive hover:text-destructive/80"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
             </div>
-          )
-        )}
+          </div>
+        ))}
       </div>
 
       <Button
@@ -546,10 +467,250 @@ function MovementBaseline({ trainingType }) {
         onClick={saveBaseline}
         disabled={saving}
       >
-        {saving
-          ? 'Saving...'
-          : 'Save My Baseline'}
+        {saving ? 'Saving...' : 'Save My Baseline'}
       </Button>
+    </div>
+  );
+}
+
+// ─── Elite Live Adjustment ──────────────────────────────
+function LiveAdjustmentPanel({
+  exercise,
+  exerciseIndex,
+  setIndex,
+  totalSets,
+  repsAchieved,
+  completedSets,
+  trainingType,
+  seconds,
+  onApply,
+  disabled,
+}) {
+  const [feedback, setFeedback] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [lastAdjustment, setLastAdjustment] =
+    useState('');
+
+  const completedCount = Array.from({
+    length: totalSets,
+  }).filter(
+    (_, si) =>
+      completedSets[`${exerciseIndex}-${si}`]
+  ).length;
+
+  const requestAdjustment = async () => {
+    if (!exercise || loading || disabled) return;
+
+    setLoading(true);
+    setLastAdjustment('');
+
+    try {
+      const typeLabel = {
+        calisthenics: 'calisthenics',
+        weighted_calisthenics: 'weighted calisthenics',
+        weights: 'weight training',
+        hybrid: 'hybrid training',
+      }[trainingType] || 'fitness';
+
+      const prompt = `You are Kael, an elite ${typeLabel} coach providing REAL-TIME coaching during an active workout.
+
+The athlete is currently performing:
+${JSON.stringify(exercise, null, 2)}
+
+CURRENT POSITION:
+- Exercise number: ${exerciseIndex + 1}
+- Current set: ${setIndex + 1} of ${totalSets}
+- Sets already completed for this exercise: ${completedCount}
+- Actual reps recorded so far: ${repsAchieved || 'not entered'}
+- Workout time elapsed: ${Math.floor(seconds / 60)} minutes
+- Athlete feedback: "${feedback.trim() || 'No written feedback. Assess the current programmed exercise and provide the most appropriate next-step adjustment.'}"
+
+Your job is to make an immediate, practical adjustment to THIS exercise for the sets the athlete has not completed yet.
+
+RULES:
+1. Do not change completed sets.
+2. Preserve the movement's purpose unless the athlete's feedback indicates that a substitution is necessary.
+3. If the exercise feels too easy and performance is strong, increase the challenge appropriately through reps, sets, load, tempo, or a harder variation.
+4. If the exercise feels too hard, fatigue is accumulating, technique is breaking down, or the athlete reports pain/tightness, reduce the training demand or substitute a safer appropriate variation.
+5. Do not encourage training through significant pain.
+6. Do not diagnose injuries or medical conditions.
+7. Keep the adjustment realistic for the athlete's training type.
+8. If the athlete reports concerning symptoms, prioritize stopping the movement and seeking appropriate medical evaluation.
+9. Do not make dramatic changes without a reason.
+10. The adjusted sets must be at least the number of sets already completed so the tracker remains consistent.
+11. Give a concise explanation of exactly what changed and why.
+12. Preserve the activation cue whenever possible, but improve it if the current cue is not useful.
+
+Return ONLY JSON:
+{
+  "adjusted_exercise": {
+    "name": "string",
+    "sets": number,
+    "reps": "string",
+    "rest_seconds": number,
+    "notes": "string",
+    "activation_cue": "string"
+  },
+  "adjustment_summary": "short explanation",
+  "safety_note": "short safety note or empty string"
+}`;
+
+      const result = await supabaseApi.ai.invoke({
+        type: 'live_workout',
+        prompt,
+        response_json_schema: {
+          type: 'object',
+          properties: {
+            adjusted_exercise: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                sets: { type: 'number' },
+                reps: { type: 'string' },
+                rest_seconds: { type: 'number' },
+                notes: { type: 'string' },
+                activation_cue: { type: 'string' },
+              },
+              required: [
+                'name',
+                'sets',
+                'reps',
+                'rest_seconds',
+                'notes',
+                'activation_cue',
+              ],
+            },
+            adjustment_summary: {
+              type: 'string',
+            },
+            safety_note: {
+              type: 'string',
+            },
+          },
+          required: [
+            'adjusted_exercise',
+            'adjustment_summary',
+            'safety_note',
+          ],
+        },
+      });
+
+      if (!result?.adjusted_exercise) {
+        throw new Error(
+          'Kael did not return a valid adjustment.'
+        );
+      }
+
+      const adjusted = {
+        ...exercise,
+        ...result.adjusted_exercise,
+        sets: Math.max(
+          completedCount,
+          Number(result.adjusted_exercise.sets) ||
+            totalSets
+        ),
+        rest_seconds:
+          Number(result.adjusted_exercise.rest_seconds) ||
+          exercise.rest_seconds ||
+          60,
+      };
+
+      onApply(adjusted);
+
+      const summary =
+        result.adjustment_summary ||
+        'Kael adjusted the exercise based on your current performance.';
+
+      setLastAdjustment(
+        result.safety_note
+          ? `${summary} ${result.safety_note}`
+          : summary
+      );
+
+      setFeedback('');
+
+      toast.success('Kael adjusted your workout in real time.');
+    } catch (error) {
+      console.error(
+        'Live workout adjustment failed:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Kael could not adjust this exercise right now.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border border-chart-4/30 bg-chart-4/5 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="w-4 h-4 text-chart-4" />
+
+        <div className="flex-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-chart-4">
+            Elite Live Adjustment
+          </p>
+
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Tell Kael what you're feeling and he'll adjust the
+            remaining work now.
+          </p>
+        </div>
+
+        <Badge
+          variant="outline"
+          className="text-[9px] border-chart-4/30 text-chart-4"
+        >
+          ELITE
+        </Badge>
+      </div>
+
+      <Textarea
+        value={feedback}
+        onChange={e => setFeedback(e.target.value)}
+        placeholder='e.g. "This feels too easy" or "My shoulder is getting tight" or "I barely hit the target reps."'
+        className="min-h-[72px] text-xs resize-none bg-background/60"
+        disabled={loading || disabled}
+      />
+
+      <Button
+        type="button"
+        className="w-full h-10 font-heading font-semibold"
+        onClick={requestAdjustment}
+        disabled={loading || disabled}
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+            Kael is adjusting...
+          </span>
+        ) : (
+          <>
+            <Zap className="w-4 h-4 mr-2" />
+            Adjust This Exercise
+          </>
+        )}
+      </Button>
+
+      {lastAdjustment && (
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-background/70 border border-chart-4/20">
+          <MessageSquare className="w-4 h-4 text-chart-4 shrink-0 mt-0.5" />
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-chart-4 mb-1">
+              Kael's Adjustment
+            </p>
+
+            <p className="text-xs leading-relaxed">
+              {lastAdjustment}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -562,22 +723,13 @@ function PostWorkoutCheckin({
   program,
   onProgramUpdated,
 }) {
-  const [checkin, setCheckin] =
-    useState('');
-
-  const [aiNote, setAiNote] =
-    useState('');
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [done, setDone] =
-    useState(false);
+  const [checkin, setCheckin] = useState('');
+  const [aiNote, setAiNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
 
   const submit = async () => {
-    if (!checkin.trim() || loading) {
-      return;
-    }
+    if (!checkin.trim()) return;
 
     setLoading(true);
 
@@ -586,54 +738,29 @@ function PostWorkoutCheckin({
         log?.exercises_completed || []
       )
         .map(
-          (exercise) =>
-            `${exercise.name}: ${exercise.sets_completed} sets, ${exercise.reps_achieved} reps`
+          e =>
+            `${e.name}: ${e.sets_completed} sets, ${e.reps_achieved} reps`
         )
         .join('\n');
 
-      /*
-       * ELITE ONLY:
-       *
-       * Elite gets the actual dynamic adjustment capability.
-       * This is the only branch allowed to modify the program.
-       */
       if (canAdjust && program) {
-        const currentWeek =
-          Number(program.current_week) ||
-          1;
+        const currentWeek = program.current_week || 1;
 
         const nextMicrocycle =
           program.microcycles?.find(
-            (microcycle) =>
-              Number(
-                microcycle.week_number
-              ) ===
-              currentWeek + 1
+            m => m.week_number === currentWeek + 1
           ) || null;
 
         const trainingType =
-          program?.training_type ||
-          'calisthenics';
+          program?.training_type || 'calisthenics';
 
         const typeLabel = {
-          calisthenics:
-            'calisthenics',
+          calisthenics: 'calisthenics',
           weighted_calisthenics:
             'weighted calisthenics',
-          weights:
-            'weight training',
-          hybrid:
-            'hybrid training',
+          weights: 'weight training',
+          hybrid: 'hybrid training',
         }[trainingType];
-
-        const targetDay =
-          nextMicrocycle?.days?.find(
-            (candidate) =>
-              candidate.day_name ===
-              log?.day_name
-          ) ||
-          nextMicrocycle?.days?.[0] ||
-          null;
 
         const elitePrompt = `You are Kael, an elite ${typeLabel} coach. An athlete just finished a workout and gave you feedback.
 
@@ -648,9 +775,12 @@ ${currentWeek}
 
 NEXT WEEK'S PROGRAM TO ADJUST:
 ${
-  targetDay
+  nextMicrocycle
     ? JSON.stringify(
-        targetDay,
+        nextMicrocycle.days?.find(
+          d => d.day_name === log?.day_name
+        ) ||
+          nextMicrocycle.days?.[0],
         null,
         2
       )
@@ -660,12 +790,11 @@ ${
 Based on the athlete's feedback AND their actual reps/sets completed today:
 
 1. Give a 1-2 sentence direct human response.
-2. If performance was strong, recommend specific progression.
-3. If performance was poor or they felt pain/fatigue, recommend an appropriate reduction.
-4. Return the adjusted exercises array for the next week's same day.
-5. Do not invent exercises that conflict with the athlete's training type.
-6. Preserve useful notes and rest periods unless there is a reason to change them.
-7. Never claim a change was made unless the adjusted_exercises array contains it.
+2. If performance was strong, recommend specific progressions for next week.
+3. If performance was poor, fatigue was high, or pain was reported, reduce training stress appropriately.
+4. Return the adjusted exercises array for next week's same day.
+5. Preserve activation cues and useful coaching notes.
+6. Do not diagnose injuries or medical conditions.
 
 Respond in JSON:
 {
@@ -677,128 +806,90 @@ Respond in JSON:
       "sets": 0,
       "reps": "...",
       "rest_seconds": 0,
-      "notes": "..."
+      "notes": "...",
+      "activation_cue": "..."
     }
   ]
 }`;
 
-        const result =
-          await supabaseApi.ai.invoke({
-            type: 'live_workout',
-            prompt: elitePrompt,
-            response_json_schema: {
-              type: 'object',
-              properties: {
-                coach_response: {
-                  type: 'string',
-                },
-                adjustments_summary: {
-                  type: 'string',
-                },
-                adjusted_exercises: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: {
-                        type: 'string',
-                      },
-                      sets: {
-                        type: 'number',
-                      },
-                      reps: {
-                        type: 'string',
-                      },
-                      rest_seconds: {
-                        type: 'number',
-                      },
-                      notes: {
-                        type: 'string',
-                      },
+        const result = await supabaseApi.ai.invoke({
+          type: 'live_workout',
+          prompt: elitePrompt,
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              coach_response: {
+                type: 'string',
+              },
+              adjustments_summary: {
+                type: 'string',
+              },
+              adjusted_exercises: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
                     },
-                    required: [
-                      'name',
-                      'sets',
-                      'reps',
-                      'rest_seconds',
-                      'notes',
-                    ],
+                    sets: {
+                      type: 'number',
+                    },
+                    reps: {
+                      type: 'string',
+                    },
+                    rest_seconds: {
+                      type: 'number',
+                    },
+                    notes: {
+                      type: 'string',
+                    },
+                    activation_cue: {
+                      type: 'string',
+                    },
                   },
                 },
               },
-              required: [
-                'coach_response',
-                'adjustments_summary',
-                'adjusted_exercises',
-              ],
             },
-          });
+          },
+        });
 
-        const adjustedExercises =
-          Array.isArray(
-            result?.adjusted_exercises
-          )
-            ? result.adjusted_exercises
-            : [];
-
-        const note =
-          `${result?.coach_response || 'Workout feedback received.'}\n\n` +
-          `📋 Next workout adjusted: ${
-            result?.adjustments_summary ||
-            'No specific adjustment was necessary.'
-          }`;
+        const note = `${result.coach_response}\n\n📋 Next workout adjusted: ${result.adjustments_summary}`;
 
         setAiNote(note);
 
-        await onSave(
-          checkin,
-          note
-        );
+        await onSave(checkin, note);
 
-        /*
-         * Only Elite can write dynamic workout
-         * changes back into the program.
-         */
         if (
           nextMicrocycle &&
-          targetDay &&
-          adjustedExercises.length > 0 &&
-          onProgramUpdated
+          result.adjusted_exercises?.length > 0
         ) {
           const updatedMicrocycles =
-            (
-              program.microcycles ||
-              []
-            ).map((microcycle) => {
+            program.microcycles.map(mc => {
               if (
-                Number(
-                  microcycle.week_number
-                ) !==
+                mc.week_number !==
                 currentWeek + 1
               ) {
-                return microcycle;
+                return mc;
               }
 
-              const updatedDays = (
-                microcycle.days ||
-                []
-              ).map((candidate) => {
+              const updatedDays = mc.days.map(d => {
                 if (
-                  candidate.day_name ===
-                  targetDay.day_name
+                  d.day_name ===
+                  log?.day_name
                 ) {
                   return {
-                    ...candidate,
+                    ...d,
                     exercises:
-                      adjustedExercises,
+                      result.adjusted_exercises,
                   };
                 }
 
-                return candidate;
+                return d;
               });
 
               return {
-                ...microcycle,
+                ...mc,
                 days: updatedDays,
               };
             });
@@ -806,44 +897,61 @@ Respond in JSON:
           await supabaseApi.entities.WorkoutProgram.update(
             program.id,
             {
-              microcycles:
-                updatedMicrocycles,
+              microcycles: updatedMicrocycles,
             }
           );
 
-          onProgramUpdated();
+          if (onProgramUpdated) {
+            onProgramUpdated();
+          }
         }
       } else {
-        /*
-         * FREE:
-         *
-         * Basic workout tracking remains free.
-         * A free user can save feedback, but this branch
-         * NEVER requests or applies an AI workout adjustment.
-         */
-        const feedbackNote =
-          'Workout feedback saved. Elite members get real-time workout adjustments from Kael.';
+        const trainingType =
+          program?.training_type || 'calisthenics';
 
-        setAiNote(feedbackNote);
+        const typeLabel = {
+          calisthenics: 'calisthenics',
+          weighted_calisthenics:
+            'weighted calisthenics',
+          weights: 'weight training',
+          hybrid: 'hybrid training',
+        }[trainingType];
 
-        await onSave(
-          checkin,
-          feedbackNote
-        );
+        const prompt = `You are Kael, a real-talk ${typeLabel} coach. Based on this post-workout check-in, give a SHORT (2-3 sentence) human response and a concrete note on how to adjust the next workout. Sound like a person, not a bot.
+
+Check-in: "${checkin}"
+
+Workout: ${log?.day_name || 'unknown'}
+
+${exerciseSummary}
+
+Respond with:
+1. One empathetic/direct sentence.
+2. One specific adjustment for next time.`;
+
+        const result = await supabaseApi.ai.invoke({
+          type: 'live_workout',
+          prompt,
+        });
+
+        setAiNote(result);
+
+        await onSave(checkin, result);
       }
 
+      setLoading(false);
       setDone(true);
     } catch (error) {
       console.error(
-        '[LiveWorkout] Post-workout check-in failed:',
+        'Post-workout check-in failed:',
         error
       );
 
       toast.error(
         error?.message ||
-          'Unable to save your workout feedback.'
+          'Could not get Kael’s response.'
       );
-    } finally {
+
       setLoading(false);
     }
   };
@@ -852,26 +960,12 @@ Respond in JSON:
     return (
       <Card className="p-4 border-accent/30 bg-accent/5">
         <p className="text-xs font-bold text-accent uppercase tracking-wider mb-2">
-          {canAdjust
-            ? 'Kael adjusted your workout'
-            : 'Workout feedback saved'}
+          Kael heard you
         </p>
 
         <p className="text-sm whitespace-pre-line">
           {aiNote}
         </p>
-
-        {!canAdjust && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl bg-muted/50 border border-border p-3">
-            <Lock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-
-            <p className="text-xs text-muted-foreground">
-              Elite members get real-time workout
-              adjustments based on performance and
-              post-workout feedback.
-            </p>
-          </div>
-        )}
       </Card>
     );
   }
@@ -884,48 +978,33 @@ Respond in JSON:
         <p className="font-heading font-bold text-sm">
           Post-Workout Check-in
         </p>
-
-        {canAdjust && (
-          <Badge className="ml-auto bg-chart-4/15 text-chart-4 border-0 text-[10px]">
-            Elite
-          </Badge>
-        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {canAdjust
-          ? 'Tell Kael how it went. Your feedback and actual performance can be used to adjust your next workout.'
-          : 'Save how the workout felt so you have a record of your training. Elite members get real-time workout adjustments from Kael.'}
+        How did it go? Any pain, anything that felt too easy
+        or too hard, energy levels — just tell Kael in your
+        own words.
       </p>
 
       <Textarea
         value={checkin}
-        onChange={(e) =>
-          setCheckin(e.target.value)
-        }
-        placeholder='e.g. "Pull-ups felt strong today. The last set was tough but I had another rep in me."'
+        onChange={e => setCheckin(e.target.value)}
+        placeholder='e.g. "Shoulder felt a bit tight on the dips. Pull-ups felt strong today, could probably do more reps. Pretty gassed by the end."'
         className="min-h-[100px] text-sm resize-none"
       />
 
       <Button
         className="w-full h-11 font-heading font-semibold"
         onClick={submit}
-        disabled={
-          !checkin.trim() ||
-          loading
-        }
+        disabled={!checkin.trim() || loading}
       >
         {loading ? (
           <span className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-            {canAdjust
-              ? "Getting Kael's take..."
-              : 'Saving feedback...'}
+            Getting Kael's take...
           </span>
-        ) : canAdjust ? (
-          'Send to Kael'
         ) : (
-          'Save Feedback'
+          'Send to Kael'
         )}
       </Button>
     </Card>
@@ -935,8 +1014,7 @@ Respond in JSON:
 // ─── Main Page ─────────────────────────────────────────
 export default function LiveWorkout() {
   const navigate = useNavigate();
-  const queryClient =
-    useQueryClient();
+  const queryClient = useQueryClient();
 
   const {
     seconds,
@@ -945,55 +1023,40 @@ export default function LiveWorkout() {
     fmt,
   } = useTimer();
 
-  const [user, setUser] =
-    useState(null);
+  const [user, setUser] = useState(null);
 
-  const [dayIndex, setDayIndex] =
-    useState(0);
+  const [dayIndex, setDayIndex] = useState(0);
+  const [exIndex, setExIndex] = useState(0);
+  const [setIndex, setSetIndex] = useState(0);
 
-  const [exIndex, setExIndex] =
-    useState(0);
+  const [resting, setResting] = useState(false);
 
-  const [setIndex, setSetIndex] =
-    useState(0);
+  const [completedSets, setCompletedSets] =
+    useState({});
 
-  const [resting, setResting] =
+  const [repsAchieved, setRepsAchieved] =
+    useState({});
+
+  const [started, setStarted] = useState(false);
+  const [workoutDone, setWorkoutDone] =
     useState(false);
 
-  const [
-    completedSets,
-    setCompletedSets,
-  ] = useState({});
+  const [savedLog, setSavedLog] = useState(null);
 
-  const [
-    repsAchieved,
-    setRepsAchieved,
-  ] = useState({});
+  // Local live workout copy.
+  // This is what Elite real-time adjustments modify.
+  const [liveExercises, setLiveExercises] =
+    useState([]);
 
-  const [started, setStarted] =
-    useState(false);
-
-  const [
-    workoutDone,
-    setWorkoutDone,
-  ] = useState(false);
-
-  const [savedLog, setSavedLog] =
-    useState(null);
+  const [adjustedExerciseIndexes, setAdjustedExerciseIndexes] =
+    useState({});
 
   useEffect(() => {
-    supabaseApi.auth
-      .me()
-      .then(setUser)
-      .catch((error) => {
-        console.error(
-          '[LiveWorkout] Failed to load user:',
-          error
-        );
-      });
+    supabaseApi.auth.me().then(setUser);
   }, []);
 
-  // iOS back gesture: when workout is done, back navigates to program page
+  // iOS back gesture: when workout is done, back navigates
+  // to program page.
   useEffect(() => {
     if (!workoutDone) return;
 
@@ -1017,9 +1080,7 @@ export default function LiveWorkout() {
       );
   }, [workoutDone, navigate]);
 
-  const {
-    data: programs = [],
-  } = useQuery({
+  const { data: programs = [] } = useQuery({
     queryKey: ['programs'],
     queryFn: () =>
       supabaseApi.entities.WorkoutProgram.filter(
@@ -1029,282 +1090,261 @@ export default function LiveWorkout() {
       ),
   });
 
-  const logMutation =
-    useMutation({
-      mutationFn: (data) =>
-        supabaseApi.entities.WorkoutLog.create(
-          data
-        ),
+  const logMutation = useMutation({
+    mutationFn: data =>
+      supabaseApi.entities.WorkoutLog.create(data),
 
-      onMutate: async (data) => {
-        await queryClient.cancelQueries({
-          queryKey: ['logs'],
-        });
+    onMutate: async data => {
+      await queryClient.cancelQueries({
+        queryKey: ['logs'],
+      });
 
-        const previous =
-          queryClient.getQueryData([
-            'logs',
-          ]);
+      const prev =
+        queryClient.getQueryData(['logs']);
 
-        const optimistic = {
-          id: `_opt_${Date.now()}`,
-          ...data,
-        };
+      const optimistic = {
+        id: `_opt_${Date.now()}`,
+        ...data,
+      };
 
+      queryClient.setQueryData(
+        ['logs'],
+        old => [...(old || []), optimistic]
+      );
+
+      return { prev };
+    },
+
+    onError: (_err, _data, ctx) => {
+      if (ctx?.prev) {
         queryClient.setQueryData(
           ['logs'],
-          (old) => [
-            ...(old || []),
-            optimistic,
-          ]
+          ctx.prev
         );
+      }
+    },
 
-        return {
-          previous,
-        };
-      },
+    onSuccess: log => {
+      queryClient.invalidateQueries({
+        queryKey: ['logs'],
+      });
 
-      onError: (
-        _error,
-        _data,
-        context
-      ) => {
-        if (context?.previous) {
-          queryClient.setQueryData(
-            ['logs'],
-            context.previous
-          );
-        }
-      },
+      setSavedLog(log);
+    },
+  });
 
-      onSuccess: (log) => {
-        queryClient.invalidateQueries({
-          queryKey: ['logs'],
-        });
-
-        setSavedLog(log);
-      },
-    });
-
-  const updateLogMutation =
-    useMutation({
-      mutationFn: ({
+  const updateLogMutation = useMutation({
+    mutationFn: ({ id, data }) =>
+      supabaseApi.entities.WorkoutLog.update(
         id,
-        data,
-      }) =>
-        supabaseApi.entities.WorkoutLog.update(
-          id,
-          data
-        ),
+        data
+      ),
 
-      onMutate: async ({
-        id,
-        data,
-      }) => {
-        await queryClient.cancelQueries({
-          queryKey: ['logs'],
-        });
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({
+        queryKey: ['logs'],
+      });
 
-        const previous =
-          queryClient.getQueryData([
-            'logs',
-          ]);
+      const prev =
+        queryClient.getQueryData(['logs']);
 
+      queryClient.setQueryData(
+        ['logs'],
+        old =>
+          (old || []).map(l =>
+            l.id === id
+              ? { ...l, ...data }
+              : l
+          )
+      );
+
+      return { prev };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) {
         queryClient.setQueryData(
           ['logs'],
-          (old) =>
-            (old || []).map(
-              (log) =>
-                log.id === id
-                  ? {
-                      ...log,
-                      ...data,
-                    }
-                  : log
-            )
+          ctx.prev
         );
+      }
+    },
 
-        return {
-          previous,
-        };
-      },
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ['logs'],
+      }),
+  });
 
-      onError: (
-        _error,
-        _variables,
-        context
-      ) => {
-        if (context?.previous) {
-          queryClient.setQueryData(
-            ['logs'],
-            context.previous
-          );
-        }
-      },
-
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: ['logs'],
-        });
-      },
-    });
-
-  const program =
-    programs[0];
+  const program = programs[0];
 
   const currentWeekNum =
-    Number(program?.current_week) ||
-    1;
+    program?.current_week || 1;
 
   const microcycle =
     program?.microcycles?.find(
-      (microcycleItem) =>
-        Number(
-          microcycleItem.week_number
-        ) === currentWeekNum
+      m => m.week_number === currentWeekNum
     ) ||
     program?.microcycles?.[0];
 
-  const days =
-    microcycle?.days || [];
+  const days = microcycle?.days || [];
 
-  const day =
-    days[dayIndex];
-
-  const exercises =
-    day?.exercises || [];
-
-  const exercise =
-    exercises[exIndex];
-
-  const totalSets =
-    Number(exercise?.sets) || 1;
-
-  const restSecs =
-    Number(
-      exercise?.rest_seconds
-    ) || 60;
+  const day = days[dayIndex];
 
   /*
-   * IMPORTANT:
+   * Whenever the selected workout day changes,
+   * create a fresh local copy of its exercises.
    *
-   * The tracker itself is intentionally NOT gated.
-   * Every subscription plan can:
-   * - start workouts
-   * - track sets
-   * - track reps
-   * - use the timer
-   * - save workout logs
-   * - view My Maxes
-   *
-   * Only the dynamic adjustment feature is gated.
+   * This means Elite can modify the current workout
+   * without corrupting the saved program just by
+   * pressing the adjustment button.
    */
+  useEffect(() => {
+    if (!day?.exercises) {
+      setLiveExercises([]);
+      return;
+    }
+
+    setLiveExercises(
+      day.exercises.map(ex => ({
+        ...ex,
+      }))
+    );
+
+    setExIndex(0);
+    setSetIndex(0);
+    setResting(false);
+    setAdjustedExerciseIndexes({});
+  }, [
+    currentWeekNum,
+    dayIndex,
+    program?.id,
+  ]);
+
+  const exercises =
+    liveExercises.length > 0
+      ? liveExercises
+      : day?.exercises || [];
+
+  const exercise = exercises[exIndex];
+
+  const totalSets =
+    Math.max(
+      1,
+      Number(exercise?.sets) || 1
+    );
+
+  const restSecs =
+    Number(exercise?.rest_seconds) || 60;
+
   const canAdjust = canAccess(
     user?.subscription_plan,
     'live_workout_adjustments'
   );
 
-  const markSet = () => {
-    const key = `${exIndex}-${setIndex}`;
-
-    setCompletedSets(
-      (previous) => ({
-        ...previous,
-        [key]: true,
-      })
+  const applyLiveAdjustment = adjusted => {
+    setLiveExercises(prev =>
+      prev.map((ex, index) =>
+        index === exIndex
+          ? {
+              ...adjusted,
+            }
+          : ex
+      )
     );
 
-    if (
-      setIndex + 1 <
-      totalSets
-    ) {
-      setResting(true);
-      return;
+    setAdjustedExerciseIndexes(prev => ({
+      ...prev,
+      [exIndex]: true,
+    }));
+
+    /*
+     * If Kael changed the number of sets, make sure
+     * the current set index is still valid.
+     */
+    const newSetCount = Math.max(
+      1,
+      Number(adjusted.sets) || totalSets
+    );
+
+    if (setIndex >= newSetCount) {
+      setSetIndex(
+        Math.max(0, newSetCount - 1)
+      );
     }
 
-    if (
+    setResting(false);
+  };
+
+  const markSet = () => {
+    if (!exercise) return;
+
+    const key = `${exIndex}-${setIndex}`;
+
+    setCompletedSets(prev => ({
+      ...prev,
+      [key]: true,
+    }));
+
+    if (setIndex + 1 < totalSets) {
+      setResting(true);
+    } else if (
       exIndex + 1 <
       exercises.length
     ) {
-      setExIndex(
-        (index) => index + 1
-      );
-
+      setExIndex(i => i + 1);
       setSetIndex(0);
+      setResting(false);
 
       toast.success(
         'Next exercise! 🔥'
       );
-
-      return;
+    } else {
+      finishWorkout();
     }
-
-    finishWorkout();
   };
 
   const afterRest = () => {
     setResting(false);
-
-    setSetIndex(
-      (index) => index + 1
-    );
+    setSetIndex(s => s + 1);
   };
 
   const finishWorkout = () => {
-    if (workoutDone) return;
-
     setRunning(false);
     setWorkoutDone(true);
 
     const exercisesCompleted =
-      exercises.map(
-        (exerciseItem, exerciseItemIndex) => ({
-          name: exerciseItem.name,
+      exercises.map((ex, ei) => ({
+        name: ex.name,
 
-          sets_completed:
-            Array.from({
-              length:
-                Number(
-                  exerciseItem.sets
-                ) || 1,
-            }).filter(
-              (_, setItemIndex) =>
-                completedSets[
-                  `${exerciseItemIndex}-${setItemIndex}`
-                ]
-            ).length,
+        sets_completed: Array.from({
+          length: ex.sets || 1,
+        }).filter(
+          (_, si) =>
+            completedSets[
+              `${ei}-${si}`
+            ]
+        ).length,
 
-          reps_achieved:
-            repsAchieved[
-              exerciseItemIndex
-            ] ||
-            exerciseItem.reps,
+        reps_achieved:
+          repsAchieved[ei] ||
+          ex.reps,
 
-          notes: '',
-        })
-      );
+        notes: '',
+      }));
 
     logMutation.mutate({
-      program_id:
-        program?.id,
-
+      program_id: program?.id,
       date: new Date()
         .toISOString()
         .split('T')[0],
-
-      week_number:
-        currentWeekNum,
-
-      day_name:
-        day?.day_name,
-
+      week_number: currentWeekNum,
+      day_name: day?.day_name,
       exercises_completed:
         exercisesCompleted,
-
-      duration_minutes:
-        Math.round(
-          seconds / 60
-        ),
+      duration_minutes: Math.round(
+        seconds / 60
+      ),
     });
 
     toast.success(
@@ -1312,10 +1352,7 @@ export default function LiveWorkout() {
     );
   };
 
-  if (
-    !program ||
-    days.length === 0
-  ) {
+  if (!program || days.length === 0) {
     return (
       <div className="px-5 pt-12 pb-24 text-center">
         <Dumbbell className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-30" />
@@ -1327,9 +1364,7 @@ export default function LiveWorkout() {
         <Button
           className="mt-4"
           onClick={() =>
-            navigate(
-              '/onboarding'
-            )
+            navigate('/onboarding')
           }
         >
           Get Started
@@ -1399,13 +1434,12 @@ export default function LiveWorkout() {
         >
           {/* Day selector */}
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {days.map((currentDay, index) => (
+            {days.map((d, i) => (
               <button
-                type="button"
-                key={index}
+                key={i}
                 onClick={() => {
                   if (!started) {
-                    setDayIndex(index);
+                    setDayIndex(i);
                     setExIndex(0);
                     setSetIndex(0);
                     setResting(false);
@@ -1413,12 +1447,12 @@ export default function LiveWorkout() {
                 }}
                 className={cn(
                   'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex-shrink-0',
-                  index === dayIndex
+                  i === dayIndex
                     ? 'bg-primary text-primary-foreground border-primary'
                     : 'bg-card border-border text-muted-foreground'
                 )}
               >
-                {currentDay.day_name}
+                {d.day_name}
               </button>
             ))}
           </div>
@@ -1433,8 +1467,7 @@ export default function LiveWorkout() {
 
                 <p className="text-sm text-muted-foreground mt-1">
                   {fmt(seconds)} ·{' '}
-                  {exercises.length}{' '}
-                  exercises
+                  {exercises.length} exercises
                 </p>
               </Card>
 
@@ -1444,13 +1477,9 @@ export default function LiveWorkout() {
                   canAdjust={canAdjust}
                   program={program}
                   onProgramUpdated={() =>
-                    queryClient.invalidateQueries(
-                      {
-                        queryKey: [
-                          'programs',
-                        ],
-                      }
-                    )
+                    queryClient.invalidateQueries({
+                      queryKey: ['programs'],
+                    })
                   }
                   onSave={async (
                     checkin,
@@ -1474,69 +1503,60 @@ export default function LiveWorkout() {
           )}
 
           {/* Start card */}
-          {!started &&
-            !workoutDone && (
-              <Card className="p-6 text-center">
-                <Dumbbell className="w-10 h-10 mx-auto mb-3 text-primary" />
+          {!started && !workoutDone && (
+            <Card className="p-6 text-center">
+              <Dumbbell className="w-10 h-10 mx-auto mb-3 text-primary" />
 
-                <h2 className="font-heading font-bold text-lg mb-1">
-                  {day?.day_name}
-                </h2>
+              <h2 className="font-heading font-bold text-lg mb-1">
+                {day?.day_name}
+              </h2>
 
-                <p className="text-sm text-muted-foreground mb-1">
-                  {day?.workout_type}
-                </p>
+              <p className="text-sm text-muted-foreground mb-1">
+                {day?.workout_type}
+              </p>
 
-                <p className="text-xs text-muted-foreground mb-2">
-                  {exercises.length}{' '}
-                  exercises
-                </p>
+              <p className="text-xs text-muted-foreground mb-2">
+                {exercises.length} exercises
+              </p>
 
-                {exercises
-                  .slice(0, 3)
-                  .map(
-                    (
-                      exerciseItem,
-                      index
-                    ) => (
-                      <p
-                        key={index}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {exerciseItem.name}{' '}
-                        —{' '}
-                        {
-                          exerciseItem.sets
-                        }
-                        ×
-                        {
-                          exerciseItem.reps
-                        }
-                      </p>
-                    )
-                  )}
-
-                {exercises.length >
-                  3 && (
-                  <p className="text-xs text-muted-foreground">
-                    +
-                    {exercises.length -
-                      3}{' '}
-                    more
+              {exercises
+                .slice(0, 3)
+                .map((ex, i) => (
+                  <p
+                    key={i}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {ex.name} — {ex.sets}×
+                    {ex.reps}
                   </p>
-                )}
+                ))}
 
-                <Button
-                  className="w-full h-12 font-heading font-semibold mt-5"
-                  onClick={() => {
-                    setStarted(true);
-                    setRunning(true);
-                  }}
-                >
-                  Start Workout
-                </Button>
-              </Card>
-            )}
+              {exercises.length > 3 && (
+                <p className="text-xs text-muted-foreground">
+                  +{exercises.length - 3} more
+                </p>
+              )}
+
+              {canAdjust && (
+                <div className="flex items-center justify-center gap-1.5 mt-4 text-[10px] text-chart-4">
+                  <Zap className="w-3 h-3" />
+                  <span>
+                    Elite real-time adjustments enabled
+                  </span>
+                </div>
+              )}
+
+              <Button
+                className="w-full h-12 font-heading font-semibold mt-3"
+                onClick={() => {
+                  setStarted(true);
+                  setRunning(true);
+                }}
+              >
+                Start Workout
+              </Button>
+            </Card>
+          )}
 
           {/* Active workout */}
           {started &&
@@ -1546,27 +1566,37 @@ export default function LiveWorkout() {
               <Card className="p-5 border-2 border-primary/30">
                 <div className="flex items-center justify-between mb-1">
                   <Badge className="bg-primary/15 text-primary border-0 text-xs">
-                    Exercise{' '}
-                    {exIndex + 1} of{' '}
+                    Exercise {exIndex + 1} of{' '}
                     {exercises.length}
                   </Badge>
 
                   <Badge className="bg-muted text-muted-foreground border-0 text-xs">
-                    Set{' '}
-                    {setIndex + 1} of{' '}
+                    Set {setIndex + 1} of{' '}
                     {totalSets}
                   </Badge>
                 </div>
 
-                <h2 className="font-heading font-bold text-xl mt-2 mb-1">
-                  {exercise.name}
-                </h2>
+                <div className="flex items-start justify-between gap-3 mt-2">
+                  <h2 className="font-heading font-bold text-xl">
+                    {exercise.name}
+                  </h2>
+
+                  {adjustedExerciseIndexes[
+                    exIndex
+                  ] && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] border-chart-4/30 text-chart-4 shrink-0"
+                    >
+                      <Zap className="w-3 h-3 mr-1" />
+                      Adjusted
+                    </Badge>
+                  )}
+                </div>
 
                 <p className="text-sm text-muted-foreground mb-1">
-                  Target:{' '}
-                  {exercise.reps}{' '}
-                  reps ·{' '}
-                  {restSecs}s rest
+                  Target: {exercise.reps}{' '}
+                  reps · {restSecs}s rest
                 </p>
 
                 {exercise.notes && (
@@ -1585,9 +1615,7 @@ export default function LiveWorkout() {
                       </p>
 
                       <p className="text-xs text-foreground leading-relaxed">
-                        {
-                          exercise.activation_cue
-                        }
+                        {exercise.activation_cue}
                       </p>
                     </div>
                   </div>
@@ -1602,20 +1630,16 @@ export default function LiveWorkout() {
                   <Input
                     type="number"
                     min="0"
-                    inputMode="numeric"
-                    placeholder={
-                      exercise.reps
-                    }
+                    placeholder={exercise.reps}
                     className="h-9 text-sm w-24"
                     value={
-                      repsAchieved[
-                        exIndex
-                      ] || ''
+                      repsAchieved[exIndex] ||
+                      ''
                     }
-                    onChange={(e) =>
+                    onChange={e =>
                       setRepsAchieved(
-                        (previous) => ({
-                          ...previous,
+                        prev => ({
+                          ...prev,
                           [exIndex]:
                             e.target.value,
                         })
@@ -1624,46 +1648,39 @@ export default function LiveWorkout() {
                   />
                 </div>
 
+                {/* Set indicators */}
                 <div className="flex gap-2 mb-5">
                   {Array.from({
                     length: totalSets,
-                  }).map(
-                    (_, setItemIndex) => {
-                      const key = `${exIndex}-${setItemIndex}`;
+                  }).map((_, si) => {
+                    const key = `${exIndex}-${si}`;
 
-                      const done =
-                        !!completedSets[
-                          key
-                        ];
+                    const done =
+                      !!completedSets[key];
 
-                      const current =
-                        setItemIndex ===
-                        setIndex;
+                    const current =
+                      si === setIndex;
 
-                      return (
-                        <div
-                          key={
-                            setItemIndex
-                          }
-                          className={cn(
-                            'w-9 h-9 rounded-xl flex items-center justify-center border-2 text-xs font-bold transition-all',
-                            done
-                              ? 'bg-accent border-accent text-accent-foreground'
-                              : current
+                    return (
+                      <div
+                        key={si}
+                        className={cn(
+                          'w-9 h-9 rounded-xl flex items-center justify-center border-2 text-xs font-bold transition-all',
+                          done
+                            ? 'bg-accent border-accent text-accent-foreground'
+                            : current
                               ? 'border-primary text-primary'
                               : 'border-border text-muted-foreground'
-                          )}
-                        >
-                          {done ? (
-                            <CheckCircle2 className="w-4 h-4" />
-                          ) : (
-                            setItemIndex +
-                            1
-                          )}
-                        </div>
-                      );
-                    }
-                  )}
+                        )}
+                      >
+                        {done ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                          si + 1
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <Button
@@ -1671,13 +1688,52 @@ export default function LiveWorkout() {
                   onClick={markSet}
                 >
                   <CheckCircle2 className="w-5 h-5 mr-2" />
-                  Complete Set{' '}
-                  {setIndex + 1}
+                  Complete Set {setIndex + 1}
                 </Button>
+
+                {/* REAL-TIME ELITE ADJUSTMENT */}
+                {canAdjust && (
+                  <LiveAdjustmentPanel
+                    exercise={exercise}
+                    exerciseIndex={exIndex}
+                    setIndex={setIndex}
+                    totalSets={totalSets}
+                    repsAchieved={
+                      repsAchieved[exIndex]
+                    }
+                    completedSets={
+                      completedSets
+                    }
+                    trainingType={
+                      program?.training_type ||
+                      'calisthenics'
+                    }
+                    seconds={seconds}
+                    onApply={
+                      applyLiveAdjustment
+                    }
+                    disabled={
+                      resting ||
+                      workoutDone
+                    }
+                  />
+                )}
+
+                {/* Free users see the tracker but not the adjustment controls */}
+                {!canAdjust && (
+                  <div className="mt-4 flex items-center gap-2 p-3 rounded-xl border border-border bg-muted/30">
+                    <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Live workout tracking is free.
+                      Elite unlocks real-time Kael
+                      adjustments while you train.
+                    </p>
+                  </div>
+                )}
               </Card>
             )}
 
-          {/* Rest timer */}
           {started &&
             !workoutDone &&
             resting && (
@@ -1690,118 +1746,100 @@ export default function LiveWorkout() {
             )}
 
           {/* Exercise list */}
-          {started &&
-            !workoutDone && (
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                  All Exercises
-                </p>
+          {started && !workoutDone && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                All Exercises
+              </p>
 
-                {exercises.map(
-                  (
-                    exerciseItem,
-                    index
-                  ) => {
-                    const allDone =
-                      Array.from({
-                        length:
-                          Number(
-                            exerciseItem.sets
-                          ) || 1,
-                      }).every(
-                        (_, setItemIndex) =>
-                          completedSets[
-                            `${index}-${setItemIndex}`
-                          ]
-                      );
+              {exercises.map((ex, i) => {
+                const allDone =
+                  Array.from({
+                    length: ex.sets || 1,
+                  }).every(
+                    (_, si) =>
+                      completedSets[
+                        `${i}-${si}`
+                      ]
+                  );
 
-                    return (
-                      <div
-                        key={index}
-                        className={cn(
-                          'flex items-center gap-3 p-3 rounded-xl border transition-all',
-                          index ===
-                            exIndex
-                            ? 'border-primary bg-primary/5'
-                            : allDone
-                            ? 'border-accent/30 bg-accent/5'
-                            : 'border-border bg-card'
+                const wasAdjusted =
+                  !!adjustedExerciseIndexes[
+                    i
+                  ];
+
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl border transition-all',
+                      i === exIndex
+                        ? 'border-primary bg-primary/5'
+                        : allDone
+                          ? 'border-accent/30 bg-accent/5'
+                          : 'border-border bg-card'
+                    )}
+                  >
+                    {allDone ? (
+                      <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />
+                    ) : i === exIndex ? (
+                      <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 animate-pulse ml-1" />
+                    ) : (
+                      <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate">
+                          {ex.name}
+                        </p>
+
+                        {wasAdjusted && (
+                          <Zap className="w-3 h-3 text-chart-4 shrink-0" />
                         )}
-                      >
-                        {allDone ? (
-                          <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />
-                        ) : index ===
-                          exIndex ? (
-                          <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 animate-pulse ml-1" />
-                        ) : (
-                          <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                        )}
-
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate">
-                            {
-                              exerciseItem.name
-                            }
-                          </p>
-
-                          <p className="text-xs text-muted-foreground">
-                            {
-                              exerciseItem.sets
-                            }
-                            ×
-                            {
-                              exerciseItem.reps
-                            }
-                          </p>
-
-                          {exerciseItem.activation_cue && (
-                            <p className="text-[10px] text-primary/70 truncate mt-0.5">
-                              {
-                                exerciseItem.activation_cue
-                              }
-                            </p>
-                          )}
-                        </div>
-
-                        {index ===
-                          exIndex &&
-                          !allDone && (
-                            <SkipForward
-                              className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground"
-                              onClick={() => {
-                                setExIndex(
-                                  index +
-                                    1 <
-                                    exercises.length
-                                    ? index +
-                                      1
-                                    : index
-                                );
-
-                                setSetIndex(
-                                  0
-                                );
-
-                                setResting(
-                                  false
-                                );
-                              }}
-                            />
-                          )}
                       </div>
-                    );
-                  }
-                )}
 
-                <Button
-                  variant="outline"
-                  className="w-full mt-2"
-                  onClick={finishWorkout}
-                >
-                  Finish Workout Early
-                </Button>
-              </div>
-            )}
+                      <p className="text-xs text-muted-foreground">
+                        {ex.sets}×{ex.reps}
+                      </p>
+
+                      {ex.activation_cue && (
+                        <p className="text-[10px] text-primary/70 truncate mt-0.5">
+                          {ex.activation_cue}
+                        </p>
+                      )}
+                    </div>
+
+                    {i === exIndex &&
+                      !allDone && (
+                        <SkipForward
+                          className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground"
+                          onClick={() => {
+                            setExIndex(
+                              i + 1 <
+                                exercises.length
+                                ? i + 1
+                                : i
+                            );
+
+                            setSetIndex(0);
+                            setResting(false);
+                          }}
+                        />
+                      )}
+                  </div>
+                );
+              })}
+
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={finishWorkout}
+              >
+                Finish Workout Early
+              </Button>
+            </div>
+          )}
         </TabsContent>
 
         {/* ── BASELINE TAB ── */}
