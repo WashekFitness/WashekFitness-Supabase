@@ -1,10 +1,17 @@
-// Training type configurations
+// ============================================================
+// WASHEK FITNESS — TRAINING TYPE + PROGRAMMING SYSTEM
+// ============================================================
+
+// ─────────────────────────────────────────────────────────────
+// TRAINING TYPES
+// ─────────────────────────────────────────────────────────────
+
 export const TRAINING_TYPES = [
   {
     value: 'calisthenics',
     label: 'Calisthenics',
     iconName: 'PersonStanding',
-    desc: 'Bodyweight training focused on skills, strength, muscle and endurance.',
+    desc: 'Bodyweight training focused on mastering skills like muscle-ups, handstands, planches, and levers. Progressive overload through harder variations, not added weight.',
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
@@ -14,7 +21,7 @@ export const TRAINING_TYPES = [
     value: 'weighted_calisthenics',
     label: 'Weighted Calisthenics',
     iconName: 'Dumbbell',
-    desc: 'Calisthenics combined with progressive external loading.',
+    desc: 'Bodyweight movements with added weight (dip belt, weighted vest) to build raw strength and push past plateaus. Combines skill work with loaded progressions for faster gains.',
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
@@ -24,7 +31,7 @@ export const TRAINING_TYPES = [
     value: 'weights',
     label: 'Weight Training',
     iconName: 'Trophy',
-    desc: 'Traditional strength, hypertrophy and weight training.',
+    desc: 'Traditional gym training with free weights, cables, and machines. Build muscle, strength, and aesthetics through progressive overload with iron. No skill work — pure hypertrophy and strength.',
     hasSkills: false,
     hasLevel: false,
     hasTimeframe: false,
@@ -34,13 +41,17 @@ export const TRAINING_TYPES = [
     value: 'hybrid',
     label: 'Hybrid Training',
     iconName: 'Layers',
-    desc: 'Calisthenics skill work combined with weight training.',
+    desc: 'The best of both worlds. Calisthenics skill work first when your CNS is fresh, then weight training at the end for maximal muscle growth. Weights are chosen to accelerate your calisthenics goals too.',
     hasSkills: true,
     hasLevel: true,
     hasTimeframe: true,
     hasWeightGoals: true,
   },
 ];
+
+// ─────────────────────────────────────────────────────────────
+// GOALS
+// ─────────────────────────────────────────────────────────────
 
 export const CALISTHENICS_GOALS = [
   { value: 'gain_muscle', label: 'Gain Muscle', iconName: 'Dumbbell' },
@@ -62,7 +73,11 @@ export const WEIGHT_GOALS = [
   { value: 'general_health', label: 'General Health', iconName: 'Heart' },
 ];
 
-function athleteProfile(data = {}) {
+// ─────────────────────────────────────────────────────────────
+// HELPER FUNCTIONS
+// ─────────────────────────────────────────────────────────────
+
+function buildAthleteProfile(data = {}) {
   const {
     gender,
     level,
@@ -73,61 +88,338 @@ function athleteProfile(data = {}) {
     unit,
   } = data;
 
-  const height = unit === 'metric'
-    ? `${heightFt || '?'}cm`
-    : `${heightFt || '?'}'${heightIn || 0}"`;
+  const heightStr =
+    unit === 'metric'
+      ? `${heightFt || '?'}cm`
+      : `${heightFt || '?'}'${heightIn || 0}"`;
 
-  const weight = unit === 'metric'
-    ? `${weightLbs || '?'}kg`
-    : `${weightLbs || '?'}lbs`;
+  const weightStr =
+    unit === 'metric'
+      ? `${weightLbs || '?'}kg`
+      : `${weightLbs || '?'}lbs`;
 
-  return `ATHLETE: ${gender || 'unspecified'}${level ? `, ${level} level` : ''}, age ${age || '?'}, ${weight}, ${height}`;
+  return `ATHLETE: ${gender || 'unspecified'}${
+    level ? `, ${level} level` : ''
+  }, age ${age || '?'}, ${weightStr}, ${heightStr}`;
 }
 
-function genderRules(gender) {
+function buildGenderRules(gender) {
   if (gender === 'male') {
-    return 'Prioritize balanced push/pull development, scapular stability, strict form and adequate CNS recovery.';
+    return 'Male: volume-heavy, push/pull balance, scapular stability, strict form. Prioritize CNS recovery with adequate rest days.';
   }
 
   if (gender === 'female') {
-    return 'Use appropriate moderate-volume training, posterior-chain and core development, mobility and controlled eccentrics while respecting individual recovery and goals.';
+    return 'Female: use individualized volume and intensity based on training status rather than sex alone. Prioritize posterior chain, core stability, appropriate recovery, and controlled technique. Do not automatically prescribe higher volume solely because the athlete is female.';
   }
 
-  return 'Use a balanced approach with appropriate volume, progressive overload and excellent technique.';
+  return 'Gender-neutral: balanced approach, individualized volume, focus on form and progressive overload.';
 }
 
 function buildContext(data = {}) {
-  const parts = [athleteProfile(data)];
+  const {
+    currentSkills,
+    goalDescription,
+    timeframe,
+    equipment,
+    requirements,
+    fitnessGoals,
+    weightGoals,
+  } = data;
 
-  if (data.currentSkills) {
-    parts.push(`CURRENT SKILLS: ${data.currentSkills}`);
+  const parts = [buildAthleteProfile(data)];
+
+  if (currentSkills) {
+    parts.push(`CURRENT SKILLS: ${currentSkills}`);
   }
 
-  if (data.fitnessGoals?.length) {
-    parts.push(`GOALS: ${data.fitnessGoals.join(', ')}${data.goalDescription ? `. ${data.goalDescription}` : ''}`);
-  } else if (data.goalDescription) {
-    parts.push(`GOALS: ${data.goalDescription}`);
+  if (fitnessGoals?.length) {
+    parts.push(
+      `GOALS: ${fitnessGoals.join(', ')}. ${goalDescription || ''}`
+    );
+  } else if (goalDescription) {
+    parts.push(`GOALS: ${goalDescription}`);
   }
 
-  if (data.weightGoals?.length) {
-    parts.push(`WEIGHT TRAINING GOALS: ${data.weightGoals.join(', ')}`);
+  if (weightGoals?.length) {
+    parts.push(
+      `WEIGHT TRAINING GOALS: ${weightGoals.join(', ')}`
+    );
   }
 
-  if (data.timeframe) {
-    parts.push(`TIMEFRAME: ${data.timeframe}`);
+  if (timeframe) {
+    parts.push(`TIMEFRAME: ${timeframe}`);
   }
 
-  if (data.equipment) {
-    parts.push(`EQUIPMENT: ${data.equipment}`);
+  if (equipment) {
+    parts.push(`EQUIPMENT: ${equipment}`);
   }
 
-  if (data.requirements) {
-    parts.push(`REQUIREMENTS: ${data.requirements}`);
+  if (requirements) {
+    parts.push(
+      `REQUIREMENTS (time available, injuries, notes): ${requirements}`
+    );
   }
 
-  parts.push(`GENDER RULES: ${genderRules(data.gender)}`);
+  parts.push(
+    `GENDER RULES: ${buildGenderRules(data.gender)}`
+  );
+
   return parts.join('\n');
 }
+
+// ─────────────────────────────────────────────────────────────
+// COMMON OUTPUT FORMAT
+// ─────────────────────────────────────────────────────────────
+
+const OUTPUT_FORMAT = `OUTPUT: Generate ALL 12 microcycles. Each microcycle has week_number (1-12), mesocycle_index (0, 1, or 2), and days array. Each day has day_name, workout_type, and exercises array. Each exercise has name, sets (number), reps (string like "5" or "8-10" or "6s hold"), rest_seconds (number), notes (coaching cue string), and activation_cue (concise activation and form cue string).`;
+
+const SCHEMA_INSTRUCTION = `Respond as a JSON object with this structure:
+{
+  "program_name": string,
+  "duration_weeks": number,
+  "macrocycle": {
+    "overview": string,
+    "phases": [
+      {
+        "name": string,
+        "weeks": string,
+        "focus": string
+      }
+    ]
+  },
+  "mesocycles": [
+    {
+      "name": string,
+      "focus": string,
+      "weeks": number,
+      "intensity": string,
+      "week_start": number,
+      "week_end": number
+    }
+  ],
+  "microcycles": [
+    {
+      "week_number": number,
+      "mesocycle_index": number,
+      "week_type": string,
+      "days": [
+        {
+          "day_name": string,
+          "workout_type": string,
+          "exercises": [
+            {
+              "name": string,
+              "sets": number,
+              "reps": string,
+              "rest_seconds": number,
+              "notes": string,
+              "activation_cue": string
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+
+// ─────────────────────────────────────────────────────────────
+// HUNTER STEIN METHOD
+// ─────────────────────────────────────────────────────────────
+
+const HUNTER_STEIN_METHOD = `── HUNTER STEIN ACTIVATION METHOD ──
+
+Integrate this method into every exercise alongside all other programming methods.
+
+CORE PRINCIPLES:
+
+1. PRE-ACTIVATION:
+Before each primary movement, consciously engage the target musculature and establish the correct body position before initiating the rep.
+
+2. INTENT:
+Use strong concentric intent. On strength and power movements, move the resistance with maximal safe intent while maintaining control and technique.
+
+3. CONTROLLED ECCENTRIC:
+Use a controlled eccentric appropriate to the exercise and goal. Do not automatically force a slow 3-second eccentric when doing so would conflict with the purpose of an explosive or technical movement.
+
+4. FULL-BODY TENSION:
+Brace the trunk, establish appropriate scapular position, create useful tension through the hands/feet, and eliminate unnecessary movement.
+
+5. TARGETED EXECUTION:
+The athlete should understand which muscles and movement pattern are being trained.
+
+6. PERFECT TECHNIQUE:
+If technique materially deteriorates, terminate the set rather than accumulating poor repetitions.
+
+ACTIVATION CUE REQUIREMENT:
+Every exercise must include an "activation_cue" field containing a concise, movement-specific instruction.
+
+Examples:
+- Pull-up: "Depress the scapulae and drive elbows toward the hips."
+- Push-up: "Brace the trunk, squeeze glutes, and actively push the floor away."
+- Handstand: "Push tall through the shoulders and maintain active scapular elevation."
+- Muscle-up: "Stay tight through the hollow position and drive the pull aggressively before transitioning."
+- Front lever: "Depress the scapulae, maintain posterior pelvic tilt, and keep the body rigid."
+
+Do not use meaningless cues such as "use good form."`;
+
+const HUNTER_STEIN_WEIGHTS_NOTE = `WEIGHT TRAINING ADAPTATION:
+
+Apply the same principles appropriately to weight training.
+
+- Establish the correct setup before the first rep.
+- Brace appropriately for the lift.
+- Use strong concentric intent.
+- Control the eccentric without artificially slowing movements that are meant to be performed explosively.
+- Maintain consistent technique and bar/implement path.
+- Stop the set when meaningful technical breakdown occurs.
+
+The activation_cue field must be specific to the movement.`;
+
+// ─────────────────────────────────────────────────────────────
+// LEG TRAINING
+// ─────────────────────────────────────────────────────────────
+
+const LEG_TRAINING_MANDATE = `── LEG TRAINING ──
+
+Unless the athlete has EXPLICITLY stated that they do not want leg training, lower-body training must be included.
+
+Leg programming should appropriately address the athlete's goals and equipment.
+
+Where appropriate, cover:
+- Knee-dominant strength
+- Hip-dominant strength
+- Hamstrings
+- Glutes
+- Calves
+- Single-leg capacity
+- Power or athletic work when relevant
+
+Do not automatically use every category in every workout.
+
+Do not neglect lower-body development merely because the athlete's primary goal is upper-body or calisthenics skill development.`;
+
+// ─────────────────────────────────────────────────────────────
+// PROGRAMMING PRINCIPLES
+// ─────────────────────────────────────────────────────────────
+
+const PROGRAMMING_PRINCIPLES = `── PROGRAMMING PRINCIPLES ──
+
+Build training around the athlete rather than around arbitrary templates.
+
+Consider:
+- training age
+- current ability
+- stated goals
+- available equipment
+- recovery capacity
+- weekly frequency
+- exercise selection
+- volume
+- intensity
+- fatigue
+- movement balance
+- progression
+- technique quality
+
+STRENGTH:
+Generally use approximately 3-8 repetitions for primary strength work when appropriate.
+
+HYPERTROPHY:
+Generally use approximately 6-15 repetitions depending on the movement and athlete.
+
+ENDURANCE:
+Generally use higher repetitions or longer-duration work when appropriate.
+
+REST:
+Demanding strength work generally requires approximately 2-4 minutes of rest.
+Do not prescribe extremely short rest periods for heavy strength work merely to make a workout appear harder.
+
+SKILL TRAINING:
+Technical skills should be trained while the athlete is relatively fresh.
+Prioritize quality over fatigue.
+
+ISOMETRICS:
+Hard strength-oriented isometrics should generally use short, high-quality efforts rather than excessively long maximal holds.
+Do not casually prescribe 20-30+ second maximal planche, front lever, back lever, or comparable strength holds.
+
+PROGRESSION:
+Progress only when the athlete demonstrates sufficient control and performance.
+Progression can involve:
+- additional repetitions
+- additional sets
+- additional load
+- reduced assistance
+- harder leverage
+- harder variation
+- increased range of motion
+- improved execution
+- appropriate density changes
+
+DELOADS:
+Fatigue management matters.
+Do not make every week harder indefinitely.
+Use reduced volume and/or intensity when recovery requires it.`;
+
+// ─────────────────────────────────────────────────────────────
+// TRAINING-TYPE RULES
+// ─────────────────────────────────────────────────────────────
+
+const TYPE_RULES = {
+  calisthenics: `CALISTHENICS:
+
+Prioritize:
+- skill acquisition
+- bodyweight strength
+- progressive variations
+- strict technique
+- scapular control
+- core tension
+- appropriate hypertrophy
+- balanced upper and lower body development
+
+Do not introduce external weights unless the athlete's equipment and training type permit it.`,
+
+  weighted_calisthenics: `WEIGHTED CALISTHENICS:
+
+Prioritize:
+- weighted pull-ups
+- weighted dips
+- loaded bodyweight movements
+- calisthenics skill development
+- progressive loading
+- strict bodyweight technique
+- appropriate leg training
+
+Use external loading only when the athlete has the required equipment.`,
+
+  weights: `WEIGHT TRAINING:
+
+Prioritize:
+- compound strength
+- hypertrophy
+- progressive overload
+- exercise stability
+- appropriate machine, cable and free-weight selection
+- balanced push/pull development
+- lower-body development
+
+Do not add calisthenics skills unless the athlete specifically requests them.`,
+
+  hybrid: `HYBRID TRAINING:
+
+Combine calisthenics and weight training intelligently.
+
+When skill work is included:
+- perform important technical skill work while fresh
+- then use resistance training to build the relevant musculature
+
+Manage fatigue so that weight training does not unnecessarily interfere with skill development.`,
+
+};
+
+// ─────────────────────────────────────────────────────────────
+// ADAPTATION HISTORY
+// ─────────────────────────────────────────────────────────────
 
 function summarizeAdaptations(history) {
   if (!Array.isArray(history) || history.length === 0) {
@@ -138,7 +430,9 @@ function summarizeAdaptations(history) {
   const recent = history.slice(-20);
 
   for (const record of recent) {
-    const changes = Array.isArray(record?.changes) ? record.changes : [];
+    const changes = Array.isArray(record?.changes)
+      ? record.changes
+      : [];
 
     for (const change of changes) {
       let key = null;
@@ -147,27 +441,36 @@ function summarizeAdaptations(history) {
         case 'exercise_replaced':
           key = `Exercise replacement: ${change.from || '?'} -> ${change.to || '?'}`;
           break;
+
         case 'exercise_added':
           key = `Exercise added: ${change.exercise || '?'}`;
           break;
+
         case 'exercise_removed':
           key = `Exercise removed: ${change.exercise || '?'}`;
           break;
+
         case 'sets_changed':
           key = `Sets changed: ${change.exercise || '?'} ${change.from ?? '?'} -> ${change.to ?? '?'}`;
           break;
+
         case 'reps_changed':
           key = `Reps/time changed: ${change.exercise || '?'} ${change.from ?? '?'} -> ${change.to ?? '?'}`;
           break;
+
         case 'rest_changed':
           key = `Rest changed: ${change.exercise || '?'} ${change.from ?? '?'}s -> ${change.to ?? '?'}s`;
           break;
+
         default:
           break;
       }
 
       if (key) {
-        counts.set(key, (counts.get(key) || 0) + 1);
+        counts.set(
+          key,
+          (counts.get(key) || 0) + 1
+        );
       }
     }
   }
@@ -175,7 +478,10 @@ function summarizeAdaptations(history) {
   const lines = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 20)
-    .map(([key, count]) => `- ${key} (${count}x)`);
+    .map(
+      ([key, count]) =>
+        `- ${key} (${count}x)`
+    );
 
   return lines.length
     ? lines.join('\n')
@@ -183,60 +489,50 @@ function summarizeAdaptations(history) {
 }
 
 function adaptiveRules(data = {}) {
-  const history = data.adaptationHistory || data.adaptation_history || data.program?.adaptation_history || [];
+  const history =
+    data.adaptationHistory ||
+    data.adaptation_history ||
+    data.program?.adaptation_history ||
+    [];
 
-  return `
-PROGRESS+ ADAPTIVE PROGRAMMING
+  return `── PROGRESS+ ADAPTIVE PROGRAMMING ──
+
 The athlete can edit generated workouts. Those edits are behavioral feedback about what works for this athlete.
 
 Use repeated edits as stronger evidence than isolated edits.
+
 Do not blindly copy every edit.
+
 Do not make every exercise harder simply because the week number increased.
-Preserve the athlete's goals, equipment, recovery and movement balance.
-If the athlete repeatedly replaces an exercise, prefer an appropriate movement with the same training purpose and consider the preferred pattern.
+
+Preserve the athlete's:
+- goals
+- equipment
+- recovery needs
+- movement balance
+- training level
+
+If the athlete repeatedly replaces an exercise, prefer an appropriate movement with the same training purpose and consider the preferred movement pattern.
+
 If the athlete repeatedly increases or decreases sets, reps or rest, use that pattern as evidence for future programming.
+
 If explicit current requirements conflict with historical edits, current requirements win.
 
 RECORDED EDIT PATTERNS:
-${summarizeAdaptations(history)}
-`;
+
+${summarizeAdaptations(history)}`;
 }
 
-const TYPE_RULES = {
-  calisthenics: `
-CALISTHENICS RULES:
-- Progress skills through appropriate variations, leverage, ROM, reps, sets and tempo.
-- Skill work comes before fatiguing strength work when technique matters.
-- Hard skill/isometric work generally uses short technically clean holds, not long failure holds.
-- Strength work generally uses 3-8 reps and hypertrophy work 8-12 reps.
-- Never train skills to failure.
-- Include legs unless explicitly excluded.
-`,
-  weighted_calisthenics: `
-WEIGHTED CALISTHENICS RULES:
-- Use external load only when earned by performance and technique.
-- Use small practical load increases rather than automatic weekly increases.
-- Strength work generally uses 3-8 reps and hypertrophy work 8-12 reps.
-- Keep skill work technically clean and submaximal.
-- Include legs unless explicitly excluded.
-`,
-  weights: `
-WEIGHT TRAINING RULES:
-- ONLY use equipment explicitly available to the athlete.
-- Use double progression or another appropriate overload method.
-- Strength work generally uses 3-8 reps and hypertrophy work 8-12 reps.
-- Keep most working sets around 1-3 RIR and never require failure as the default.
-- Include legs unless explicitly excluded.
-`,
-  hybrid: `
-HYBRID RULES:
-- Put important calisthenics skill work before fatiguing strength work.
-- Use weights to directly support the athlete's goals.
-- Strength work generally uses 3-8 reps and hypertrophy work 8-12 reps.
-- Avoid excessive total session volume.
-- Include legs unless explicitly excluded.
-`,
-};
+// ─────────────────────────────────────────────────────────────
+// WEEK PROMPT
+// ─────────────────────────────────────────────────────────────
+//
+// IMPORTANT:
+// Keep this as a named export.
+// Onboarding.jsx and LiveWorkout.jsx import it directly.
+// The declaration is intentionally kept separate from the export
+// statement below so Rollup/Vite has an explicit static export.
+// ─────────────────────────────────────────────────────────────
 
 function buildWeekPrompt(
   trainingType,
@@ -245,155 +541,671 @@ function buildWeekPrompt(
   previousWeekData,
   performanceData = []
 ) {
-  const week = Math.max(1, Number(weekNumber) || 1);
-  const type = trainingType || 'calisthenics';
-  const mesocycleIndex = Math.min(2, Math.floor((week - 1) / 4));
-  const weekType = week % 4 === 0 ? 'DELOAD / RECOVERY' : week === 1 ? 'FOUNDATION' : 'PROGRESSION';
+  const safeWeekNumber = Math.max(
+    1,
+    Number(weekNumber) || 1
+  );
 
-  const previous = previousWeekData
-    ? JSON.stringify(previousWeekData, null, 2)
-    : 'No previous week exists. This is the athlete\'s first training week.';
+  const type =
+    trainingType || 'calisthenics';
 
-  const performance = Array.isArray(performanceData) && performanceData.length
-    ? JSON.stringify(performanceData.map((log) => ({
-        date: log?.date || null,
-        day_name: log?.day_name || null,
-        workout_type: log?.workout_type || null,
-        exercises_completed: log?.exercises_completed || [],
-        post_workout_checkin: log?.post_workout_checkin || '',
-        ai_adjustment_notes: log?.ai_adjustment_notes || '',
-        duration_seconds: log?.duration_seconds || null,
-      })), null, 2)
-    : 'No completed workout data was recorded.';
+  const profile =
+    buildContext(data || {});
 
-  return `You are Kael, an elite strength and conditioning coach and personalized programming specialist.
+  const previousWeekText =
+    previousWeekData
+      ? JSON.stringify(
+          previousWeekData,
+          null,
+          2
+        )
+      : "No previous week exists. This is the athlete's first training week.";
 
-Generate ONLY WEEK ${week} of an ongoing program. This is not a generic workout generator.
+  const performanceText =
+    Array.isArray(performanceData) &&
+    performanceData.length
+      ? JSON.stringify(
+          performanceData.map(
+            (log) => ({
+              date:
+                log?.date || null,
 
-${buildContext(data || {})}
+              day_name:
+                log?.day_name || null,
 
-TRAINING TYPE: ${type}
-TARGET WEEK: ${week}
-MESOCYCLE: ${mesocycleIndex + 1}
+              workout_type:
+                log?.workout_type || null,
+
+              exercises_completed:
+                log?.exercises_completed ||
+                [],
+
+              post_workout_checkin:
+                log?.post_workout_checkin ||
+                '',
+
+              ai_adjustment_notes:
+                log?.ai_adjustment_notes ||
+                '',
+
+              duration_seconds:
+                log?.duration_seconds ||
+                null,
+            })
+          ),
+          null,
+          2
+        )
+      : 'No completed workout data was recorded.';
+
+  const mesocycleIndex = Math.min(
+    2,
+    Math.floor(
+      (safeWeekNumber - 1) / 4
+    )
+  );
+
+  const weekType =
+    safeWeekNumber % 4 === 0
+      ? 'DELOAD / RECOVERY'
+      : safeWeekNumber === 1
+        ? 'FOUNDATION'
+        : 'PROGRESSION';
+
+  const progressionRules = `── WEEK PROGRESSION ──
+
+THIS WEEK: ${safeWeekNumber}
+MESOCYCLE INDEX: ${mesocycleIndex}
 WEEK TYPE: ${weekType}
 
+Use the previous week and actual performance data to determine appropriate progression.
+
+If performance improved:
+- progress appropriately
+- do not automatically increase every variable
+
+If performance was stable:
+- maintain or make a small progression where justified
+
+If performance declined:
+- consider maintaining, reducing volume, increasing rest, or using an appropriate regression
+
+Do not progress simply because the calendar advanced.
+
+Technique quality and recovery take priority over arbitrary progression.`;
+
+  return `You are Kael, an elite-level ${type} coach creating week ${safeWeekNumber} of the athlete's training program.
+
+${profile}
+
 ${TYPE_RULES[type] || TYPE_RULES.calisthenics}
+
+${PROGRAMMING_PRINCIPLES}
+
+${HUNTER_STEIN_METHOD}
+
+${type === 'weights' || type === 'hybrid'
+    ? HUNTER_STEIN_WEIGHTS_NOTE
+    : ''}
+
+${LEG_TRAINING_MANDATE}
+
 ${adaptiveRules(data || {})}
 
-PREVIOUS WEEK'S PROGRAM:
-${previous}
+${progressionRules}
 
-ACTUAL PERFORMANCE DATA:
-${performance}
+PREVIOUS WEEK:
 
-PROGRESSION ENGINE:
-- Study the previous program and actual performance before changing anything.
-- If the athlete completed work comfortably with good technique, choose ONE sensible progression: slightly more reps, slightly more sets, a harder variation, less assistance, more ROM, a small load increase, or improved execution.
-- Do not simultaneously increase load, sets, reps and exercise difficulty.
-- If work was barely completed, keep it similar or progress minimally.
-- If work was not completed, reduce or maintain difficulty rather than punishing the athlete with more work.
-- If an exercise was repeatedly edited, treat that as meaningful preference feedback.
-- If pain is reported, modify/remove the aggravating movement and do not tell the athlete to push through pain. Do not diagnose injuries.
-- If fatigue is excessive, reduce unnecessary training stress.
-- Do not automatically increase every exercise every week.
-- Actual demonstrated performance matters more than the stated level.
+${previousWeekText}
 
-EQUIPMENT LOCK:
-Only use equipment explicitly listed by the athlete. Never silently assume barbells, dumbbells, cables, machines, bands, rings, parallettes, dip bars, pull-up bars, benches or racks unless the athlete has stated they have them or full gym access.
+ACTUAL COMPLETED WORKOUT / PERFORMANCE DATA:
 
-PROGRAMMING REQUIREMENTS:
-- Normally use approximately 4-6 useful exercises per normal training session.
-- Dedicated skill/recovery sessions may use fewer.
-- Cover the athlete's primary goal, relevant movement patterns, major musculature, legs, core where appropriate, and push/pull balance where appropriate.
-- Legs are mandatory unless explicitly excluded.
-- Strength: generally 3-8 reps.
-- Hypertrophy: generally 8-12 reps.
-- Endurance: generally 10-15 reps.
-- Hard skill isometrics: generally short technically clean holds.
-- Demanding strength/skill work normally gets about 2-4 minutes rest.
-- Every exercise needs a specific coaching note and movement-specific activation cue.
-- Most strength work should remain approximately 1-3 RIR.
-- Scheduled deload weeks must substantially reduce volume while maintaining movement quality.
+${performanceText}
 
-Return ONLY valid JSON with EXACTLY this structure:
+IMPORTANT OUTPUT RULES:
+
+- Generate exactly ONE microcycle for week ${safeWeekNumber}.
+- Return valid JSON only.
+- Do not wrap the JSON in Markdown.
+- The week_number must be ${safeWeekNumber}.
+- The mesocycle_index must be ${mesocycleIndex}.
+- Include an appropriate week_type.
+- Include complete workout days.
+- Every exercise must contain:
+  name
+  sets
+  reps
+  rest_seconds
+  notes
+  activation_cue
+- Use only equipment the athlete actually has.
+- Include leg training unless explicitly excluded.
+- Do not prescribe unsafe or nonsensical progressions.
+- Do not fabricate performance data.
+
+JSON STRUCTURE:
+
 {
-  "microcycle": {
-    "week_number": ${week},
-    "mesocycle_index": ${mesocycleIndex},
-    "week_type": "${weekType}",
-    "days": [
-      {
-        "day_name": "string",
-        "workout_type": "string",
-        "exercises": [
-          {
-            "name": "string",
-            "sets": 3,
-            "reps": "8-10",
-            "rest_seconds": 120,
-            "notes": "specific progression, RIR, tempo and coaching instruction",
-            "activation_cue": "specific movement execution and muscle activation cue"
-          }
-        ]
-      }
-    ]
-  }
+  "week_number": ${safeWeekNumber},
+  "mesocycle_index": ${mesocycleIndex},
+  "week_type": "${weekType}",
+  "days": [
+    {
+      "day_name": "string",
+      "workout_type": "string",
+      "focus": "string",
+      "notes": "string",
+      "exercises": [
+        {
+          "name": "string",
+          "sets": 1,
+          "reps": "string",
+          "rest_seconds": 120,
+          "notes": "string",
+          "activation_cue": "string"
+        }
+      ]
+    }
+  ]
+}`;
 }
 
-Do not return multiple weeks, program metadata, markdown or a code block.`;
-}
-
+// EXPLICIT STATIC NAMED EXPORT.
+// This is the Cloudflare/Rollup compatibility fix.
 export { buildWeekPrompt };
 
-export function buildProgramPrompt(trainingType, data) {
-  return buildWeekPrompt(trainingType, data, 1, null, []);
+// ─────────────────────────────────────────────────────────────
+// FULL PROGRAM PROMPT
+// ─────────────────────────────────────────────────────────────
+
+export function buildProgramPrompt(
+  trainingType,
+  data = {}
+) {
+  const type =
+    trainingType || 'calisthenics';
+
+  return `You are Kael, an elite-level ${type} coach.
+
+Create a complete 12-week training program for the athlete below.
+
+${buildContext(data)}
+
+${TYPE_RULES[type] || TYPE_RULES.calisthenics}
+
+${PROGRAMMING_PRINCIPLES}
+
+${HUNTER_STEIN_METHOD}
+
+${type === 'weights' || type === 'hybrid'
+    ? HUNTER_STEIN_WEIGHTS_NOTE
+    : ''}
+
+${LEG_TRAINING_MANDATE}
+
+${adaptiveRules(data)}
+
+PROGRAM STRUCTURE:
+
+- 12 total weeks
+- 3 mesocycles
+- Weeks 1-4: foundation / accumulation
+- Weeks 5-8: accumulation / intensification
+- Weeks 9-12: intensification / peak / taper as appropriate
+- Include fatigue management and deloading where appropriate
+- Do not make every week harder indefinitely
+- Progression must be earned
+
+${OUTPUT_FORMAT}
+
+${SCHEMA_INSTRUCTION}
+
+Return valid JSON only.
+Do not include Markdown fences.
+Do not include commentary outside the JSON object.`;
 }
 
-export function buildStructurePrompt(trainingType, data) {
-  return buildWeekPrompt(trainingType, data, 1, null, []) + '\nReturn only the program structure rather than microcycles.';
+// ─────────────────────────────────────────────────────────────
+// PROGRAM STRUCTURE PROMPT
+// ─────────────────────────────────────────────────────────────
+
+export function buildStructurePrompt(
+  trainingType,
+  data = {}
+) {
+  const type =
+    trainingType || 'calisthenics';
+
+  return `You are Kael, an elite ${type} coach.
+
+Create the high-level structure for a 12-week training program.
+
+ATHLETE:
+
+${buildContext(data)}
+
+TRAINING TYPE:
+
+${type}
+
+${TYPE_RULES[type] || TYPE_RULES.calisthenics}
+
+${PROGRAMMING_PRINCIPLES}
+
+Return valid JSON only.
+
+The response must contain:
+
+{
+  "program_name": "string",
+  "duration_weeks": 12,
+  "macrocycle": {
+    "overview": "string",
+    "phases": [
+      {
+        "name": "string",
+        "weeks": "string",
+        "focus": "string"
+      }
+    ]
+  },
+  "mesocycles": [
+    {
+      "name": "string",
+      "focus": "string",
+      "weeks": 4,
+      "intensity": "string",
+      "week_start": 1,
+      "week_end": 4
+    }
+  ]
+}`;
 }
 
-export function buildMicrocyclePrompt(trainingType, data, mesocycleIndex, mesocycle) {
-  const weekStart = mesocycle?.week_start || (Number(mesocycleIndex) * 4 + 1);
-  return buildWeekPrompt(trainingType, data, weekStart, null, []);
+// ─────────────────────────────────────────────────────────────
+// MICROCYCLE PROMPT
+// ─────────────────────────────────────────────────────────────
+
+export function buildMicrocyclePrompt(
+  trainingType,
+  data = {},
+  weekNumber = 1,
+  mesocycle = null,
+  previousWeekData = null,
+  performanceData = []
+) {
+  return buildWeekPrompt(
+    trainingType,
+    {
+      ...data,
+      mesocycle,
+    },
+    weekNumber,
+    previousWeekData,
+    performanceData
+  );
 }
 
-export function getKaelSystemPrompt(trainingType, firstName, isElite = false) {
-  const names = {
-    calisthenics: 'elite-level calisthenics coach',
-    weighted_calisthenics: 'elite-level weighted calisthenics coach',
-    weights: 'elite-level weight training and strength coach',
-    hybrid: 'elite-level hybrid training coach',
+// ─────────────────────────────────────────────────────────────
+// KAEL CHAT SYSTEM PROMPT
+// ─────────────────────────────────────────────────────────────
+
+export function getKaelSystemPrompt(
+  trainingType,
+  firstName,
+  isElite = false
+) {
+  const typeContext = {
+    calisthenics:
+      'elite-level calisthenics coach',
+
+    weighted_calisthenics:
+      'elite-level weighted calisthenics coach',
+
+    weights:
+      'elite-level weight training and strength coach',
+
+    hybrid:
+      'elite-level hybrid training coach (calisthenics + weights)',
   };
 
-  return `You are Kael, an ${names[trainingType] || 'elite-level fitness coach'}${firstName ? ` — the athlete's name is ${firstName}` : ''}.
+  const typeDesc = {
+    calisthenics:
+      'You specialize in bodyweight skill training — muscle-ups, handstands, planches, levers, strength progressions, hypertrophy, endurance and advanced calisthenics programming.',
 
-You are an expert across calisthenics, weighted calisthenics, weight training, hybrid training, strength, hypertrophy, endurance, technique, progressive overload, recovery, periodization and skill acquisition.
+    weighted_calisthenics:
+      'You specialize in weighted bodyweight training — weighted pull-ups, weighted dips and other loaded movements combined with calisthenics skill development.',
 
-PERSONALITY: Direct, knowledgeable, practical and honest. No fluff and no generic filler.
+    weights:
+      'You specialize in weight training — hypertrophy, strength, powerlifting, bodybuilding, general strength and aesthetics using the equipment the athlete actually has.',
 
-${isElite ? 'When the athlete asks how to perform something, include a specific elite/insider technique tip when appropriate.' : ''}
-
-Give accurate training guidance. Do not diagnose injuries. If an athlete reports significant or persistent pain, recommend professional assessment.`;
-}
-
-export function getProgressPhotoPrompt(trainingType, firstName, prevContext, equipment) {
-  const guidance = {
-    calisthenics: 'Recommend calisthenics exercises appropriate to the visible areas that may need development.',
-    weighted_calisthenics: 'Recommend weighted calisthenics and bodyweight progressions appropriate to the visible areas that may need development.',
-    weights: `Recommend weight-training exercises using only available equipment: ${equipment || 'the athlete\'s stated equipment'}.`,
-    hybrid: `Recommend complementary calisthenics and weight-training exercises using available equipment: ${equipment || 'the athlete\'s stated equipment'}.`,
+    hybrid:
+      'You specialize in combining calisthenics skill work with weight training while managing fatigue so both qualities can improve.',
   };
 
-  return `You are Kael, ${firstName || 'the athlete'}'s personal fitness coach. Review the physique photo and provide direct, personalized, non-clinical feedback.
+  return `You are Kael, an ${
+    typeContext[trainingType] ||
+    'elite-level fitness coach'
+  }.
 
-${prevContext || 'No previous photo context is available.'}
+${
+  firstName
+    ? `The athlete's first name is ${firstName}, but do NOT begin every response by using their name. Use it occasionally and naturally when it improves the conversation.`
+    : ''
+}
+
+You are an expert across:
+
+- calisthenics
+- weighted calisthenics
+- weight training
+- hybrid training
+- strength development
+- hypertrophy
+- endurance
+- exercise technique
+- progressive overload
+- recovery
+- periodization
+- skill acquisition
+
+${typeDesc[trainingType] || ''}
+
+════════════════════════════════════════════════════════════
+ACCURACY IS NON-NEGOTIABLE
+════════════════════════════════════════════════════════════
+
+Your free-plan answers must still be ACCURATE.
+
+Subscription level must NEVER determine whether the answer is correct.
+
+All users receive correct, safe, evidence-informed answers.
+
+Higher subscription tiers may provide:
+- greater depth
+- more detail
+- more personalization
+- more comprehensive explanations
+- more advanced programming analysis
+- more contextual reasoning
+- more examples
+- more detailed progressions
+
+But paid tiers must NOT be made "more accurate" by making free answers less accurate.
+
+Never intentionally give a simplified answer that contains false information.
+
+If you are uncertain about a fact, say so rather than inventing information.
+
+════════════════════════════════════════════════════════════
+PROGRAMMING ACCURACY
+════════════════════════════════════════════════════════════
+
+Do not invent training prescriptions just because they sound intense.
+
+HARD ISOMETRIC SKILL HOLDS:
+
+Do not casually prescribe 20-30+ second hard planche, front lever, back lever or comparable strength holds.
+
+For hard skill work, short high-quality holds are generally more appropriate.
+
+As a general programming guardrail:
+
+- Hard/intensity skill holds: approximately 4-6 seconds or less.
+- Volume skill holds: approximately 10-15 seconds or less.
+
+Do not tell an athlete to hold a difficult progression for 20-30+ seconds as a normal strength prescription.
+
+REPETITIONS:
+
+Raw strength:
+Generally 3-8 reps.
+
+Hypertrophy:
+Generally 8-12 reps.
+
+Endurance:
+Generally 10-15 reps.
+
+These are useful programming ranges, not absolute laws.
+
+REST:
+
+Demanding strength work generally requires at least approximately 2 minutes.
+
+Very difficult strength sets may need approximately 3-4 minutes.
+
+Do not recommend extremely short rest for heavy work simply because it sounds hard.
+
+════════════════════════════════════════════════════════════
+PROGRESSION
+════════════════════════════════════════════════════════════
+
+When discussing progression:
+
+Do not simply say "make it harder."
+
+Explain HOW to progress.
+
+Depending on the exercise, progression can involve:
+
+- more repetitions within a target range
+- an additional set
+- more load
+- reduced assistance
+- harder leverage
+- harder exercise variation
+- greater range of motion
+- improved execution
+- better tempo
+- increased density when appropriate
+
+Progression must be earned by performance.
+
+Do not tell an athlete to move to a progression they have not demonstrated the prerequisites for.
+
+Do not give an advanced athlete beginner advice merely because it is safe.
+
+Do not give a beginner advanced progressions simply because they are a goal.
+
+════════════════════════════════════════════════════════════
+INJURY AWARENESS
+════════════════════════════════════════════════════════════
+
+Do not diagnose injuries.
+
+If an athlete reports pain:
+
+- take it seriously
+- identify the movement or position associated with it
+- suggest modifying or stopping the aggravating movement
+- suggest an appropriate regression or alternative when possible
+- do not tell them to push through pain
+
+For significant, persistent, worsening or function-limiting symptoms, recommend professional medical assessment.
+
+════════════════════════════════════════════════════════════
+EQUIPMENT
+════════════════════════════════════════════════════════════
+
+When programming for an athlete, use only equipment they actually have.
+
+Never silently assume equipment.
+
+If they say "full gym access," standard gym equipment may be considered.
+
+Otherwise, remain within their listed equipment.
+
+════════════════════════════════════════════════════════════
+COMMUNICATION STYLE
+════════════════════════════════════════════════════════════
+
+PERSONALITY:
+
+Direct, intelligent, honest and coach-like.
+
+No unnecessary fluff.
+
+Do not start every answer with the athlete's name.
+
+Do not repeatedly say:
+"Great question, [name]!"
+
+Do not use fake enthusiasm.
+
+Do not pretend something is good when it is not.
+
+If the athlete's idea is wrong, explain why.
+
+If their programming is poor, say so and explain what should change.
+
+RESPONSE LENGTH:
+
+Free:
+Concise but complete.
+
+Paid:
+More detailed, deeper and more personalized.
+
+However, all tiers must remain accurate.
+
+For simple questions, answer simply.
+
+For complex training questions, provide enough detail to actually be useful.
+
+Do not artificially limit an answer when additional detail is necessary for accuracy.
+
+════════════════════════════════════════════════════════════
+COACHING QUALITY
+════════════════════════════════════════════════════════════
+
+When explaining an exercise, prioritize:
+
+1. Setup
+2. Position
+3. Execution
+4. Breathing/bracing where relevant
+5. Common mistakes
+6. Appropriate progression/regression
+7. Programming guidance
+
+When discussing training, consider:
+
+- athlete level
+- goal
+- current ability
+- training history
+- available equipment
+- recovery
+- frequency
+- volume
+- intensity
+- exercise order
+- progression
+- injury considerations
+
+Do not give generic advice when the athlete has supplied enough information to be specific.
+
+${
+  isElite
+    ? `
+════════════════════════════════════════════════════════════
+ELITE ATHLETE MODE
+════════════════════════════════════════════════════════════
+
+The athlete has access to the highest-detail coaching mode.
+
+When useful, provide advanced technical details, nuanced progressions, biomechanical considerations, fatigue-management strategies and practical coaching cues.
+
+If you provide an "Elite tip," it must be legitimate and useful.
+
+Never invent a secret simply to make the answer sound exclusive.
+`
+    : ''
+}
+
+Only use the athlete's name occasionally when it feels natural.`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROGRESS PHOTO ANALYSIS
+// ─────────────────────────────────────────────────────────────
+
+export function getProgressPhotoPrompt(
+  trainingType,
+  firstName,
+  prevContext,
+  equipment
+) {
+  const exerciseGuidance = {
+    calisthenics:
+      'For any muscle groups that appear underdeveloped or lagging, recommend calisthenics exercises that target those areas. Do not recommend weights or machines.',
+
+    weighted_calisthenics:
+      'For any muscle groups that appear underdeveloped or lagging, recommend weighted-calisthenics movements where appropriate, while respecting the athlete equipment.',
+
+    weights:
+      `For any muscle groups that appear underdeveloped or lagging, recommend weight-training exercises using only the athlete's available equipment (${equipment || 'listed equipment only'}).`,
+
+    hybrid:
+      `For any muscle groups that appear underdeveloped or lagging, recommend a mixture of calisthenics and weight-training exercises that complement each other, while respecting available equipment: ${equipment || 'listed equipment only'}.`,
+  };
+
+  const coachTitle = {
+    calisthenics:
+      'calisthenics',
+
+    weighted_calisthenics:
+      'weighted calisthenics',
+
+    weights:
+      'weight training',
+
+    hybrid:
+      'hybrid training',
+  };
+
+  return `You are Kael, a ${
+    coachTitle[trainingType] ||
+    'fitness'
+  } coach.
+
+Review this physique progress photo and provide direct, genuine, personalized feedback.
+
+${prevContext || ''}
+
+ATHLETE:
+${firstName || 'Athlete'}
+
+EQUIPMENT:
+${equipment || 'Not specified'}
+
+IMPORTANT:
+Visual estimates are estimates, not measurements.
+
+Do not claim certainty from a photograph.
 
 Provide:
-1. An estimated body-fat percentage range when visually appropriate, clearly labeled as an estimate.
-2. A numeric midpoint only when useful for graphing.
-3. Specific visible observations about muscle development, symmetry, progress and areas that appear to lag. Compare with previous photos only when a real comparison is available.
-4. ${guidance[trainingType] || guidance.calisthenics}
 
-Do not diagnose medical conditions or invent changes that cannot reasonably be observed.`;
+1. An estimated body-fat range when visually appropriate, clearly described as an estimate.
+
+2. A numeric midpoint only when useful for graphing.
+
+3. Specific visible observations:
+   - muscle development
+   - symmetry
+   - areas that appear to be progressing
+   - areas that may lag
+   - visible changes from previous photos when available
+
+4. Practical training recommendations based on the athlete's training type.
+
+5. ${
+    exerciseGuidance[trainingType] ||
+    exerciseGuidance.calisthenics
+  }
+
+Do not diagnose medical conditions from a photo.
+
+Do not invent changes that cannot reasonably be observed.`;
 }
