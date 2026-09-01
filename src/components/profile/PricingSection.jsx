@@ -127,27 +127,33 @@ export default function PricingSection() {
       }
 
       const profilePlan = normalizePlan(profile?.subscription_plan);
-      const profileStatus = String(profile?.subscription_status || '').toLowerCase();
+      const profileStatus = String(
+        profile?.subscription_status || ''
+      ).toLowerCase();
       const profileIsActive = isActiveStatus(profileStatus);
 
       let stripeSubscription = null;
       let stripeLookupFailed = false;
 
-      const { data: subscriptionRows, error: subscriptionError } = await supabase
-        .from('stripe_subscriptions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const { data: subscriptionRows, error: subscriptionError } =
+        await supabase
+          .from('stripe_subscriptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
       if (subscriptionError) {
         stripeLookupFailed = true;
+
         console.error(
           '[PricingSection] Stripe subscription lookup failed:',
           subscriptionError
         );
       } else if (Array.isArray(subscriptionRows)) {
         stripeSubscription =
-          subscriptionRows.find((row) => isActiveStatus(row?.status)) ||
+          subscriptionRows.find((row) =>
+            isActiveStatus(row?.status)
+          ) ||
           subscriptionRows[0] ||
           null;
       }
@@ -155,7 +161,10 @@ export default function PricingSection() {
       const stripePlan = normalizePlan(
         stripeSubscription?.plan || stripeSubscription?.plan_key
       );
-      const stripeIsActive = isActiveStatus(stripeSubscription?.status);
+
+      const stripeIsActive = isActiveStatus(
+        stripeSubscription?.status
+      );
 
       let resolvedPlan = 'free';
 
@@ -167,7 +176,10 @@ export default function PricingSection() {
 
       if (stripeIsActive && stripeSubscription) {
         setSubscription(stripeSubscription);
-      } else if (profile?.stripe_subscription_id && profileIsActive) {
+      } else if (
+        profile?.stripe_subscription_id &&
+        profileIsActive
+      ) {
         setSubscription({
           id: profile.stripe_subscription_id,
           plan: profilePlan,
@@ -209,11 +221,12 @@ export default function PricingSection() {
 
     run();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
-      if (active) {
-        loadSubscription();
-      }
-    });
+    const { data: authListener } =
+      supabase.auth.onAuthStateChange(() => {
+        if (active) {
+          loadSubscription();
+        }
+      });
 
     return () => {
       active = false;
@@ -227,7 +240,9 @@ export default function PricingSection() {
     }
 
     if (currentPlan === plan.planKey) {
-      setError(`You already have an active ${plan.name} subscription.`);
+      setError(
+        `You already have an active ${plan.name} subscription.`
+      );
       return;
     }
 
@@ -240,28 +255,49 @@ export default function PricingSection() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        throw new Error('Please sign in before upgrading your plan.');
+        throw new Error(
+          'Please sign in before upgrading your plan.'
+        );
       }
 
       const { data: freshProfile } = await supabase
         .from('profiles')
-        .select('subscription_plan, subscription_status')
+        .select(
+          'subscription_plan, subscription_status'
+        )
         .eq('id', user.id)
         .maybeSingle();
 
-      const freshPlan = normalizePlan(freshProfile?.subscription_plan);
-      const freshStatus = String(freshProfile?.subscription_status || '').toLowerCase();
+      const freshPlan = normalizePlan(
+        freshProfile?.subscription_plan
+      );
 
-      if (freshPlan === plan.planKey && isActiveStatus(freshStatus)) {
+      const freshStatus = String(
+        freshProfile?.subscription_status || ''
+      ).toLowerCase();
+
+      if (
+        freshPlan === plan.planKey &&
+        isActiveStatus(freshStatus)
+      ) {
         setCurrentPlan(freshPlan);
-        setError(`You already have an active ${plan.name} subscription.`);
+
+        setError(
+          `You already have an active ${plan.name} subscription.`
+        );
+
         return;
       }
 
-      const { data, error: functionError } = await supabase.functions.invoke(
+      const {
+        data,
+        error: functionError,
+      } = await supabase.functions.invoke(
         'create-checkout-session',
         {
-          body: { plan: plan.planKey },
+          body: {
+            plan: plan.planKey,
+          },
         }
       );
 
@@ -269,23 +305,41 @@ export default function PricingSection() {
         throw functionError;
       }
 
-      if (data?.alreadyActive || data?.action === 'already_active') {
-        setCurrentPlan(data.plan || plan.planKey);
+      if (
+        data?.alreadyActive ||
+        data?.action === 'already_active'
+      ) {
+        setCurrentPlan(
+          data.plan || plan.planKey
+        );
+
         setSubscription((previous) =>
           previous
             ? {
                 ...previous,
-                plan: data.plan || plan.planKey,
-                plan_key: data.plan || plan.planKey,
+                plan:
+                  data.plan ||
+                  plan.planKey,
+                plan_key:
+                  data.plan ||
+                  plan.planKey,
                 status: 'active',
               }
             : {
-                plan: data.plan || plan.planKey,
-                plan_key: data.plan || plan.planKey,
+                plan:
+                  data.plan ||
+                  plan.planKey,
+                plan_key:
+                  data.plan ||
+                  plan.planKey,
                 status: 'active',
               }
         );
-        setError(`You already have an active ${plan.name} subscription.`);
+
+        setError(
+          `You already have an active ${plan.name} subscription.`
+        );
+
         return;
       }
 
@@ -294,30 +348,53 @@ export default function PricingSection() {
         return;
       }
 
-      if (data?.success && data?.action === 'changed') {
-        setCurrentPlan(data.plan || plan.planKey);
+      if (
+        data?.success &&
+        data?.action === 'changed'
+      ) {
+        setCurrentPlan(
+          data.plan || plan.planKey
+        );
+
         setSubscription((previous) =>
           previous
             ? {
                 ...previous,
-                plan: data.plan || plan.planKey,
-                plan_key: data.plan || plan.planKey,
+                plan:
+                  data.plan ||
+                  plan.planKey,
+                plan_key:
+                  data.plan ||
+                  plan.planKey,
                 status: 'active',
               }
             : {
-                plan: data.plan || plan.planKey,
-                plan_key: data.plan || plan.planKey,
+                plan:
+                  data.plan ||
+                  plan.planKey,
+                plan_key:
+                  data.plan ||
+                  plan.planKey,
                 status: 'active',
               }
         );
+
         return;
       }
 
-      throw new Error(data?.error || 'Unable to start checkout.');
+      throw new Error(
+        data?.error ||
+          'Unable to start checkout.'
+      );
     } catch (checkoutError) {
-      console.error('[PricingSection] Checkout failed:', checkoutError);
+      console.error(
+        '[PricingSection] Checkout failed:',
+        checkoutError
+      );
+
       setError(
-        checkoutError?.message || 'Unable to start checkout.'
+        checkoutError?.message ||
+          'Unable to start checkout.'
       );
     } finally {
       setLoadingPlan(null);
@@ -325,7 +402,10 @@ export default function PricingSection() {
   };
 
   const handleCancel = async () => {
-    if (cancelling || currentPlan === 'free') {
+    if (
+      cancelling ||
+      currentPlan === 'free'
+    ) {
       return;
     }
 
@@ -341,7 +421,10 @@ export default function PricingSection() {
     setError('');
 
     try {
-      const { data, error: functionError } = await supabase.functions.invoke(
+      const {
+        data,
+        error: functionError,
+      } = await supabase.functions.invoke(
         'cancel-subscription',
         {
           body: {},
@@ -356,20 +439,26 @@ export default function PricingSection() {
         throw new Error(data.error);
       }
 
-      setCurrentPlan('free');
-      setSubscription(null);
-      setLoadingPlan(null);
-
-      await loadSubscription();
-
-      setCurrentPlan('free');
-      setSubscription(null);
+      /*
+       * The cancellation succeeded.
+       *
+       * Reload immediately instead of only changing React state.
+       * This forces the entire application to reinitialize and
+       * re-check the user's subscription before they can continue
+       * using paid features.
+       */
+      window.location.reload();
     } catch (cancelError) {
-      console.error('[PricingSection] Cancellation failed:', cancelError);
-      setError(
-        cancelError?.message || 'Unable to cancel your subscription.'
+      console.error(
+        '[PricingSection] Cancellation failed:',
+        cancelError
       );
-    } finally {
+
+      setError(
+        cancelError?.message ||
+          'Unable to cancel your subscription.'
+      );
+
       setCancelling(false);
     }
   };
@@ -385,19 +474,22 @@ export default function PricingSection() {
 
       <div className="flex items-center gap-2 mb-1">
         <Crown className="w-4 h-4 text-chart-4" />
+
         <h3 className="font-heading font-bold text-sm text-muted-foreground uppercase tracking-wider">
           Upgrade Your Plan
         </h3>
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2 mb-3">
-        Unlock the full Washek experience. The Live Workout Tracker is free for
-        everyone; Elite adds real-time workout adjustments.
+        Unlock the full Washek experience. The Live Workout
+        Tracker is free for everyone; Elite adds real-time
+        workout adjustments.
       </p>
 
       {plans.map((plan) => {
         const Icon = plan.icon;
-        const isCurrent = currentPlan === plan.planKey;
+        const isCurrent =
+          currentPlan === plan.planKey;
 
         return (
           <Card
@@ -412,16 +504,22 @@ export default function PricingSection() {
 
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Icon className={`w-5 h-5 ${plan.color}`} />
+                <Icon
+                  className={`w-5 h-5 ${plan.color}`}
+                />
+
                 <span className="font-heading font-bold text-base">
                   {plan.name}
                 </span>
               </div>
 
               <div className="flex items-baseline gap-0.5">
-                <span className={`font-heading font-bold text-xl ${plan.color}`}>
+                <span
+                  className={`font-heading font-bold text-xl ${plan.color}`}
+                >
                   {plan.price}
                 </span>
+
                 <span className="text-xs text-muted-foreground">
                   {plan.period}
                 </span>
@@ -435,6 +533,7 @@ export default function PricingSection() {
                   className="flex items-start gap-2 text-sm"
                 >
                   <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+
                   <span>{feature}</span>
                 </li>
               ))}
@@ -458,10 +557,16 @@ export default function PricingSection() {
               <Button
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
-                onClick={() => handleCheckout(plan)}
-                disabled={!!loadingPlan || loadingSubscription}
+                onClick={() =>
+                  handleCheckout(plan)
+                }
+                disabled={
+                  !!loadingPlan ||
+                  loadingSubscription
+                }
               >
-                {loadingPlan === plan.planKey ? (
+                {loadingPlan ===
+                plan.planKey ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Loading...
@@ -475,26 +580,27 @@ export default function PricingSection() {
         );
       })}
 
-      {currentPlan !== 'free' && !loadingSubscription && (
-        <div className="pt-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/5"
-            onClick={handleCancel}
-            disabled={cancelling}
-          >
-            {cancelling ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Cancelling...
-              </>
-            ) : (
-              'Cancel Subscription'
-            )}
-          </Button>
-        </div>
-      )}
+      {currentPlan !== 'free' &&
+        !loadingSubscription && (
+          <div className="pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+              onClick={handleCancel}
+              disabled={cancelling}
+            >
+              {cancelling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Cancelling...
+                </>
+              ) : (
+                'Cancel Subscription'
+              )}
+            </Button>
+          </div>
+        )}
 
       <p className="text-[10px] text-muted-foreground text-center">
         Cancel anytime. Billed monthly.
