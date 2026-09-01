@@ -1,16 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const THRESHOLD = 72;
 const ACTIVATION_DISTANCE = 8;
 
-/*
- * Elements that should always receive normal mobile touch/click
- * behavior instead of being interpreted as the beginning of a
- * pull-to-refresh gesture.
- */
 function isInteractiveTarget(target) {
   if (!(target instanceof Element)) {
     return false;
@@ -34,49 +28,29 @@ function isInteractiveTarget(target) {
 }
 
 export default function PullToRefresh({
-  queryKeys = [],
   children,
 }) {
-  const queryClient = useQueryClient();
-
   const [pullY, setPullY] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const startY = useRef(null);
   const pullYRef = useRef(0);
-  const refreshingRef = useRef(false);
-  const queryKeysRef = useRef(queryKeys);
-
-  const wrapperRef = useRef(null);
-
-  /*
-   * Once a touch begins on an interactive element, completely
-   * ignore that gesture for pull-to-refresh.
-   *
-   * This is especially important for mobile buttons and links.
-   */
-  const interactiveTouchRef = useRef(false);
-
-  /*
-   * Pull-to-refresh should not take over the gesture until the
-   * finger has actually moved enough to indicate a pull.
-   */
   const pullingRef = useRef(false);
-
-  queryKeysRef.current = queryKeys;
+  const interactiveTouchRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const wrapperRef = useRef(null);
 
   useEffect(() => {
     /*
-     * Find the nearest scrollable ancestor (AppLayout's scroll
-     * container) instead of creating another scroll container.
-     *
-     * This preserves the existing mobile scrolling behavior.
+     * Find the app's existing scroll container.
+     * We do not create another scroll container.
      */
     let scroller =
       wrapperRef.current?.parentElement;
 
     while (scroller) {
-      const style = getComputedStyle(scroller);
+      const style =
+        getComputedStyle(scroller);
 
       if (
         style.overflowY === 'auto' ||
@@ -85,11 +59,13 @@ export default function PullToRefresh({
         break;
       }
 
-      scroller = scroller.parentElement;
+      scroller =
+        scroller.parentElement;
     }
 
     if (!scroller) {
-      scroller = document.documentElement;
+      scroller =
+        document.documentElement;
     }
 
     const onTouchStart = (e) => {
@@ -101,10 +77,8 @@ export default function PullToRefresh({
       }
 
       /*
-       * Never interfere with buttons, links, form controls,
-       * tabs, or other interactive elements.
-       *
-       * This is the key mobile fix.
+       * Never hijack a tap that starts on a button,
+       * link, tab, input, etc.
        */
       interactiveTouchRef.current =
         isInteractiveTarget(e.target);
@@ -121,10 +95,12 @@ export default function PullToRefresh({
       }
 
       /*
-       * Pull-to-refresh can only begin when the page is already
-       * at the very top, just like before.
+       * Pull-to-refresh only begins when the page
+       * is already at the very top.
        */
-      if (scroller.scrollTop === 0) {
+      if (
+        scroller.scrollTop === 0
+      ) {
         startY.current =
           e.touches[0].clientY;
       } else {
@@ -147,7 +123,7 @@ export default function PullToRefresh({
         startY.current;
 
       /*
-       * Only respond to a downward movement.
+       * Only respond to a downward pull.
        */
       if (
         delta <= 0 ||
@@ -157,9 +133,7 @@ export default function PullToRefresh({
       }
 
       /*
-       * Ignore tiny natural finger movement during a tap.
-       * This prevents mobile taps from accidentally becoming
-       * pull-to-refresh gestures.
+       * Don't hijack a normal tap.
        */
       if (
         !pullingRef.current &&
@@ -171,21 +145,24 @@ export default function PullToRefresh({
       pullingRef.current = true;
 
       /*
-       * Once the gesture is clearly a pull, prevent the page
-       * from scrolling underneath the refresh indicator.
+       * Once the gesture is clearly a pull,
+       * stop the browser from scrolling the page.
        */
       e.preventDefault();
 
-      const next = Math.min(
-        delta * 0.5,
-        THRESHOLD + 20
-      );
+      const next =
+        Math.min(
+          delta * 0.5,
+          THRESHOLD + 20
+        );
 
-      pullYRef.current = next;
+      pullYRef.current =
+        next;
+
       setPullY(next);
     };
 
-    const onTouchEnd = async () => {
+    const onTouchEnd = () => {
       if (
         refreshingRef.current
       ) {
@@ -193,58 +170,88 @@ export default function PullToRefresh({
       }
 
       /*
-       * Interactive touches never participate in
-       * pull-to-refresh.
+       * Normal taps are completely ignored.
        */
       if (
         interactiveTouchRef.current
       ) {
-        interactiveTouchRef.current = false;
-        pullingRef.current = false;
-        startY.current = null;
-        pullYRef.current = 0;
+        interactiveTouchRef.current =
+          false;
+
+        pullingRef.current =
+          false;
+
+        startY.current =
+          null;
+
+        pullYRef.current =
+          0;
+
         setPullY(0);
+
         return;
       }
 
+      /*
+       * A successful pull now performs an ACTUAL
+       * browser page reload.
+       */
       if (
         pullingRef.current &&
         pullYRef.current >= THRESHOLD
       ) {
-        refreshingRef.current = true;
+        refreshingRef.current =
+          true;
+
         setRefreshing(true);
 
-        pullYRef.current = 0;
+        pullYRef.current =
+          0;
+
         setPullY(0);
 
-        try {
-          await Promise.all(
-            queryKeysRef.current.map(
-              (key) =>
-                queryClient.invalidateQueries({
-                  queryKey: key,
-                })
-            )
-          );
-        } finally {
-          refreshingRef.current = false;
-          setRefreshing(false);
-        }
-      } else {
-        pullYRef.current = 0;
-        setPullY(0);
+        /*
+         * Give React one frame to render the spinner
+         * before reloading the document.
+         */
+        window.requestAnimationFrame(() => {
+          window.location.reload();
+        });
+
+        return;
       }
 
-      pullingRef.current = false;
-      interactiveTouchRef.current = false;
-      startY.current = null;
+      /*
+       * Pull wasn't far enough.
+       */
+      pullYRef.current =
+        0;
+
+      setPullY(0);
+
+      pullingRef.current =
+        false;
+
+      interactiveTouchRef.current =
+        false;
+
+      startY.current =
+        null;
     };
 
     const onTouchCancel = () => {
-      startY.current = null;
-      pullYRef.current = 0;
-      pullingRef.current = false;
-      interactiveTouchRef.current = false;
+      startY.current =
+        null;
+
+      pullYRef.current =
+        0;
+
+      pullingRef.current =
+        false;
+
+      interactiveTouchRef.current =
+        false;
+
       setPullY(0);
     };
 
@@ -291,17 +298,26 @@ export default function PullToRefresh({
         onTouchCancel
       );
     };
-  }, [queryClient]);
+  }, []);
 
-  const progress = Math.min(
-    pullY / THRESHOLD,
-    1
-  );
+  const progress =
+    Math.min(
+      pullY / THRESHOLD,
+      1
+    );
 
   return (
     <div ref={wrapperRef}>
+
       <div
-        className="flex items-center justify-center transition-all duration-200 overflow-hidden"
+        className="
+          flex
+          items-center
+          justify-center
+          overflow-hidden
+          transition-all
+          duration-200
+        "
         style={{
           height:
             refreshing
@@ -311,24 +327,30 @@ export default function PullToRefresh({
                 : 0,
         }}
       >
+
         <RefreshCw
           className={cn(
             'w-5 h-5 text-primary transition-all',
-            refreshing && 'animate-spin'
+            refreshing &&
+              'animate-spin'
           )}
           style={{
             opacity:
               refreshing
                 ? 1
                 : progress,
-            transform: `rotate(${
-              progress * 180
-            }deg)`,
+
+            transform:
+              `rotate(${
+                progress * 180
+              }deg)`,
           }}
         />
+
       </div>
 
       {children}
+
     </div>
   );
 }
