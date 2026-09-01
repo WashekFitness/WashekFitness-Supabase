@@ -125,6 +125,122 @@ function getExercises(day) {
 }
 
 
+function buildAdaptationChanges(beforeExercises, afterExercises) {
+  const before = Array.isArray(beforeExercises) ? beforeExercises : [];
+  const after = Array.isArray(afterExercises) ? afterExercises : [];
+  const changes = [];
+  const maxLength = Math.max(before.length, after.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const previous = before[index] || null;
+    const next = after[index] || null;
+
+    if (!previous && next) {
+      changes.push({
+        type: 'exercise_added',
+        exercise: next.name || null,
+        sets: next.sets ?? null,
+        reps: next.reps ?? null,
+        rest_seconds: next.rest_seconds ?? null,
+      });
+      continue;
+    }
+
+    if (previous && !next) {
+      changes.push({
+        type: 'exercise_removed',
+        exercise: previous.name || null,
+      });
+      continue;
+    }
+
+    if (!previous || !next) {
+      continue;
+    }
+
+    const previousName = String(previous.name || '').trim();
+    const nextName = String(next.name || '').trim();
+
+    if (previousName.toLowerCase() !== nextName.toLowerCase()) {
+      changes.push({
+        type: 'exercise_replaced',
+        from: previousName || null,
+        to: nextName || null,
+      });
+    }
+
+    if (Number(previous.sets) !== Number(next.sets)) {
+      changes.push({
+        type: 'sets_changed',
+        exercise: nextName || previousName || null,
+        from: Number(previous.sets) || 0,
+        to: Number(next.sets) || 0,
+        direction:
+          Number(next.sets) > Number(previous.sets)
+            ? 'increased'
+            : 'decreased',
+      });
+    }
+
+    if (
+      String(previous.reps ?? '').trim() !==
+      String(next.reps ?? '').trim()
+    ) {
+      changes.push({
+        type: 'reps_changed',
+        exercise: nextName || previousName || null,
+        from: String(previous.reps ?? ''),
+        to: String(next.reps ?? ''),
+      });
+    }
+
+    if (
+      Number(previous.rest_seconds) !==
+      Number(next.rest_seconds)
+    ) {
+      changes.push({
+        type: 'rest_changed',
+        exercise: nextName || previousName || null,
+        from: Number(previous.rest_seconds) || 0,
+        to: Number(next.rest_seconds) || 0,
+        direction:
+          Number(next.rest_seconds) >
+          Number(previous.rest_seconds)
+            ? 'increased'
+            : 'decreased',
+      });
+    }
+  }
+
+  return changes;
+}
+
+
+function buildAdaptationRecord({
+  weekNumber,
+  day,
+  beforeExercises,
+  afterExercises,
+}) {
+  const changes = buildAdaptationChanges(
+    beforeExercises,
+    afterExercises
+  );
+
+  if (!changes.length) {
+    return null;
+  }
+
+  return {
+    recorded_at: new Date().toISOString(),
+    week_number: Number(weekNumber) || 1,
+    day_name: day?.day_name || null,
+    workout_type: day?.workout_type || null,
+    changes,
+  };
+}
+
+
 function formatRest(seconds) {
   const value = Number(seconds);
 
@@ -150,11 +266,15 @@ function getEstimatedMinutes(exercises) {
   }
 
   const totalSets = exercises.reduce(
-    (sum, exercise) => sum + (Number(exercise?.sets) || 1),
+    (sum, exercise) =>
+      sum + (Number(exercise?.sets) || 1),
     0
   );
 
-  return Math.max(10, Math.round(totalSets * 2.5));
+  return Math.max(
+    10,
+    Math.round(totalSets * 2.5)
+  );
 }
 
 
@@ -309,51 +429,63 @@ export default function WeeklyPlan({
       return;
     }
 
-    const exercises = getExercises(day);
+    const exercises =
+      getExercises(day);
 
-    setEditingDayIndex(dayIndex);
+    setEditingDayIndex(
+      dayIndex
+    );
 
     setEditingExercises(
-      exercises.map((exercise) => ({
-        ...exercise,
+      exercises.map(
+        (exercise) => ({
+          ...exercise,
 
-        name:
-          exercise?.name ||
-          '',
+          name:
+            exercise?.name ||
+            '',
 
-        sets:
-          Number(
-            exercise?.sets
-          ) || 1,
+          sets:
+            Number(
+              exercise?.sets
+            ) || 1,
 
-        reps:
-          exercise?.reps ??
-          '',
+          reps:
+            exercise?.reps ??
+            '',
 
-        rest_seconds:
-          Number(
-            exercise?.rest_seconds
-          ) || 60,
+          rest_seconds:
+            Number(
+              exercise?.rest_seconds
+            ) || 60,
 
-        notes:
-          exercise?.notes ||
-          '',
+          notes:
+            exercise?.notes ||
+            '',
 
-        activation_cue:
-          exercise?.activation_cue ||
-          '',
-      }))
+          activation_cue:
+            exercise?.activation_cue ||
+            '',
+        })
+      )
     );
   };
 
 
   const closeWorkoutEditor = () => {
-    if (savingEdit) {
+    if (
+      savingEdit
+    ) {
       return;
     }
 
-    setEditingDayIndex(null);
-    setEditingExercises([]);
+    setEditingDayIndex(
+      null
+    );
+
+    setEditingExercises(
+      []
+    );
   };
 
 
@@ -393,12 +525,14 @@ export default function WeeklyPlan({
               };
             }
 
-            // Keep the raw input while the user is editing.
-            // Converting '' to 0 here makes the zero impossible to erase.
-            if (value === '') {
+            if (
+              value ===
+              ''
+            ) {
               return {
                 ...exercise,
-                [field]: '',
+                [field]:
+                  '',
               };
             }
 
@@ -407,9 +541,15 @@ export default function WeeklyPlan({
 
             return {
               ...exercise,
+
               [field]:
-                Number.isFinite(numeric)
-                  ? Math.max(0, numeric)
+                Number.isFinite(
+                  numeric
+                )
+                  ? Math.max(
+                      0,
+                      numeric
+                    )
                   : '',
             };
           }
@@ -549,10 +689,57 @@ export default function WeeklyPlan({
     }
 
 
-    setSavingEdit(true);
+    setSavingEdit(
+      true
+    );
 
 
     try {
+      const originalDay =
+        Array.isArray(
+          currentMicrocycle?.days
+        )
+          ? currentMicrocycle.days[
+              editingDayIndex
+            ]
+          : null;
+
+
+      const adaptationRecord =
+        buildAdaptationRecord({
+          weekNumber:
+            selectedWeek,
+
+          day:
+            originalDay,
+
+          beforeExercises:
+            getExercises(
+              originalDay
+            ),
+
+          afterExercises:
+            cleanExercises,
+        });
+
+
+      const existingAdaptations =
+        Array.isArray(
+          program?.adaptation_history
+        )
+          ? program.adaptation_history
+          : [];
+
+
+      const updatedAdaptationHistory =
+        adaptationRecord
+          ? [
+              ...existingAdaptations,
+              adaptationRecord,
+            ].slice(-100)
+          : existingAdaptations;
+
+
       const updatedMicrocycles =
         allWeeks.map(
           (microcycle) => {
@@ -591,6 +778,7 @@ export default function WeeklyPlan({
 
                   return {
                     ...day,
+
                     exercises:
                       cleanExercises,
                   };
@@ -600,6 +788,7 @@ export default function WeeklyPlan({
 
             return {
               ...microcycle,
+
               days:
                 updatedDays,
             };
@@ -612,12 +801,21 @@ export default function WeeklyPlan({
         {
           microcycles:
             updatedMicrocycles,
+
+          adaptation_history:
+            updatedAdaptationHistory,
         }
       );
 
 
-      setEditingDayIndex(null);
-      setEditingExercises([]);
+      setEditingDayIndex(
+        null
+      );
+
+      setEditingExercises(
+        []
+      );
+
 
       /*
        * Reload so Program and Live Workout both read
@@ -636,7 +834,9 @@ export default function WeeklyPlan({
           'Unable to save your workout changes.'
       );
 
-      setSavingEdit(false);
+      setSavingEdit(
+        false
+      );
     }
   };
 
@@ -691,7 +891,7 @@ export default function WeeklyPlan({
 
             {isFutureWeek && (
               <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-semibold inline-flex items-center gap-1">
-                <Eye className="w-2.5 h-2.5" />
+                <Eye className="w-3 h-3" />
                 Preview
               </span>
             )}
@@ -699,30 +899,11 @@ export default function WeeklyPlan({
           </div>
 
 
-          <div className="flex items-center justify-center gap-2 mt-0.5 flex-wrap">
-
-            {mesocycleName && (
-              <p className="text-xs text-muted-foreground">
-                {mesocycleName}
-              </p>
-            )}
-
-
-            {weekTypeCfg && (
-              <span
-                className={cn(
-                  'text-[10px] font-semibold px-2 py-0.5 rounded-full border',
-                  weekTypeCfg.color
-                )}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <WeekTypeIcon className="w-2.5 h-2.5" />
-                  {weekTypeCfg.label}
-                </span>
-              </span>
-            )}
-
-          </div>
+          {mesocycleName && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {mesocycleName}
+            </p>
+          )}
 
         </div>
 
@@ -739,7 +920,7 @@ export default function WeeklyPlan({
             setSelectedWeek(
               (week) =>
                 Math.min(
-                  Number(totalWeeks),
+                  totalWeeks,
                   Number(week) + 1
                 )
             )
@@ -753,214 +934,100 @@ export default function WeeklyPlan({
 
 
       {/* ======================================================
-          WEEK PROGRESS
+          WEEK TYPE
           ====================================================== */}
 
-      <div className="flex gap-0.5 items-end h-4">
+      {weekTypeCfg && (
+        <div className="flex items-center justify-center">
 
-        {Array.from(
-          {
-            length:
-              Number(totalWeeks),
-          },
-          (
-            _,
-            index
-          ) => {
-            const weekNumber =
-              index + 1;
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border',
+              weekTypeCfg.color
+            )}
+          >
+            <WeekTypeIcon className="w-3.5 h-3.5" />
 
-            const micro =
-              allWeeks.find(
-                (item) =>
-                  Number(
-                    item?.week_number
-                  ) ===
-                  weekNumber
-              );
+            {weekTypeCfg.label}
+          </span>
 
-            const weekType =
-              String(
-                micro?.week_type ||
-                  ''
-              ).toLowerCase();
-
-            const isDeload =
-              weekType.includes(
-                'deload'
-              ) ||
-              weekType.includes(
-                'taper'
-              );
-
-            const isPast =
-              weekNumber <
-              currentWeek;
-
-            const isCurrent =
-              weekNumber ===
-              currentWeek;
-
-            const isSelected =
-              weekNumber ===
-              selectedWeek;
-
-
-            return (
-              <button
-                key={
-                  weekNumber
-                }
-                type="button"
-                onClick={() =>
-                  setSelectedWeek(
-                    weekNumber
-                  )
-                }
-                className={cn(
-                  'flex-1 rounded-sm transition-all hover:opacity-80',
-                  isDeload
-                    ? 'h-2'
-                    : 'h-4',
-                  isSelected
-                    ? 'bg-primary'
-                    : isPast
-                      ? 'bg-primary/40'
-                      : isCurrent
-                        ? 'bg-primary/70'
-                        : 'bg-muted/60'
-                )}
-                title={
-                  micro?.week_type
-                    ? `Week ${weekNumber} — ${micro.week_type}`
-                    : `Week ${weekNumber}`
-                }
-                aria-label={`Week ${weekNumber}`}
-              />
-            );
-          }
-        )}
-
-      </div>
-
-
-      <div className="flex justify-between text-[10px] text-muted-foreground -mt-2 px-0.5">
-        <span>Wk 1</span>
-        <span>
-          Wk {
-            Math.ceil(
-              Number(totalWeeks) /
-                2
-            )
-          }
-        </span>
-        <span>
-          Wk {totalWeeks}
-        </span>
-      </div>
-
-
-      {/* ======================================================
-          NO DATA
-          ====================================================== */}
-
-      {!currentMicrocycle && (
-        <Card className="p-6 text-center border-dashed">
-
-          <Eye className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-40" />
-
-          <p className="font-heading font-bold text-sm">
-            Week {selectedWeek} Not Yet Generated
-          </p>
-
-          <p className="text-xs text-muted-foreground mt-1">
-            This week's plan will be personalized based on your
-            program and workout history.
-          </p>
-
-        </Card>
+        </div>
       )}
 
 
       {/* ======================================================
-          FUTURE WEEK
+          WORKOUT DAYS
           ====================================================== */}
 
-      {currentMicrocycle &&
-        isFutureWeek && (
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/40 border border-border/60">
+      <div className="space-y-3">
 
-            <Eye className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+        {getExercises(currentMicrocycle?.days?.[0]).length === 0 &&
+          (!Array.isArray(currentMicrocycle?.days) ||
+            currentMicrocycle.days.length === 0) && (
 
-            <p className="text-xs text-muted-foreground leading-relaxed">
+          <Card className="p-6 text-center">
 
-              <span className="font-semibold text-foreground/70">
-                Estimated plan.
-              </span>{' '}
+            <Dumbbell className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
 
-              These workouts are your projected baseline.
-              Live workout tracking remains available.
-
+            <p className="font-heading font-bold">
+              No workouts found
             </p>
 
-          </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Your program does not have any workouts for this week yet.
+            </p>
+
+          </Card>
+
         )}
 
 
-      {/* ======================================================
-          DAYS
-          ====================================================== */}
-
-      {currentMicrocycle && (
-        <div className="space-y-3">
-
-          {(currentMicrocycle.days || []).map(
+        {Array.isArray(
+          currentMicrocycle?.days
+        ) &&
+          currentMicrocycle.days.map(
             (
               day,
               dayIndex
             ) => {
+
               const exercises =
                 getExercises(
                   day
                 );
-
-              const isRestDay =
-                exercises.length ===
-                0;
 
               const estimatedMinutes =
                 getEstimatedMinutes(
                   exercises
                 );
 
+              const isEditing =
+                editingDayIndex ===
+                dayIndex;
+
+
               return (
                 <Card
                   key={
                     `${selectedWeek}-${dayIndex}`
                   }
-                  className={cn(
-                    'overflow-hidden transition-all',
-                    isRestDay
-                      ? 'opacity-60 border-dashed'
-                      : 'border-border hover:border-primary/40'
-                  )}
+                  className="overflow-hidden"
                 >
 
-                  {/* Day header */}
+                  {/* DAY HEADER */}
 
-                  <div className="p-4">
+                  <div className="p-4 border-b border-border">
 
                     <div className="flex items-start justify-between gap-3">
 
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
 
-                        <p className="font-heading font-bold">
-                          {day?.day_name ||
-                            `Day ${dayIndex + 1}`}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
 
-
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <p className="font-heading font-bold">
+                            {day?.day_name ||
+                              `Day ${dayIndex + 1}`}
+                          </p>
 
                           {day?.workout_type && (
                             <WorkoutTypeTag
@@ -970,14 +1037,31 @@ export default function WeeklyPlan({
                             />
                           )}
 
+                        </div>
 
-                          {!isRestDay && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Dumbbell className="w-3 h-3" />
-                              {exercises.length}{' '}
-                              {exercises.length === 1
-                                ? 'exercise'
-                                : 'exercises'}
+
+                        {day?.focus && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {day.focus}
+                          </p>
+                        )}
+
+
+                        <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
+
+                          <span className="inline-flex items-center gap-1">
+                            <Dumbbell className="w-3 h-3" />
+                            {exercises.length}{' '}
+                            {exercises.length === 1
+                              ? 'exercise'
+                              : 'exercises'}
+                          </span>
+
+
+                          {estimatedMinutes > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              ~{estimatedMinutes} min
                             </span>
                           )}
 
@@ -986,21 +1070,45 @@ export default function WeeklyPlan({
                       </div>
 
 
-                      <div className="text-right flex-shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
 
-                        {isRestDay ? (
+                        {canEditWorkouts &&
+                          !isFutureWeek &&
+                          !isEditing && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() =>
+                              openWorkoutEditor(
+                                dayIndex,
+                                day
+                              )
+                            }
+                            aria-label={`Edit ${day?.day_name || 'workout'}`}
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </Button>
+                        )}
 
-                          <p className="text-xs text-muted-foreground font-medium">
-                            Rest
-                          </p>
 
-                        ) : (
-
-                          <p className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            ~{estimatedMinutes} min
-                          </p>
-
+                        {onLogWorkout &&
+                          !isFutureWeek &&
+                          !isEditing && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            onClick={() =>
+                              onLogWorkout(
+                                day
+                              )
+                            }
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Log
+                          </Button>
                         )}
 
                       </div>
@@ -1008,38 +1116,33 @@ export default function WeeklyPlan({
                     </div>
 
 
-                    {/* Progress+ editing */}
+                    {day?.notes && (
+                      <div className="mt-3 rounded-xl bg-muted/40 p-3">
 
-                    {!isRestDay &&
-                      canEditWorkouts && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full mt-3 gap-2"
-                          onClick={() =>
-                            openWorkoutEditor(
-                              dayIndex,
-                              day
-                            )
-                          }
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Edit Workout
-                        </Button>
-                      )}
+                        <p className="text-xs text-muted-foreground">
+                          {day.notes}
+                        </p>
+
+                      </div>
+                    )}
 
                   </div>
 
 
-                  {/* Exercise list */}
+                  {/* EXERCISE LIST */}
 
-                  {!isRestDay && (
-                    <div className="border-t border-border/60 px-4 py-3 bg-muted/20">
+                  {!isEditing && (
+                    <div className="divide-y divide-border">
 
-                      <div className="space-y-2">
+                      {exercises.length === 0 ? (
 
-                        {exercises.map(
+                        <div className="p-4 text-sm text-muted-foreground">
+                          No exercises programmed.
+                        </div>
+
+                      ) : (
+
+                        exercises.map(
                           (
                             exercise,
                             exerciseIndex
@@ -1050,90 +1153,428 @@ export default function WeeklyPlan({
                                 exercise?.rest_seconds
                               );
 
+
                             return (
                               <div
                                 key={
                                   `${exerciseIndex}-${exercise?.name || 'exercise'}`
                                 }
-                                className="flex items-start gap-3"
+                                className="p-4"
                               >
 
-                                <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <div className="flex items-start justify-between gap-3">
 
-                                  <span className="text-[10px] font-bold text-primary">
-                                    {exerciseIndex + 1}
-                                  </span>
+                                  <div className="min-w-0 flex-1">
 
-                                </div>
+                                    <div className="flex items-start gap-2">
 
-
-                                <div className="flex-1 min-w-0">
-
-                                  <p className="text-sm font-medium leading-tight">
-                                    {exercise?.name ||
-                                      `Exercise ${exerciseIndex + 1}`}
-                                  </p>
-
-
-                                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-
-                                    {exercise?.sets !==
-                                      undefined && (
-                                      <span className="text-[11px] text-muted-foreground">
-                                        {exercise.sets} sets
+                                      <span className="text-xs text-muted-foreground font-mono mt-0.5 w-5 shrink-0">
+                                        {exerciseIndex + 1}.
                                       </span>
-                                    )}
+
+                                      <div className="min-w-0">
+
+                                        <p className="font-medium text-sm">
+                                          {exercise?.name ||
+                                            'Exercise'}
+                                        </p>
 
 
-                                    {exercise?.reps && (
-                                      <span className="text-[11px] text-muted-foreground">
-                                        × {exercise.reps}
-                                      </span>
-                                    )}
+                                        <div className="flex items-center gap-2 flex-wrap mt-1.5">
+
+                                          {exercise?.sets != null && (
+                                            <span className="text-xs font-semibold">
+                                              {exercise.sets} sets
+                                            </span>
+                                          )}
 
 
-                                    {rest && (
-                                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                        <Timer className="w-3 h-3" />
-                                        {rest}
-                                      </span>
-                                    )}
+                                          {exercise?.reps && (
+                                            <span className="text-xs text-muted-foreground">
+                                              × {exercise.reps}
+                                            </span>
+                                          )}
+
+
+                                          {rest && (
+                                            <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                                              <Timer className="w-3 h-3" />
+                                              {rest}
+                                            </span>
+                                          )}
+
+                                        </div>
+
+
+                                        {exercise?.notes && (
+                                          <p className="text-[11px] text-muted-foreground mt-2">
+                                            {exercise.notes}
+                                          </p>
+                                        )}
+
+
+                                        {exercise?.activation_cue && (
+                                          <p className="text-[11px] text-accent mt-1.5">
+                                            Cue: {exercise.activation_cue}
+                                          </p>
+                                        )}
+
+                                      </div>
+
+                                    </div>
 
                                   </div>
 
                                 </div>
 
-
-                                <CheckCircle2 className="w-4 h-4 text-muted-foreground/30 flex-shrink-0 mt-1" />
-
                               </div>
                             );
                           }
-                        )}
+                        )
+
+                      )}
+
+                    </div>
+                  )}
+
+
+                  {/* WORKOUT EDITOR */}
+
+                  {isEditing && (
+                    <div className="bg-muted/10">
+
+                      <div className="p-4 border-b border-border">
+
+                        <div className="flex items-center justify-between gap-3">
+
+                          <div>
+
+                            <p className="font-heading font-bold text-sm">
+                              Edit Workout
+                            </p>
+
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Changes are saved to this program and used to personalize future programming.
+                            </p>
+
+                          </div>
+
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            disabled={
+                              savingEdit
+                            }
+                            onClick={
+                              closeWorkoutEditor
+                            }
+                            aria-label="Close editor"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+
+                        </div>
 
                       </div>
 
 
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="w-full mt-3 text-primary hover:text-primary"
-                        onClick={() =>
-                          navigate(
-                            `/program/day/${dayIndex}`,
-                            {
-                              state: {
-                                week:
-                                  selectedWeek,
-                              },
-                            }
+                      <div className="
+                        max-h-[65vh]
+                        overflow-y-auto
+                        overscroll-contain
+                        p-4
+                        space-y-4
+                      ">
+
+                        {editingExercises.map(
+                          (
+                            exercise,
+                            index
+                          ) => (
+
+                            <Card
+                              key={
+                                index
+                              }
+                              className="p-4 space-y-3"
+                            >
+
+                              <div className="flex items-center justify-between">
+
+                                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                  Exercise {index + 1}
+                                </p>
+
+
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={
+                                    savingEdit ||
+                                    editingExercises.length <=
+                                      1
+                                  }
+                                  onClick={() =>
+                                    removeEditingExercise(
+                                      index
+                                    )
+                                  }
+                                  className="text-destructive hover:text-destructive"
+                                  aria-label={`Remove exercise ${index + 1}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+
+                              </div>
+
+
+                              <div>
+
+                                <label className="block text-[11px] text-muted-foreground mb-1">
+                                  Exercise Name
+                                </label>
+
+                                <Input
+                                  value={
+                                    exercise.name
+                                  }
+                                  disabled={
+                                    savingEdit
+                                  }
+                                  onChange={(
+                                    event
+                                  ) =>
+                                    updateEditingExercise(
+                                      index,
+                                      'name',
+                                      event.target.value
+                                    )
+                                  }
+                                />
+
+                              </div>
+
+
+                              <div className="grid grid-cols-3 gap-2">
+
+                                <div>
+
+                                  <label className="block text-[11px] text-muted-foreground mb-1">
+                                    Sets
+                                  </label>
+
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    inputMode="numeric"
+                                    value={
+                                      exercise.sets
+                                    }
+                                    disabled={
+                                      savingEdit
+                                    }
+                                    onChange={(
+                                      event
+                                    ) =>
+                                      updateEditingExercise(
+                                        index,
+                                        'sets',
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+
+                                </div>
+
+
+                                <div>
+
+                                  <label className="block text-[11px] text-muted-foreground mb-1">
+                                    Reps / Time
+                                  </label>
+
+                                  <Input
+                                    value={
+                                      exercise.reps
+                                    }
+                                    disabled={
+                                      savingEdit
+                                    }
+                                    onChange={(
+                                      event
+                                    ) =>
+                                      updateEditingExercise(
+                                        index,
+                                        'reps',
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+
+                                </div>
+
+
+                                <div>
+
+                                  <label className="block text-[11px] text-muted-foreground mb-1">
+                                    Rest (sec)
+                                  </label>
+
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    inputMode="numeric"
+                                    value={
+                                      exercise.rest_seconds
+                                    }
+                                    disabled={
+                                      savingEdit
+                                    }
+                                    onChange={(
+                                      event
+                                    ) =>
+                                      updateEditingExercise(
+                                        index,
+                                        'rest_seconds',
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+
+                                </div>
+
+                              </div>
+
+
+                              <div>
+
+                                <label className="block text-[11px] text-muted-foreground mb-1">
+                                  Notes
+                                </label>
+
+                                <Input
+                                  value={
+                                    exercise.notes
+                                  }
+                                  disabled={
+                                    savingEdit
+                                  }
+                                  onChange={(
+                                    event
+                                  ) =>
+                                    updateEditingExercise(
+                                      index,
+                                      'notes',
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Optional"
+                                />
+
+                              </div>
+
+
+                              <div>
+
+                                <label className="block text-[11px] text-muted-foreground mb-1">
+                                  Activation Cue
+                                </label>
+
+                                <Input
+                                  value={
+                                    exercise.activation_cue
+                                  }
+                                  disabled={
+                                    savingEdit
+                                  }
+                                  onChange={(
+                                    event
+                                  ) =>
+                                    updateEditingExercise(
+                                      index,
+                                      'activation_cue',
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Optional"
+                                />
+
+                              </div>
+
+                            </Card>
+
                           )
-                        }
-                      >
-                        View Full Workout
-                        <ChevronRight className="w-4 h-4 ml-1" />
-                      </Button>
+                        )}
+
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full h-11 gap-2"
+                          disabled={
+                            savingEdit
+                          }
+                          onClick={
+                            addEditingExercise
+                          }
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Exercise
+                        </Button>
+
+                      </div>
+
+
+                      <div className="
+                        p-4
+                        border-t
+                        border-border
+                        flex
+                        gap-2
+                      ">
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          disabled={
+                            savingEdit
+                          }
+                          onClick={
+                            closeWorkoutEditor
+                          }
+                        >
+                          Cancel
+                        </Button>
+
+
+                        <Button
+                          type="button"
+                          className="flex-1 gap-2"
+                          disabled={
+                            savingEdit
+                          }
+                          onClick={
+                            saveWorkoutEdits
+                          }
+                        >
+                          {savingEdit ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-4 h-4" />
+                              Save Changes
+                            </>
+                          )}
+                        </Button>
+
+                      </div>
 
                     </div>
                   )}
@@ -1143,395 +1584,121 @@ export default function WeeklyPlan({
             }
           )}
 
-        </div>
+      </div>
+
+
+      {/* ======================================================
+          ADAPTIVE PROGRAMMING NOTICE
+          ====================================================== */}
+
+      {canEditWorkouts && (
+        <Card className="
+          p-4
+          border-accent/20
+          bg-accent/5
+        ">
+
+          <div className="flex items-start gap-3">
+
+            <TrendingDown className="
+              w-5
+              h-5
+              text-accent
+              shrink-0
+              mt-0.5
+            " />
+
+            <div>
+
+              <p className="
+                font-heading
+                font-bold
+                text-sm
+              ">
+                Adaptive Programming
+              </p>
+
+              <p className="
+                text-xs
+                text-muted-foreground
+                mt-1
+                leading-relaxed
+              ">
+                Your workout edits are remembered.
+                Repeated changes help Kael understand
+                your exercise preferences, volume,
+                rep ranges, and recovery needs so future
+                programs can become more personalized.
+              </p>
+
+            </div>
+
+          </div>
+
+        </Card>
       )}
 
 
       {/* ======================================================
-          EDITOR
+          FREE / UPGRADE NOTICE
           ====================================================== */}
 
-      {editingDayIndex !==
-        null && (
-        <div
-          className="
-            fixed
-            inset-0
-            z-[1000]
-            bg-black/60
-            backdrop-blur-sm
-            flex
-            items-end
-            sm:items-center
-            justify-center
-            p-0
-            sm:p-4
-          "
-          role="dialog"
-          aria-modal="true"
-          aria-label="Edit Workout"
-        >
+      {!canEditWorkouts && (
+        <Card className="
+          p-4
+          border-primary/20
+          bg-primary/5
+        ">
 
-          <section
-            className="
-              relative
-              flex
-              flex-col
-              w-full
-              max-w-2xl
-              max-h-[calc(100dvh-0.5rem)]
-              sm:max-h-[90vh]
-              overflow-hidden
-              rounded-t-3xl
-              sm:rounded-2xl
-              border
-              border-border
-              bg-card
-              shadow-2xl
-            "
-          >
+          <div className="flex items-start gap-3">
 
-            {/* Editor header */}
+            <Zap className="
+              w-5
+              h-5
+              text-primary
+              shrink-0
+              mt-0.5
+            />
 
-            <header
-              className="
-                shrink-0
-                flex
-                items-center
-                justify-between
-                gap-3
-                px-5
-                py-4
-                border-b
-                border-border
-              "
-            >
+            <div className="flex-1">
 
-              <div className="min-w-0">
+              <p className="
+                font-heading
+                font-bold
+                text-sm
+              ">
+                Want to customize your workouts?
+              </p>
 
-                <h2 className="font-heading font-bold text-lg">
-                  Edit Workout
-                </h2>
-
-                <p className="text-xs text-muted-foreground mt-1">
-                  Customize your workout.
-                </p>
-
-              </div>
-
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={
-                  savingEdit
-                }
-                onClick={
-                  closeWorkoutEditor
-                }
-                aria-label="Close editor"
-              >
-                <X className="w-5 h-5" />
-              </Button>
-
-            </header>
-
-
-            {/* Editor body */}
-
-            <div
-              className="
-                flex-1
-                min-h-0
-                overflow-y-auto
-                overscroll-contain
-                px-5
-                py-4
-                space-y-4
-              "
-            >
-
-              {editingExercises.map(
-                (
-                  exercise,
-                  index
-                ) => (
-
-                  <Card
-                    key={
-                      index
-                    }
-                    className="p-4 space-y-3"
-                  >
-
-                    <div className="flex items-center justify-between">
-
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        Exercise {index + 1}
-                      </p>
-
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={
-                          savingEdit ||
-                          editingExercises.length <=
-                            1
-                        }
-                        onClick={() =>
-                          removeEditingExercise(
-                            index
-                          )
-                        }
-                        className="text-destructive hover:text-destructive"
-                        aria-label={`Remove exercise ${index + 1}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-
-                    </div>
-
-
-                    <div>
-
-                      <label className="block text-[11px] text-muted-foreground mb-1">
-                        Exercise Name
-                      </label>
-
-                      <Input
-                        value={
-                          exercise.name
-                        }
-                        disabled={
-                          savingEdit
-                        }
-                        onChange={(event) =>
-                          updateEditingExercise(
-                            index,
-                            'name',
-                            event.target.value
-                          )
-                        }
-                      />
-
-                    </div>
-
-
-                    <div className="grid grid-cols-3 gap-2">
-
-                      <div>
-
-                        <label className="block text-[11px] text-muted-foreground mb-1">
-                          Sets
-                        </label>
-
-                        <Input
-                          type="number"
-                          min="1"
-                          inputMode="numeric"
-                          value={
-                            exercise.sets
-                          }
-                          disabled={
-                            savingEdit
-                          }
-                          onChange={(event) =>
-                            updateEditingExercise(
-                              index,
-                              'sets',
-                              event.target.value
-                            )
-                          }
-                        />
-
-                      </div>
-
-
-                      <div>
-
-                        <label className="block text-[11px] text-muted-foreground mb-1">
-                          Reps / Time
-                        </label>
-
-                        <Input
-                          value={
-                            exercise.reps
-                          }
-                          disabled={
-                            savingEdit
-                          }
-                          onChange={(event) =>
-                            updateEditingExercise(
-                              index,
-                              'reps',
-                              event.target.value
-                            )
-                          }
-                        />
-
-                      </div>
-
-
-                      <div>
-
-                        <label className="block text-[11px] text-muted-foreground mb-1">
-                          Rest (sec)
-                        </label>
-
-                        <Input
-                          type="number"
-                          min="0"
-                          inputMode="numeric"
-                          value={
-                            exercise.rest_seconds
-                          }
-                          disabled={
-                            savingEdit
-                          }
-                          onChange={(event) =>
-                            updateEditingExercise(
-                              index,
-                              'rest_seconds',
-                              event.target.value
-                            )
-                          }
-                        />
-
-                      </div>
-
-                    </div>
-
-
-                    <div>
-
-                      <label className="block text-[11px] text-muted-foreground mb-1">
-                        Notes
-                      </label>
-
-                      <Input
-                        value={
-                          exercise.notes
-                        }
-                        disabled={
-                          savingEdit
-                        }
-                        onChange={(event) =>
-                          updateEditingExercise(
-                            index,
-                            'notes',
-                            event.target.value
-                          )
-                        }
-                        placeholder="Optional"
-                      />
-
-                    </div>
-
-
-                    <div>
-
-                      <label className="block text-[11px] text-muted-foreground mb-1">
-                        Activation Cue
-                      </label>
-
-                      <Input
-                        value={
-                          exercise.activation_cue
-                        }
-                        disabled={
-                          savingEdit
-                        }
-                        onChange={(event) =>
-                          updateEditingExercise(
-                            index,
-                            'activation_cue',
-                            event.target.value
-                          )
-                        }
-                        placeholder="Optional"
-                      />
-
-                    </div>
-
-                  </Card>
-
-                )
-              )}
+              <p className="
+                text-xs
+                text-muted-foreground
+                mt-1
+              ">
+                Progress+ lets you edit your workouts
+                and teaches Kael from the changes you make.
+              </p>
 
 
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 gap-2"
-                disabled={
-                  savingEdit
-                }
-                onClick={
-                  addEditingExercise
+                size="sm"
+                className="mt-3"
+                onClick={() =>
+                  navigate(
+                    '/profile'
+                  )
                 }
               >
-
-                <Plus className="w-4 h-4" />
-
-                Add Exercise
-
+                Upgrade to Progress+
               </Button>
-
-              <div className="h-2" />
 
             </div>
 
+          </div>
 
-            {/* Editor footer */}
-
-            <footer
-              className="
-                shrink-0
-                border-t
-                border-border
-                bg-card
-                px-5
-                pt-3
-              "
-              style={{
-                paddingBottom:
-                  'max(0.875rem, env(safe-area-inset-bottom))',
-              }}
-            >
-
-              <Button
-                type="button"
-                className="w-full h-12 font-heading font-semibold gap-2"
-                disabled={
-                  savingEdit
-                }
-                onClick={
-                  saveWorkoutEdits
-                }
-              >
-
-                {savingEdit ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                    Saving Workout…
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    Save Workout
-                  </>
-                )}
-
-              </Button>
-
-            </footer>
-
-          </section>
-
-        </div>
+        </Card>
       )}
 
     </div>
