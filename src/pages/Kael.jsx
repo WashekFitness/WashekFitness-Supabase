@@ -210,12 +210,10 @@ export default function Kael() {
 
 
   /*
-   * Keeps the Kael input ready for typing.
-   *
-   * After Kael finishes responding, focus automatically returns
-   * to the message box so the user can immediately start typing
-   * without clicking it again.
+   * Keeps the message box ready for typing so the user does not
+   * have to click it again after Kael responds.
    */
+
   const inputRef =
     useRef(null);
 
@@ -316,11 +314,8 @@ export default function Kael() {
    * KEEP BOTTOM VISIBLE
    * ==========================================================
    *
-   * The previous version only watched messages.length, which
-   * meant the screen would not necessarily follow Kael while
-   * text was being revealed.
-   *
-   * Now we also watch the actual latest message content.
+   * The screen follows Kael while the typewriter response is
+   * being revealed.
    */
 
   useEffect(() => {
@@ -338,34 +333,15 @@ export default function Kael() {
 
 
   /*
-   * Keep the message box ready for typing.
-   *
-   * After Kael finishes responding, focus returns to the input
-   * automatically so the user can immediately start typing
-   * without clicking the box again.
-   */
-
-  useEffect(() => {
-    if (
-      !loading &&
-      !editingMessage &&
-      !atLimit
-    ) {
-      window.setTimeout(() => {
-        inputRef.current?.focus();
-      }, 0);
-    }
-  }, [
-    loading,
-    editingMessage,
-    atLimit,
-  ]);
-
-
-  /*
    * ==========================================================
    * PLAN / MESSAGE LIMIT
    * ==========================================================
+   *
+   * IMPORTANT:
+   *
+   * These values must be declared before any effect that uses
+   * them. This prevents a render-time reference error that can
+   * otherwise result in a completely blank Kael page.
    */
 
   const plan =
@@ -377,6 +353,39 @@ export default function Kael() {
     stats
       ? stats.remaining === 0
       : false;
+
+
+  /*
+   * ==========================================================
+   * AUTO-FOCUS KAEL INPUT
+   * ==========================================================
+   *
+   * When Kael finishes answering, the textarea automatically
+   * receives focus again.
+   *
+   * This means the user can immediately start typing their next
+   * message without clicking the input box.
+   *
+   * We do NOT focus the input while Kael is actively responding.
+   */
+
+  useEffect(() => {
+    if (
+      !loading &&
+      !(
+        atLimit &&
+        !editingMessage
+      )
+    ) {
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+    }
+  }, [
+    loading,
+    atLimit,
+    editingMessage,
+  ]);
 
 
   const firstName =
@@ -414,6 +423,32 @@ export default function Kael() {
         : '';
 
 
+    /*
+     * ========================================================
+     * PLAN-BASED RESPONSE DEPTH
+     * ========================================================
+     *
+     * Paid plans do NOT get better intelligence or more
+     * accurate answers. They get progressively more detailed
+     * explanations and coaching.
+     *
+     * These are target ranges, NOT rigid word limits.
+     *
+     * Kael must always exceed the target when additional detail
+     * is genuinely necessary for accuracy, safety, or useful
+     * coaching.
+     */
+
+    const responseDepthInstruction =
+      plan === 'elite'
+        ? `\n\nRESPONSE DEPTH — ELITE: Give the most complete useful coaching answer. Usually aim for roughly 120–220 words when the question genuinely benefits from detail, but do not pad short or simple answers. Explain the key reasoning, practical application, important nuances, and relevant next steps. Use short bullets when they improve clarity. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+        : plan === 'performance'
+          ? `\n\nRESPONSE DEPTH — PERFORMANCE: Give a moderately detailed coaching answer. Usually aim for roughly 90–160 words when the question genuinely benefits from detail, but do not pad short or simple answers. Include useful reasoning, practical application, and important details without becoming repetitive. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+          : plan === 'progress'
+            ? `\n\nRESPONSE DEPTH — PROGRESS: Give a concise but meaningfully explained coaching answer. Usually aim for roughly 60–120 words when the question genuinely benefits from detail, but do not pad short or simple answers. Give the recommendation plus the most useful explanation or application detail. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+            : `\n\nRESPONSE DEPTH — FREE: Keep responses concise and direct. Usually aim for roughly 40–80 words when the question genuinely benefits from more than a one-sentence answer. Give the correct recommendation and only the most useful supporting detail. Do not add filler, long introductions, repeated conclusions, or unnecessary background. IMPORTANT: Free users must receive the same level of accuracy, careful reasoning, safety standards, and quality of recommendation as paid users. Shorter does NOT mean less intelligent, less thoughtful, or less accurate. If extra context is necessary to avoid a misleading or unsafe answer, include it even when it makes the response longer than the target.`;
+
+
     const recentHistory =
       history
         .slice(
@@ -435,7 +470,7 @@ export default function Kael() {
       trainingType,
       firstName,
       isElite
-    )}${langInstruction}\n\nCONVERSATION HISTORY (remember what the user has told you about their capabilities, limitations, and preferences — update your understanding if they say something new or different):\n${recentHistory}\n\nKael:`;
+    )}${responseDepthInstruction}${langInstruction}\n\nCONVERSATION HISTORY (remember what the user has told you about their capabilities, limitations, and preferences — update your understanding if they say something new or different):\n${recentHistory}\n\nKael:`;
   };
 
 
@@ -505,7 +540,7 @@ export default function Kael() {
           textLength /
             chunkSize
         ) *
-          baseDelay;
+        baseDelay;
 
 
       const speedMultiplier =
@@ -516,13 +551,14 @@ export default function Kael() {
           : 1;
 
 
-      const delay = Math.max(
-        2,
-        Math.round(
-          baseDelay *
-            speedMultiplier
-        )
-      );
+      const delay =
+        Math.max(
+          2,
+          Math.round(
+            baseDelay *
+              speedMultiplier
+          )
+        );
 
 
       let visibleText =
@@ -695,7 +731,6 @@ export default function Kael() {
             setMessages(
               currentMessages
             );
-
           }
 
 
@@ -778,7 +813,7 @@ export default function Kael() {
 
         /*
          * ----------------------------------------------------
-         * CREATE A TEMPORARY ASSISTANT MESSAGE
+         * CREATE TEMPORARY ASSISTANT MESSAGE
          * ----------------------------------------------------
          *
          * This message appears immediately and is gradually
@@ -861,7 +896,7 @@ export default function Kael() {
 
         /*
          * Only count a brand-new user message.
-         * Editing remains free just as before.
+         * Editing remains free.
          */
 
         if (
@@ -939,14 +974,17 @@ export default function Kael() {
         return;
       }
 
+
       setEditingMessage(
         message
       );
+
 
       setInput(
         message.content ||
           ''
       );
+
 
       window.setTimeout(
         () => {
@@ -970,6 +1008,7 @@ export default function Kael() {
       );
 
       setInput('');
+
 
       window.setTimeout(
         () => {
@@ -1114,12 +1153,32 @@ export default function Kael() {
           ">
 
             {stats && (
-              <span className="
-                text-[10px]
-                text-muted-foreground
-                whitespace-nowrap
-              ">
-                {stats.remaining}{' '}
+              <span
+                className={cn(
+                  `
+                    text-[10px]
+                    font-semibold
+                    px-2
+                    py-0.5
+                    rounded-full
+                    border
+                  `,
+                  atLimit
+                    ? `
+                      border-destructive/40
+                      text-destructive
+                      bg-destructive/10
+                    `
+                    : `
+                      border-border
+                      text-muted-foreground
+                      bg-muted/50
+                    `
+                )}
+              >
+                {
+                  stats.remaining
+                }{' '}
                 msg left
               </span>
             )}
