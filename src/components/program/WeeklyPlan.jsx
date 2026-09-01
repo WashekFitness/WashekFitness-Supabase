@@ -28,7 +28,6 @@ import { cn } from '@/lib/utils';
 import { hasPlan } from '@/lib/subscription';
 import { supabaseApi } from '@/lib/supabaseApi';
 
-
 const weekTypeConfig = {
   foundation: {
     label: 'Foundation',
@@ -62,7 +61,6 @@ const weekTypeConfig = {
   },
 };
 
-
 function getWeekTypeConfig(weekType) {
   if (!weekType) {
     return null;
@@ -78,7 +76,6 @@ function getWeekTypeConfig(weekType) {
     }
   );
 }
-
 
 function WorkoutTypeTag({ workoutType }) {
   if (!workoutType) {
@@ -124,11 +121,9 @@ function WorkoutTypeTag({ workoutType }) {
   );
 }
 
-
 function getExercises(day) {
   return Array.isArray(day?.exercises) ? day.exercises : [];
 }
-
 
 function formatRest(seconds) {
   const value = Number(seconds);
@@ -148,7 +143,6 @@ function formatRest(seconds) {
   return `${Math.floor(value / 60)}m ${value % 60}s`;
 }
 
-
 function getEstimatedMinutes(exercises) {
   if (!Array.isArray(exercises) || exercises.length === 0) {
     return 0;
@@ -166,6 +160,212 @@ function getEstimatedMinutes(exercises) {
   );
 }
 
+function normalizeExerciseForComparison(exercise) {
+  return {
+    name: String(exercise?.name || '').trim(),
+    sets: Number(exercise?.sets) || 1,
+    reps: String(exercise?.reps ?? '').trim(),
+    rest_seconds: Number(exercise?.rest_seconds) || 0,
+    notes: String(exercise?.notes ?? '').trim(),
+    activation_cue: String(
+      exercise?.activation_cue ?? ''
+    ).trim(),
+  };
+}
+
+function getExerciseHistoryKey(exercise) {
+  return String(
+    exercise?.name || ''
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function buildAdaptationEvents({
+  originalExercises,
+  editedExercises,
+  weekNumber,
+  dayName,
+}) {
+  const events = [];
+  const now = new Date().toISOString();
+
+  const originalByName = new Map();
+
+  originalExercises.forEach(
+    (exercise) => {
+      const key =
+        getExerciseHistoryKey(
+          exercise
+        );
+
+      if (!key) {
+        return;
+      }
+
+      /*
+       * If the same exercise appears more than once,
+       * keep the first occurrence for comparison. This avoids
+       * generating duplicate history records for normal programs.
+       */
+      if (!originalByName.has(key)) {
+        originalByName.set(key, exercise);
+      }
+    }
+  );
+
+  const editedByName = new Map();
+
+  editedExercises.forEach(
+    (exercise) => {
+      const key =
+        getExerciseHistoryKey(
+          exercise
+        );
+
+      if (!key) {
+        return;
+      }
+
+      if (!editedByName.has(key)) {
+        editedByName.set(key, exercise);
+      }
+    }
+  );
+
+  /*
+   * Existing exercises:
+   *
+   * - If the exercise disappeared, record a removal.
+   * - If it stayed, compare all editable fields and record
+   *   only the fields that actually changed.
+   */
+  originalExercises.forEach(
+    (originalExercise) => {
+      const originalName =
+        String(
+          originalExercise?.name || ''
+        ).trim();
+
+      const key =
+        getExerciseHistoryKey(
+          originalExercise
+        );
+
+      if (!key) {
+        return;
+      }
+
+      const editedExercise =
+        editedByName.get(key);
+
+      if (!editedExercise) {
+        events.push({
+          date: now,
+          action: 'remove_exercise',
+          exercise: originalName,
+          week:
+            Number(weekNumber) || 1,
+          day:
+            dayName ||
+            'Unknown day',
+          from: originalName,
+          to: null,
+        });
+
+        return;
+      }
+
+      const originalNormalized =
+        normalizeExerciseForComparison(
+          originalExercise
+        );
+
+      const editedNormalized =
+        normalizeExerciseForComparison(
+          editedExercise
+        );
+
+      const comparableFields = [
+        'sets',
+        'reps',
+        'rest_seconds',
+        'notes',
+        'activation_cue',
+      ];
+
+      comparableFields.forEach(
+        (field) => {
+          if (
+            originalNormalized[field] !==
+            editedNormalized[field]
+          ) {
+            events.push({
+              date: now,
+              action: 'edit_exercise',
+              exercise:
+                originalName,
+              field,
+              oldValue:
+                originalNormalized[field],
+              newValue:
+                editedNormalized[field],
+              week:
+                Number(weekNumber) || 1,
+              day:
+                dayName ||
+                'Unknown day',
+            });
+          }
+        }
+      );
+    }
+  );
+
+  /*
+   * New exercises:
+   *
+   * Anything that wasn't in the original workout is recorded as
+   * an addition. This is especially useful when an athlete
+   * repeatedly chooses the same replacement movement.
+   */
+  editedExercises.forEach(
+    (editedExercise) => {
+      const editedName =
+        String(
+          editedExercise?.name || ''
+        ).trim();
+
+      const key =
+        getExerciseHistoryKey(
+          editedExercise
+        );
+
+      if (
+        !key ||
+        originalByName.has(key)
+      ) {
+        return;
+      }
+
+      events.push({
+        date: now,
+        action: 'add_exercise',
+        exercise:
+          editedName,
+        week:
+          Number(weekNumber) || 1,
+        day:
+          dayName ||
+          'Unknown day',
+        from: null,
+        to: editedName,
+      });
+    }
+  );
+
+  return events;
+}
 
 export default function WeeklyPlan({
   program,
@@ -200,63 +400,61 @@ export default function WeeklyPlan({
     setSavingEdit,
   ] = useState(false);
 
-
   const allWeeks = useMemo(
     () =>
-      Array.isArray(program?.microcycles)
+      Array.isArray(
+        program?.microcycles
+      )
         ? program.microcycles
         : [],
     [program]
   );
-
 
   const totalWeeks =
     program?.duration_weeks ||
     allWeeks.length ||
     12;
 
-
   const currentWeek =
     program?.current_week ||
     1;
 
-
   const currentMicrocycle =
     allWeeks.find(
       (microcycle) =>
-        Number(microcycle?.week_number) ===
+        Number(
+          microcycle?.week_number
+        ) ===
         Number(selectedWeek)
     ) || null;
-
 
   const isFutureWeek =
     Number(selectedWeek) >
     Number(currentWeek);
-
 
   const mesocycleName =
     program?.mesocycles?.[
       currentMicrocycle?.mesocycle_index
     ]?.name || null;
 
-
   const weekTypeCfg =
     getWeekTypeConfig(
       currentMicrocycle?.week_type
     );
 
-
   const WeekTypeIcon =
     weekTypeCfg?.icon ||
     Target;
 
-
+  /*
+   * Progress is the minimum paid plan that includes the
+   * custom workout editor. Performance and Elite inherit it.
+   */
   const canEditWorkouts =
     hasPlan(
       userPlan,
       'progress'
     );
-
 
   useEffect(() => {
     let mounted = true;
@@ -285,12 +483,13 @@ export default function WeeklyPlan({
     };
   }, []);
 
-
   useEffect(() => {
     if (
       allWeeks.some(
         (microcycle) =>
-          Number(microcycle?.week_number) ===
+          Number(
+            microcycle?.week_number
+          ) ===
           Number(selectedWeek)
       )
     ) {
@@ -308,7 +507,6 @@ export default function WeeklyPlan({
     allWeeks,
     selectedWeek,
   ]);
-
 
   const openWorkoutEditor = (
     dayIndex,
@@ -360,11 +558,8 @@ export default function WeeklyPlan({
     );
   };
 
-
   const closeWorkoutEditor = () => {
-    if (
-      savingEdit
-    ) {
+    if (savingEdit) {
       return;
     }
 
@@ -376,7 +571,6 @@ export default function WeeklyPlan({
       []
     );
   };
-
 
   const updateEditingExercise = (
     index,
@@ -398,14 +592,10 @@ export default function WeeklyPlan({
             }
 
             if (
-              field ===
-                'name' ||
-              field ===
-                'reps' ||
-              field ===
-                'notes' ||
-              field ===
-                'activation_cue'
+              field === 'name' ||
+              field === 'reps' ||
+              field === 'notes' ||
+              field === 'activation_cue'
             ) {
               return {
                 ...exercise,
@@ -414,11 +604,13 @@ export default function WeeklyPlan({
               };
             }
 
-            // Keep the raw input while the user is editing.
-            // Converting '' to 0 here makes the zero impossible to erase.
+            /*
+             * Keep the raw input while the user is editing.
+             * Converting an empty input to 0 makes the value
+             * impossible to properly erase.
+             */
             if (
-              value ===
-              ''
+              value === ''
             ) {
               return {
                 ...exercise,
@@ -448,7 +640,6 @@ export default function WeeklyPlan({
     );
   };
 
-
   const addEditingExercise = () => {
     setEditingExercises(
       (previous) => [
@@ -465,7 +656,6 @@ export default function WeeklyPlan({
       ]
     );
   };
-
 
   const removeEditingExercise = (
     index
@@ -490,7 +680,6 @@ export default function WeeklyPlan({
     );
   };
 
-
   const saveWorkoutEdits = async () => {
     if (
       !canEditWorkouts ||
@@ -511,7 +700,6 @@ export default function WeeklyPlan({
 
       return;
     }
-
 
     const cleanExercises =
       editingExercises
@@ -567,7 +755,6 @@ export default function WeeklyPlan({
           })
         );
 
-
     if (
       cleanExercises.length ===
       0
@@ -579,13 +766,73 @@ export default function WeeklyPlan({
       return;
     }
 
-
     setSavingEdit(
       true
     );
 
-
     try {
+      const originalDay =
+        currentMicrocycle?.days?.[
+          editingDayIndex
+        ] || null;
+
+      const originalExercises =
+        getExercises(
+          originalDay
+        );
+
+      /*
+       * ==========================================================
+       * ADAPTIVE PROGRAMMING HISTORY
+       * ==========================================================
+       *
+       * The old editor replaced the workout but did not preserve
+       * what the athlete changed.
+       *
+       * Every meaningful change is now recorded in
+       * workout_programs.adaptation_history:
+       *
+       * - exercise removed
+       * - exercise added
+       * - sets changed
+       * - reps changed
+       * - rest changed
+       * - notes changed
+       * - activation cue changed
+       *
+       * This gives Kael actual behavioral data to use when building
+       * future programs.
+       */
+
+      const adaptationEvents =
+        buildAdaptationEvents({
+          originalExercises,
+          editedExercises:
+            cleanExercises,
+          weekNumber:
+            selectedWeek,
+          dayName:
+            originalDay?.day_name ||
+            `Day ${editingDayIndex + 1}`,
+        });
+
+      const existingHistory =
+        Array.isArray(
+          program?.adaptation_history
+        )
+          ? program.adaptation_history
+          : [];
+
+      /*
+       * Keep the history bounded. Kael only needs the recent
+       * pattern of changes, and this prevents the JSON field from
+       * growing forever.
+       */
+      const adaptationHistory = [
+        ...existingHistory,
+        ...adaptationEvents,
+      ].slice(-100);
+
       const updatedMicrocycles =
         allWeeks.map(
           (microcycle) => {
@@ -600,14 +847,12 @@ export default function WeeklyPlan({
               return microcycle;
             }
 
-
             const days =
               Array.isArray(
                 microcycle?.days
               )
                 ? microcycle.days
                 : [];
-
 
             const updatedDays =
               days.map(
@@ -631,7 +876,6 @@ export default function WeeklyPlan({
                 }
               );
 
-
             return {
               ...microcycle,
 
@@ -641,15 +885,20 @@ export default function WeeklyPlan({
           }
         );
 
-
       await supabaseApi.entities.WorkoutProgram.update(
         program.id,
         {
           microcycles:
             updatedMicrocycles,
+
+          /*
+           * This is the key addition that makes the editor
+           * actually contribute to adaptive programming.
+           */
+          adaptation_history:
+            adaptationHistory,
         }
       );
-
 
       setEditingDayIndex(
         null
@@ -659,13 +908,11 @@ export default function WeeklyPlan({
         []
       );
 
-
       /*
        * Reload so Program and Live Workout both read
-       * the newly saved program from Supabase.
+       * the newly saved program and the new adaptation history.
        */
       window.location.reload();
-
     } catch (error) {
       console.error(
         '[WeeklyPlan] Failed to save workout edits:',
@@ -682,7 +929,6 @@ export default function WeeklyPlan({
       );
     }
   };
-
 
   return (
     <div className="space-y-4">
@@ -703,10 +949,7 @@ export default function WeeklyPlan({
           onClick={() =>
             setSelectedWeek(
               (week) =>
-                Math.max(
-                  1,
-                  Number(week) - 1
-                )
+                week - 1
             )
           }
           aria-label="Previous week"
@@ -714,15 +957,13 @@ export default function WeeklyPlan({
           <ChevronLeft className="w-5 h-5" />
         </Button>
 
-
         <div className="text-center flex-1">
 
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+          <div className="flex items-center justify-center gap-2">
 
             <p className="font-heading font-bold text-lg">
               Week {selectedWeek}
             </p>
-
 
             {selectedWeek ===
               currentWeek && (
@@ -731,9 +972,8 @@ export default function WeeklyPlan({
               </span>
             )}
 
-
             {isFutureWeek && (
-              <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-semibold inline-flex items-center gap-1">
+              <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                 <Eye className="w-2.5 h-2.5" />
                 Preview
               </span>
@@ -741,15 +981,13 @@ export default function WeeklyPlan({
 
           </div>
 
-
-          <div className="flex items-center justify-center gap-2 mt-0.5 flex-wrap">
+          <div className="flex items-center justify-center gap-2 mt-0.5">
 
             {mesocycleName && (
               <p className="text-xs text-muted-foreground">
                 {mesocycleName}
               </p>
             )}
-
 
             {weekTypeCfg && (
               <span
@@ -758,17 +996,13 @@ export default function WeeklyPlan({
                   weekTypeCfg.color
                 )}
               >
-                <span className="inline-flex items-center gap-1">
-                  <WeekTypeIcon className="w-2.5 h-2.5" />
-                  {weekTypeCfg.label}
-                </span>
+                {weekTypeCfg.label}
               </span>
             )}
 
           </div>
 
         </div>
-
 
         <Button
           type="button"
@@ -781,10 +1015,7 @@ export default function WeeklyPlan({
           onClick={() =>
             setSelectedWeek(
               (week) =>
-                Math.min(
-                  Number(totalWeeks),
-                  Number(week) + 1
-                )
+                week + 1
             )
           }
           aria-label="Next week"
@@ -796,7 +1027,7 @@ export default function WeeklyPlan({
 
 
       {/* ======================================================
-          WEEK PROGRESS
+          PROGRESS BAR ACROSS WEEKS
           ====================================================== */}
 
       <div className="flex gap-0.5 items-end h-4">
@@ -804,12 +1035,11 @@ export default function WeeklyPlan({
         {Array.from(
           {
             length:
-              Number(totalWeeks),
+              Number(
+                totalWeeks
+              ) || 12,
           },
-          (
-            _,
-            index
-          ) => {
+          (_, index) => {
 
             const weekNumber =
               index + 1;
@@ -849,7 +1079,6 @@ export default function WeeklyPlan({
               weekNumber ===
               selectedWeek;
 
-
             return (
               <button
                 key={
@@ -887,15 +1116,15 @@ export default function WeeklyPlan({
 
       </div>
 
-
       <div className="flex justify-between text-[10px] text-muted-foreground -mt-2 px-0.5">
         <span>Wk 1</span>
 
         <span>
           Wk {
             Math.ceil(
-              Number(totalWeeks) /
-                2
+              Number(
+                totalWeeks
+              ) / 2
             )
           }
         </span>
@@ -980,7 +1209,6 @@ export default function WeeklyPlan({
                   exercises
                 );
 
-
               return (
                 <Card
                   key={
@@ -994,7 +1222,9 @@ export default function WeeklyPlan({
                   )}
                 >
 
-                  {/* Day header */}
+                  {/* ==================================================
+                      DAY HEADER
+                      ================================================== */}
 
                   <div className="p-4">
 
@@ -1007,7 +1237,6 @@ export default function WeeklyPlan({
                             `Day ${dayIndex + 1}`}
                         </p>
 
-
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
 
                           {day?.workout_type && (
@@ -1018,7 +1247,6 @@ export default function WeeklyPlan({
                             />
                           )}
 
-
                           {!isRestDay && (
                             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
 
@@ -1026,7 +1254,8 @@ export default function WeeklyPlan({
 
                               {exercises.length}{' '}
 
-                              {exercises.length === 1
+                              {exercises.length ===
+                              1
                                 ? 'exercise'
                                 : 'exercises'}
 
@@ -1036,7 +1265,6 @@ export default function WeeklyPlan({
                         </div>
 
                       </div>
-
 
                       <div className="text-right flex-shrink-0">
 
@@ -1063,7 +1291,9 @@ export default function WeeklyPlan({
                     </div>
 
 
-                    {/* Progress+ editing */}
+                    {/* ==================================================
+                        PROGRESS+ EDITING
+                        ================================================== */}
 
                     {!isRestDay &&
                       canEditWorkouts && (
@@ -1090,7 +1320,9 @@ export default function WeeklyPlan({
                   </div>
 
 
-                  {/* Exercise list */}
+                  {/* ==================================================
+                      EXERCISE LIST
+                      ================================================== */}
 
                   {!isRestDay && (
                     <div className="border-t border-border/60 px-4 py-3 bg-muted/20">
@@ -1108,7 +1340,6 @@ export default function WeeklyPlan({
                                 exercise?.rest_seconds
                               );
 
-
                             return (
                               <div
                                 key={
@@ -1125,7 +1356,6 @@ export default function WeeklyPlan({
 
                                 </div>
 
-
                                 <div className="flex-1 min-w-0">
 
                                   <p className="text-sm font-medium leading-tight">
@@ -1133,23 +1363,22 @@ export default function WeeklyPlan({
                                       `Exercise ${exerciseIndex + 1}`}
                                   </p>
 
-
                                   <div className="flex items-center gap-3 mt-1 flex-wrap">
 
                                     {exercise?.sets !==
                                       undefined && (
                                       <span className="text-[11px] text-muted-foreground">
-                                        {exercise.sets} sets
+                                        {exercise.sets}{' '}
+                                        sets
                                       </span>
                                     )}
-
 
                                     {exercise?.reps && (
                                       <span className="text-[11px] text-muted-foreground">
-                                        × {exercise.reps}
+                                        ×{' '}
+                                        {exercise.reps}
                                       </span>
                                     )}
-
 
                                     {rest && (
                                       <span className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -1165,7 +1394,6 @@ export default function WeeklyPlan({
 
                                 </div>
 
-
                                 <CheckCircle2 className="w-4 h-4 text-muted-foreground/30 flex-shrink-0 mt-1" />
 
                               </div>
@@ -1174,7 +1402,6 @@ export default function WeeklyPlan({
                         )}
 
                       </div>
-
 
                       <Button
                         type="button"
@@ -1213,7 +1440,7 @@ export default function WeeklyPlan({
 
 
       {/* ======================================================
-          EDITOR
+          WORKOUT EDITOR
           ====================================================== */}
 
       {editingDayIndex !==
@@ -1257,7 +1484,9 @@ export default function WeeklyPlan({
             "
           >
 
-            {/* Editor header */}
+            {/* ==================================================
+                EDITOR HEADER
+                ================================================== */}
 
             <header
               className="
@@ -1280,11 +1509,12 @@ export default function WeeklyPlan({
                 </h2>
 
                 <p className="text-xs text-muted-foreground mt-1">
-                  Customize your workout.
+                  Customize your workout. Kael will learn from
+                  your changes and use repeated preferences in
+                  future programming.
                 </p>
 
               </div>
-
 
               <Button
                 type="button"
@@ -1306,7 +1536,9 @@ export default function WeeklyPlan({
             </header>
 
 
-            {/* Editor body */}
+            {/* ==================================================
+                EDITOR BODY
+                ================================================== */}
 
             <div
               className="
@@ -1339,7 +1571,6 @@ export default function WeeklyPlan({
                         Exercise {index + 1}
                       </p>
 
-
                       <Button
                         type="button"
                         variant="ghost"
@@ -1364,6 +1595,8 @@ export default function WeeklyPlan({
 
                     </div>
 
+
+                    {/* Exercise name */}
 
                     <div>
 
@@ -1391,6 +1624,8 @@ export default function WeeklyPlan({
 
                     </div>
 
+
+                    {/* Sets / Reps / Rest */}
 
                     <div className="grid grid-cols-3 gap-2">
 
@@ -1423,7 +1658,6 @@ export default function WeeklyPlan({
 
                       </div>
 
-
                       <div>
 
                         <label className="block text-[11px] text-muted-foreground mb-1">
@@ -1449,7 +1683,6 @@ export default function WeeklyPlan({
                         />
 
                       </div>
-
 
                       <div>
 
@@ -1483,6 +1716,8 @@ export default function WeeklyPlan({
                     </div>
 
 
+                    {/* Notes */}
+
                     <div>
 
                       <label className="block text-[11px] text-muted-foreground mb-1">
@@ -1510,6 +1745,8 @@ export default function WeeklyPlan({
 
                     </div>
 
+
+                    {/* Activation cue */}
 
                     <div>
 
@@ -1544,6 +1781,8 @@ export default function WeeklyPlan({
               )}
 
 
+              {/* Add exercise */}
+
               <Button
                 type="button"
                 variant="outline"
@@ -1562,13 +1801,14 @@ export default function WeeklyPlan({
 
               </Button>
 
-
               <div className="h-2" />
 
             </div>
 
 
-            {/* Editor footer */}
+            {/* ==================================================
+                EDITOR FOOTER
+                ================================================== */}
 
             <footer
               className="
