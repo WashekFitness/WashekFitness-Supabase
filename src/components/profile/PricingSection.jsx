@@ -15,7 +15,6 @@ import { Badge } from '@/components/ui/badge';
 
 import { supabase } from '@/lib/supabase';
 
-
 const plans = [
   {
     name: 'Progress',
@@ -78,25 +77,17 @@ const plans = [
   },
 ];
 
-
 const PAID_PLANS = ['progress', 'performance', 'elite'];
-
+const ACTIVE_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
 
 function normalizePlan(value) {
   const plan = String(value || '').trim().toLowerCase();
   return PAID_PLANS.includes(plan) ? plan : 'free';
 }
 
-
 function isActiveStatus(status) {
-  return [
-    'active',
-    'trialing',
-    'past_due',
-    'unpaid',
-  ].includes(String(status || '').toLowerCase());
+  return ACTIVE_STATUSES.includes(String(status || '').toLowerCase());
 }
-
 
 export default function PricingSection() {
   const [loadingPlan, setLoadingPlan] = useState(null);
@@ -105,7 +96,6 @@ export default function PricingSection() {
   const [subscription, setSubscription] = useState(null);
   const [error, setError] = useState('');
   const [loadingSubscription, setLoadingSubscription] = useState(true);
-
 
   const loadSubscription = async () => {
     setLoadingSubscription(true);
@@ -121,16 +111,7 @@ export default function PricingSection() {
         return;
       }
 
-      /*
-       * The profiles row is the Washek source of truth for the
-       * user's current entitlement. This avoids the old
-       * maybeSingle() failure when Stripe has more than one
-       * historical subscription row.
-       */
-      const {
-        data: profile,
-        error: profileError,
-      } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(
           'subscription_plan, subscription_status, stripe_subscription_id, stripe_price_id'
@@ -149,12 +130,6 @@ export default function PricingSection() {
       const profileStatus = String(profile?.subscription_status || '').toLowerCase();
       const profileIsActive = isActiveStatus(profileStatus);
 
-      /*
-       * Also read the Stripe mirror when available. This is used
-       * to recover the Cancel button even if subscription_status
-       * in profiles is stale but a real active Stripe subscription
-       * still exists.
-       */
       let stripeSubscription = null;
       let stripeLookupFailed = false;
 
@@ -190,18 +165,14 @@ export default function PricingSection() {
         resolvedPlan = stripePlan;
       }
 
-      /*
-       * If Stripe has a live subscription but the profile mirror
-       * is stale, still show the paid plan and its Cancel button.
-       */
       if (stripeIsActive && stripeSubscription) {
         setSubscription(stripeSubscription);
-      } else if (profile?.stripe_subscription_id) {
+      } else if (profile?.stripe_subscription_id && profileIsActive) {
         setSubscription({
           id: profile.stripe_subscription_id,
           plan: profilePlan,
           plan_key: profilePlan,
-          status: profileStatus || 'active',
+          status: profileStatus,
           stripe_price_id: profile.stripe_price_id,
         });
       } else {
@@ -210,11 +181,6 @@ export default function PricingSection() {
 
       setCurrentPlan(resolvedPlan);
 
-      /*
-       * If neither source reports an active paid plan, explicitly
-       * keep the UI on Free. This makes a canceled subscription
-       * immediately resubscribe-able.
-       */
       if (!profileIsActive && !stripeIsActive) {
         setCurrentPlan('free');
       }
@@ -232,20 +198,18 @@ export default function PricingSection() {
     }
   };
 
-
   useEffect(() => {
     let active = true;
 
     const run = async () => {
-      if (!active) return;
-      await loadSubscription();
+      if (active) {
+        await loadSubscription();
+      }
     };
 
     run();
 
-    const {
-      data: authListener,
-    } = supabase.auth.onAuthStateChange(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
       if (active) {
         loadSubscription();
       }
@@ -257,17 +221,11 @@ export default function PricingSection() {
     };
   }, []);
 
-
   const handleCheckout = async (plan) => {
     if (!plan?.planKey || loadingPlan) {
       return;
     }
 
-    /*
-     * Never open checkout for the plan the UI already knows is
-     * active. This is the first line of defense against paying
-     * twice for the same Washek plan.
-     */
     if (currentPlan === plan.planKey) {
       setError(`You already have an active ${plan.name} subscription.`);
       return;
@@ -285,10 +243,6 @@ export default function PricingSection() {
         throw new Error('Please sign in before upgrading your plan.');
       }
 
-      /*
-       * Re-check the profile immediately before checkout so a
-       * stale page cannot create a duplicate same-plan purchase.
-       */
       const { data: freshProfile } = await supabase
         .from('profiles')
         .select('subscription_plan, subscription_status')
@@ -304,12 +258,12 @@ export default function PricingSection() {
         return;
       }
 
-      const {
-        data,
-        error: functionError,
-      } = await supabase.functions.invoke('create-checkout-session', {
-        body: { plan: plan.planKey },
-      });
+      const { data, error: functionError } = await supabase.functions.invoke(
+        'create-checkout-session',
+        {
+          body: { plan: plan.planKey },
+        }
+      );
 
       if (functionError) {
         throw functionError;
@@ -361,20 +315,14 @@ export default function PricingSection() {
 
       throw new Error(data?.error || 'Unable to start checkout.');
     } catch (checkoutError) {
-      console.error(
-        '[PricingSection] Checkout failed:',
-        checkoutError
-      );
-
+      console.error('[PricingSection] Checkout failed:', checkoutError);
       setError(
-        checkoutError?.message ||
-          'Unable to start checkout.'
+        checkoutError?.message || 'Unable to start checkout.'
       );
     } finally {
       setLoadingPlan(null);
     }
   };
-
 
   const handleCancel = async () => {
     if (cancelling || currentPlan === 'free') {
@@ -393,12 +341,12 @@ export default function PricingSection() {
     setError('');
 
     try {
-      const {
-        data,
-        error: functionError,
-      } = await supabase.functions.invoke('cancel-subscription', {
-        body: {},
-      });
+      const { data, error: functionError } = await supabase.functions.invoke(
+        'cancel-subscription',
+        {
+          body: {},
+        }
+      );
 
       if (functionError) {
         throw functionError;
@@ -408,42 +356,23 @@ export default function PricingSection() {
         throw new Error(data.error);
       }
 
-      /*
-       * Immediately return the UI to Free. This is intentional:
-       * cancellation is immediate, not period-end cancellation.
-       */
       setCurrentPlan('free');
       setSubscription(null);
       setLoadingPlan(null);
 
-      /*
-       * Refresh the authoritative profile/mirror state after the
-       * cancellation so the next checkout is allowed immediately.
-       */
       await loadSubscription();
 
-      /*
-       * The cancellation endpoint intentionally makes the profile
-       * Free. If a stale Stripe mirror causes loadSubscription to
-       * briefly report paid data, force the local state back to Free.
-       */
       setCurrentPlan('free');
       setSubscription(null);
     } catch (cancelError) {
-      console.error(
-        '[PricingSection] Cancellation failed:',
-        cancelError
-      );
-
+      console.error('[PricingSection] Cancellation failed:', cancelError);
       setError(
-        cancelError?.message ||
-          'Unable to cancel your subscription.'
+        cancelError?.message || 'Unable to cancel your subscription.'
       );
     } finally {
       setCancelling(false);
     }
   };
-
 
   return (
     <div className="space-y-4">
@@ -452,42 +381,6 @@ export default function PricingSection() {
           <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <span>{error}</span>
         </div>
-      )}
-
-      {!loadingSubscription && currentPlan !== 'free' && (
-        <Card className="border-primary/30 bg-primary/5 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-heading font-bold">Current plan</p>
-              <p className="text-sm text-muted-foreground">
-                {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}
-              </p>
-            </div>
-
-            {subscription?.cancel_at_period_end ? (
-              <Badge variant="outline" className="text-xs">
-                Cancels at period end
-              </Badge>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleCancel}
-                disabled={cancelling}
-              >
-                {cancelling ? (
-                  <>
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                    Cancelling...
-                  </>
-                ) : (
-                  'Cancel'
-                )}
-              </Button>
-            )}
-          </div>
-        </Card>
       )}
 
       <div className="flex items-center gap-2 mb-1">
@@ -581,6 +474,27 @@ export default function PricingSection() {
           </Card>
         );
       })}
+
+      {currentPlan !== 'free' && !loadingSubscription && (
+        <div className="pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+            onClick={handleCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Cancelling...
+              </>
+            ) : (
+              'Cancel Subscription'
+            )}
+          </Button>
+        </div>
+      )}
 
       <p className="text-[10px] text-muted-foreground text-center">
         Cancel anytime. Billed monthly.
