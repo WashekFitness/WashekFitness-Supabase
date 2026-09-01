@@ -97,13 +97,6 @@ export default function Program() {
    * ==========================================================
    * LOAD ACTIVE PROGRAM
    * ==========================================================
-   *
-   * IMPORTANT:
-   *
-   * WorkoutProgram.filter() already restricts records to the
-   * authenticated user's user_id inside supabaseApi.
-   *
-   * We therefore do NOT filter by created_by/email here.
    */
 
   const {
@@ -151,17 +144,6 @@ export default function Program() {
   const rawProgram =
     programs?.[0] ||
     null;
-
-  /*
-   * ==========================================================
-   * NORMALIZE COMPLETE PROGRAM OBJECT
-   * ==========================================================
-   *
-   * DO NOT call expandMicrocycles(program) here.
-   *
-   * normalizeWorkoutProgram() preserves the complete program
-   * object while normalizing its microcycles.
-   */
 
   const program =
     rawProgram
@@ -225,9 +207,7 @@ export default function Program() {
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-
       </div>
     );
   }
@@ -314,7 +294,6 @@ export default function Program() {
           'programs',
           user.id,
         ],
-
         [
           'logs',
           user.id,
@@ -359,21 +338,19 @@ export default function Program() {
           </div>
 
           {/*
-           * The Link itself is now the button.
+           * The Live link intentionally has its own stacking
+           * context and pointer/touch handling.
            *
-           * Previously this was:
-           *
-           * <Link>
-           *   <Button>...</Button>
-           * </Link>
-           *
-           * which creates a button inside an anchor. On mobile
-           * browsers that can interfere with tap/click handling.
+           * This prevents another element from sitting over
+           * part of the visible button on mobile.
            */}
 
           <Link
             to="/live-workout"
+            aria-label="Open Live Workout"
             className="
+              relative
+              z-50
               inline-flex
               shrink-0
               items-center
@@ -395,12 +372,20 @@ export default function Program() {
               focus-visible:ring-ring
               focus-visible:ring-offset-2
               active:scale-[0.98]
+              cursor-pointer
+              pointer-events-auto
+              touch-manipulation
+              select-none
             "
           >
 
-            <Play className="w-3.5 h-3.5" />
+            <Play
+              className="w-3.5 h-3.5 pointer-events-none"
+            />
 
-            Live
+            <span className="pointer-events-none">
+              Live
+            </span>
 
           </Link>
 
