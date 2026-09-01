@@ -98,7 +98,7 @@ function buildGenderRules(gender) {
   }
 
   if (gender === 'female') {
-    return 'Female: higher reps (8-15), more frequency at moderate intensity, prioritize posterior chain, core stability, hip mobility. Controlled eccentrics to protect lax connective tissue. Hormonal cycle awareness: slightly higher volume in follicular phase.';
+    return 'Female: use individualized volume and intensity rather than assuming one fixed rep range. Prioritize posterior-chain development, core stability, hip mobility, controlled eccentrics, and recovery. Hormonal-cycle considerations should only be used when the athlete provides relevant information and wants it incorporated.';
   }
 
   return 'Gender-neutral: balanced approach, moderate volume, focus on form and progressive overload.';
@@ -248,414 +248,306 @@ The activation_cue field is critical for compound lifts — it should tell the a
 // ------------------------------------------------------------
 
 const LEG_TRAINING_MANDATE = `── LEG TRAINING — MANDATORY FOR ALL TRAINING TYPES ──
-Unless the athlete has EXPLICITLY stated in their goals, requirements, or notes that they do NOT want leg training (e.g., "upper body only", "no legs", "skip legs"), you MUST include dedicated leg work in every week of the program. Legs are NOT optional — a complete athlete trains every muscle group.
+Unless the athlete has EXPLICITLY stated in their goals, requirements, or notes that they do NOT want leg training (e.g., "upper body only", "no legs", "skip legs"), you MUST include dedicated leg work throughout the program.
 
-TARGET ALL MAJOR LEG MUSCLES: quads, hamstrings, glutes, AND calves. Every week must include exercises that hit each of these.
+Do not treat legs as optional accessory work. Program lower-body training appropriate to the athlete's training type, goals, equipment, recovery capacity, and schedule.
 
-Include at least 1-2 dedicated leg days OR integrate substantial leg work into existing training days (minimum 3-4 leg exercises per week total).
+For calisthenics, use bodyweight unilateral work, squats, split squats, lunges, Nordic progressions, hip thrust/bridge variations, calf work, and other appropriate bodyweight progressions.
 
-EXERCISE SELECTION BY TRAINING TYPE:
-- CALISTHENICS: Pistol squats, shrimp squats, jump squats, sissy squats, Nordic curls, glute bridges, single-leg glute bridges, reverse lunges, Bulgarian split squats (bodyweight), calf raises (single-leg, double-leg), box jumps, broad jumps, wall sits, dragon flag negatives for posterior chain
-- WEIGHTED CALISTHENICS: Weighted squats, weighted pistol squats, weighted lunges, weighted Bulgarian split squats, weighted calf raises, Nordic curls (weighted), weighted glute bridges, jump squats with weight
-- WEIGHT TRAINING: Back squats, front squats, Romanian deadlifts, deadlifts, walking lunges, leg press, leg extensions, leg curls, calf raises (standing + seated), hip thrusts, Bulgarian split squats (dumbbell or barbell), good mornings, reverse hyperextensions
-- HYBRID: Mix of calisthenics and weight leg exercises — e.g., pistol squats for skill/coordination + barbell squats for raw strength, Nordic curls for hamstring health + Romanian deadlifts for posterior chain power
+For weighted calisthenics, use appropriate loaded lower-body movements in addition to bodyweight work when equipment allows.
 
-If the athlete explicitly says "no legs", "upper body only", "skip leg training", or similar — then you may skip leg work. Otherwise, legs are MANDATORY in every week.`;
+For weights, use appropriate compound and isolation lower-body movements such as squats, deadlift variations, Romanian deadlifts, split squats, leg presses, hamstring curls, extensions, calves, and other movements appropriate to the athlete's equipment.
 
-// ------------------------------------------------------------
-// Calisthenics
-// ------------------------------------------------------------
+For hybrid training, balance lower-body strength/hypertrophy with calisthenics skill demands.
 
-function calisthenicsPrompt(data) {
-  return `You are a world-class calisthenics periodization scientist and coach. Build a COMPLETE 12-week program for this athlete with ALL 12 weekly microcycles fully detailed. This program uses Anton's Submax training method — the fastest evidence-based progression system for calisthenics skills.
-
-${buildContext(data)}
-
-=== PERIODIZATION SCIENCE (MANDATORY — FOLLOW EXACTLY) ===
-
-ADAPTATION HIERARCHY: Tendon adaptation is SLOWEST (weeks 4-12+), then CNS adaptation (days-weeks), then muscle hypertrophy. Volume must increase gradually so tendons can keep up. Never jump more than 10-15% total volume per week. Injury prevention is paramount — when in doubt, do less. Respect any injuries or limitations listed in REQUIREMENTS.
-
-── ANTON'S SUBMAX METHOD (THE CORE OF THIS PROGRAM) ──
-Submax training means NEVER training to failure or even near-failure on skill and strength movements. Every set ends 2-3 reps BEFORE failure (3+ RIR on strength sets, 40-60% of max for skill holds). This allows:
-1. Higher training frequency without CNS burnout
-2. Perfect technique on every rep
-3. Faster tendon adaptation
-4. Faster skill acquisition
-5. Zero overuse injuries from accumulated fatigue damage
-
-SUBMAX RULES TO ENFORCE IN EVERY SESSION:
-- Strength sets: stop when reps start to slow or form breaks — never grind. Note this in exercise "notes" field.
-- Skill holds (handstand, planche, lever, L-sit): hold for 40-60% of max hold time per set, many sets.
-- Never train a skill to failure.
-- Encourage high-frequency practice.
-- Include a note like "Stop 2-3 reps early — submax" in the notes field for every strength exercise.
-
-WEEKLY STRUCTURE (4-6 training days):
-- DAY A — INTENSITY PUSH: Push-dominant movements at 80-90% submax. Low reps (3-5), hard variations, long rests (3-4 min). Skill work first.
-- DAY B — INTENSITY PULL: Pull-dominant movements at 80-90% submax. Low reps and long rests.
-- DAY C — VOLUME PUSH: Push-dominant movements at 65-75% submax. Moderate reps (6-10).
-- DAY D — VOLUME PULL: Pull-dominant movements at 65-75% submax. Moderate reps (6-10).
-- DAY E — DELOAD & SKILL: 40-55% effort. Light skill practice, mobility, flexibility, prehab.
-
-Rest days between training days as needed. Never 2 consecutive high-intensity days. Push/pull balance mandatory across the week.
-
-MESOCYCLE STRUCTURE (3 mesocycles of 4 weeks each):
-MESO 1 (Weeks 1-4): FOUNDATION + TENDON CONDITIONING
-- Wk1: Submax volume LOW (50-60% of capacity).
-- Wk2: Submax volume +10%.
-- Wk3: Submax volume +10% from wk2.
-- Wk4: DELOAD — drop to 40% volume.
-
-MESO 2 (Weeks 5-8): INTENSIFICATION + SKILL BREAKTHROUGH
-- Wk5: Reset volume slightly above meso1 peak with harder progressions.
-- Wk6: Volume +10%.
-- Wk7: Volume +10% from wk6.
-- Wk8: DELOAD — cut volume 40%.
-
-MESO 3 (Weeks 9-12): PEAK + SKILL MASTERY
-- Wk9: Near-peak submax volume.
-- Wk10: Peak volume week.
-- Wk11: Taper — reduce volume 20%, keep intensity.
-- Wk12: FULL DELOAD — 50% volume, 30% intensity drop.
-
-EXERCISE SELECTION RULES:
-- 4-5 training days per week, 5-6 exercises per training day, 2-3 on skill/recovery days
-- Push/pull balance mandatory
-- Target skill ALWAYS first
-- Scapular/rotator cuff prehab every week
-- Never repeat same movement pattern twice in one session
-- Progressions follow a clear regression → target skill ladder
-- Tendon prehab: slow eccentrics (3-5s down), isometric holds 2x/week
-- In exercise notes specify the submax cue
-- Injury history must be respected
-
-${LEG_TRAINING_MANDATE}
-
-${HUNTER_STEIN_METHOD}
-
-${OUTPUT_FORMAT}
-
-${SCHEMA_INSTRUCTION}`;
-}
+Never omit leg training simply because the athlete's primary goals emphasize the upper body unless the athlete explicitly requests that.`;
 
 // ------------------------------------------------------------
-// Weighted calisthenics
+// Program construction
 // ------------------------------------------------------------
 
-function weightedCalisthenicsPrompt(data) {
-  return `You are a world-class calisthenics periodization scientist and coach specializing in WEIGHTED calisthenics. Build a COMPLETE 12-week program for this athlete with ALL 12 weekly microcycles fully detailed. This program uses Anton's Submax training method combined with weighted progressions for maximum strength and skill acquisition.
-
-${buildContext(data)}
-
-=== PERIODIZATION SCIENCE ===
-
-ADAPTATION HIERARCHY: Tendon adaptation is SLOWEST, then CNS adaptation, then muscle hypertrophy. Weighted progressions stress tendons MORE than bodyweight — volume must increase gradually. Never jump more than 10% total volume or 5lbs added weight per week.
-
-SUBMAX METHOD + WEIGHTED PROGRESSIONS:
-- Skill work is ALWAYS unweighted and submax (40-60% of max).
-- Weighted strength work uses added resistance at submax intensity.
-- Progressive overload via added weight: start with 5-10% of bodyweight, increase 2.5-5 lbs per week.
-- Never grind a weighted rep.
-
-SUBMAX RULES:
-- Skill holds: 40-60% of max hold time.
-- Weighted strength sets: 2-3 RIR.
-- Weighted hypertrophy sets: 1-2 RIR.
-- Never train a skill to failure.
-- Include weight suggestion and submax cue in notes.
-
-WEEKLY STRUCTURE:
-- DAY A — INTENSITY PUSH
-- DAY B — INTENSITY PULL
-- DAY C — VOLUME PUSH
-- DAY D — VOLUME PULL
-- DAY E — DELOAD & SKILL
-
-MESOCYCLE STRUCTURE:
-MESO 1 (Weeks 1-4): FOUNDATION + LOADED TENDON CONDITIONING
-- Wk1: Establish baseline weights.
-- Wk2: +5 lbs and +10% volume.
-- Wk3: +5 lbs and +10% volume.
-- Wk4: DELOAD — reduce weight 40%.
-
-MESO 2 (Weeks 5-8): STRENGTH BUILD + SKILL BREAKTHROUGH
-- Wk5: Reset to meso1 peak weights + 5 lbs.
-- Wk6: +5 lbs.
-- Wk7: +5 lbs. Peak weighted intensity.
-- Wk8: DELOAD — reduce weight 40%.
-
-MESO 3 (Weeks 9-12): PEAK + SKILL MASTERY
-- Wk9: Near-peak weights.
-- Wk10: Peak week.
-- Wk11: Taper — reduce weight 20%.
-- Wk12: FULL DELOAD — 50% weight, 50% volume.
-
-EXERCISE SELECTION RULES:
-- 4-5 exercises per training day.
-- Skill work ALWAYS first.
-- Weighted variations should match available equipment.
-- Progressive overload: add 2.5-5 lbs per week when all reps hit.
-- Push/pull balance mandatory.
-- Scapular/rotator cuff prehab every week.
-- Tendon prehab: slow eccentrics.
-- Notes must specify weight suggestion and submax cue.
-- Injury history must be respected.
-
-${LEG_TRAINING_MANDATE}
-
-${HUNTER_STEIN_METHOD}
-
-${OUTPUT_FORMAT}
-
-${SCHEMA_INSTRUCTION}`;
-}
-
-// ------------------------------------------------------------
-// Weight training
-// ------------------------------------------------------------
-
-function weightsPrompt(data) {
-  const goalsStr =
-    data?.weightGoals?.join(', ') || 'general fitness';
-
-  return `You are a world-class strength and conditioning coach specializing in weight training, hypertrophy, and strength periodization. Build a COMPLETE 12-week program for this athlete with ALL 12 weekly microcycles fully detailed. The program is optimized for: ${goalsStr}.
-
-${buildContext(data)}
-
-=== PERIODIZATION SCIENCE ===
-
-ADAPTATION HIERARCHY: Muscle tissue adapts fastest, then CNS, then tendons/connective tissue. Progressive overload must be gradual — never increase weight more than 5-10% per week.
-
-PROGRESSIVE OVERLOAD PRINCIPLES:
-- Increase weight by 2.5-5 lbs when all sets and reps are completed with good form.
-- If the athlete cannot hit the rep range, stay at the same weight.
-- Deload every 4th week.
-- Most working sets at RPE 7-8.
-- Top sets may reach RPE 9 but NEVER RPE 10.
-
-WEEKLY STRUCTURE:
-- DAY A — INTENSITY PUSH
-- DAY B — INTENSITY PULL
-- DAY C — VOLUME PUSH
-- DAY D — VOLUME PULL
-- DAY E — DELOAD & MOBILITY
-
-Adjust rep ranges and exercise selection based on the primary goal (${goalsStr}), but ALWAYS maintain the intensity/volume/deload structure and Hunter Stein activation principles.
-
-MESOCYCLE STRUCTURE:
-MESO 1 (Weeks 1-4): FOUNDATION + HYPERTROPHY BASE
-- Wk1: Moderate volume, establish baseline weights. RPE 6-7.
-- Wk2: Increase weight 5%. RPE 7.
-- Wk3: Increase weight 5% more. RPE 7-8.
-- Wk4: DELOAD — reduce weight 40%.
-
-MESO 2 (Weeks 5-8): STRENGTH + INTENSIFICATION
-- Wk5: Reset to meso1 peak weights, add 5 lbs.
-- Wk6: Increase weight 5%.
-- Wk7: Peak intensity.
-- Wk8: DELOAD — reduce weight 40%.
-
-MESO 3 (Weeks 9-12): PEAK + SPECIALIZATION
-- Wk9: Near-peak weights.
-- Wk10: Peak week.
-- Wk11: Taper — reduce volume 20%.
-- Wk12: FULL DELOAD — 50% weight, 30% volume.
-
-EXERCISE SELECTION RULES:
-- ONLY use exercises the athlete can do with their listed EQUIPMENT.
-- Compound lifts as primary movements.
-- 4-6 exercises per training day.
-- Push/pull balance mandatory.
-- Progressive overload noted in exercise notes.
-- Injury history must be respected.
-- Tendon prehab included.
-- Isolation work: 10-15 reps, 2-3 sets.
-- Warm-up sets and mobility work where relevant.
-- RPE target noted in exercise notes.
-
-${LEG_TRAINING_MANDATE}
-
-${HUNTER_STEIN_METHOD}
-
-${HUNTER_STEIN_WEIGHTS_NOTE}
-
-${OUTPUT_FORMAT}
-
-${SCHEMA_INSTRUCTION}`;
-}
-
-// ------------------------------------------------------------
-// Hybrid
-// ------------------------------------------------------------
-
-function hybridPrompt(data) {
-  const calGoals =
-    data?.fitnessGoals?.join(', ') ||
-    data?.goalDescription ||
-    'general fitness';
-
-  const weightGoalsStr =
-    data?.weightGoals?.join(', ') ||
-    'general strength';
-
-  return `You are a world-class strength and conditioning coach specializing in HYBRID training — combining calisthenics skill work with weight training for maximum results. Build a COMPLETE 12-week program with ALL 12 weekly microcycles fully detailed.
-
-KEY PRINCIPLE: Calisthenics skill work comes FIRST in every session when the CNS is fresh. Weight training comes SECOND at the end of the session. The weight exercises are specifically chosen to ACCELERATE calisthenics goals.
-
-CALISTHENICS GOALS: ${calGoals}
-WEIGHT TRAINING GOALS: ${weightGoalsStr}
-
-${buildContext(data)}
-
-=== HYBRID PERIODIZATION SCIENCE ===
-
-ADAPTATION HIERARCHY: Tendon adaptation is SLOWEST, then CNS, then muscle. Both calisthenics and weight training stress the CNS — manage total session volume carefully. Never exceed 60-75 minutes per session.
-
-SESSION STRUCTURE:
-1. WARM-UP (5 min)
-2. CALISTHENICS SKILL WORK (15-20 min)
-3. STRENGTH/POWER (15-20 min)
-4. HYPERTROPHY (15-20 min)
-5. COOL-DOWN (5 min)
-
-WEIGHT EXERCISE SELECTION — ACCELERATE CALISTHENICS GOALS:
-- Muscle-up goal → Lat pulldowns, explosive pull-ups, bicep curls, face pulls
-- Handstand goal → Overhead press, lateral raises, core holds, wrist strengtheners
-- Planche goal → Overhead press, lean forward push-ups, wrist work, core compression
-- Front lever goal → Lat pulldowns, ab wheel rollouts, hanging leg raises, back extensions
-- Back lever goal → Romanian deadlifts, face pulls, back extensions, skin the cat
-- Human flag goal → Side planks, oblique work, single-arm hanging, lateral raises
-- General strength → Squats, deadlifts, bench press, overhead press, rows
-- Muscle growth → Hypertrophy accessories targeting the muscles used in calisthenics skills
-
-SUBMAX METHOD:
-- Skill holds: 40-60% of max hold time.
-- Never train a skill to failure.
-- Stop 2-3 reps early on strength sets.
-- High-frequency skill practice is encouraged.
-
-PROGRESSIVE OVERLOAD:
-- Increase weight 2.5-5 lbs when all reps hit with good form.
-- RPE 7-8 on most sets.
-- RPE 9 maximum on top sets.
-- Never RPE 10.
-
-WEEKLY STRUCTURE:
-- DAY A — INTENSITY PUSH
-- DAY B — INTENSITY PULL
-- DAY C — VOLUME PUSH
-- DAY D — VOLUME PULL
-- DAY E — DELOAD & SKILL
-
-MESOCYCLE STRUCTURE:
-MESO 1 (Weeks 1-4): FOUNDATION + DUAL ADAPTATION
-- Wk1: Establish baselines.
-- Wk2: +5 lbs on weights, +10% calisthenics volume.
-- Wk3: +5 lbs more, +10% volume.
-- Wk4: DELOAD — reduce both 40%.
-
-MESO 2 (Weeks 5-8): INTENSIFICATION + SKILL BREAKTHROUGH
-- Wk5: Reset to peaks + 5 lbs.
-- Wk6: +5 lbs weights, +10% volume.
-- Wk7: Peak intensity.
-- Wk8: DELOAD — reduce both 40%.
-
-MESO 3 (Weeks 9-12): PEAK + MASTERY
-- Wk9: Near-peak weights and skill progressions.
-- Wk10: Peak week.
-- Wk11: Taper — reduce volume 20%.
-- Wk12: FULL DELOAD — 50% everything.
-
-RECOVERY RULES:
-- Never 2 consecutive heavy training days.
-- Deload every 4th week.
-- Monitor CNS fatigue.
-- Tendon care is mandatory.
-- Scapular/rotator cuff prehab every week.
-- Push/pull balance mandatory.
-
-${LEG_TRAINING_MANDATE}
-
-${HUNTER_STEIN_METHOD}
-
-${HUNTER_STEIN_WEIGHTS_NOTE}
-
-${OUTPUT_FORMAT}
-
-${SCHEMA_INSTRUCTION}`;
-}
-
-// ------------------------------------------------------------
-// Public program prompt builder
-// ------------------------------------------------------------
-
-export function buildProgramPrompt(trainingType, data) {
+function getTrainingTypeRules(trainingType) {
   switch (trainingType) {
     case 'calisthenics':
-      return calisthenicsPrompt(data);
+      return `TRAINING TYPE: CALISTHENICS
+- Prioritize bodyweight strength, skill acquisition, relative strength, mobility, and progressive exercise variations.
+- Do not prescribe external weights unless the athlete's equipment/goals explicitly support weighted work.
+- Skill work should generally be performed early in the session while the athlete is fresh.
+- Use progressions/regressions appropriate to the athlete's level.
+- Build toward the athlete's stated skills rather than randomly rotating advanced movements.`;
 
     case 'weighted_calisthenics':
-      return weightedCalisthenicsPrompt(data);
+      return `TRAINING TYPE: WEIGHTED CALISTHENICS
+- Prioritize weighted pull-ups, weighted dips, loaded bodyweight movements, and skill-specific calisthenics.
+- Skill work should generally occur before heavy loaded work when technical quality matters.
+- Progress external load gradually while preserving full range of motion and strict technique.
+- Include sufficient unweighted skill practice to maintain movement quality.`;
 
     case 'weights':
-      return weightsPrompt(data);
+      return `TRAINING TYPE: WEIGHT TRAINING
+- Prioritize free weights, cables, machines, and other available resistance equipment.
+- Program progressive overload for strength and/or hypertrophy according to the athlete's goals.
+- Use appropriate exercise selection, volume, intensity, rest periods, and movement patterns.
+- Do not randomly insert calisthenics skill work unless the athlete specifically wants it.`;
 
     case 'hybrid':
-      return hybridPrompt(data);
+      return `TRAINING TYPE: HYBRID
+- Combine calisthenics skill/strength work with weight training.
+- Place technically demanding calisthenics skill work earlier in sessions when appropriate.
+- Use weight training to strengthen muscles and patterns that support the athlete's calisthenics goals.
+- Balance fatigue carefully so weight training does not undermine skill quality.`;
 
     default:
-      return calisthenicsPrompt(data);
+      return `TRAINING TYPE: GENERAL FITNESS
+- Use a balanced combination of strength, hypertrophy, conditioning, mobility, and recovery work appropriate to the athlete's goals and available equipment.`;
   }
 }
 
-// ------------------------------------------------------------
-// Structure + microcycle split generation
-// ------------------------------------------------------------
+function buildRecoveryRules() {
+  return `── RECOVERY & FATIGUE MANAGEMENT ──
+- Recovery is part of programming, not an afterthought.
+- Do not automatically increase volume every week.
+- Use progressive overload only when the athlete can reasonably recover from it.
+- Distinguish productive training fatigue from accumulating fatigue.
+- If performance is repeatedly declining, technique is deteriorating, soreness is unusually persistent, or the athlete reports poor recovery, reduce training stress before adding more.
+- Use planned easier weeks/deloads where appropriate.
+- A deload should reduce training stress while preserving movement patterns and technique.
+- Do not prescribe a deload solely because a calendar says so if the athlete is progressing well and recovery is good.
+- When a deload is used, typically reduce volume substantially and/or reduce intensity/load while maintaining quality technique.
+- Never diagnose an injury or medical condition from training data.
+- Persistent, severe, worsening, or unusual pain should be referred to an appropriate healthcare professional.`;
+}
 
-const STRUCTURE_OUTPUT = `OUTPUT: Generate ONLY the program structure — program_name, duration_weeks, macrocycle (overview + phases), and mesocycles (3 mesocycles of 4 weeks each with name, focus, weeks, intensity, week_start, week_end). Do NOT generate microcycles.`;
+function buildAdaptationRules(adaptationHistory = []) {
+  if (!Array.isArray(adaptationHistory) || adaptationHistory.length === 0) {
+    return `ADAPTIVE PROGRAMMING:
+No previous workout edits have been recorded yet. Build the initial program from the athlete profile and goals.`;
+  }
 
-const STRUCTURE_SCHEMA = `Respond as a JSON object with this structure:
-{
-  "program_name": string,
-  "duration_weeks": number,
-  "macrocycle": {
-    "overview": string,
-    "phases": [
-      {
-        "name": string,
-        "weeks": string,
-        "focus": string
+  const recentHistory = adaptationHistory
+    .slice(-40)
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item;
       }
-    ]
-  },
-  "mesocycles": [
+
+      if (!item || typeof item !== 'object') {
+        return '';
+      }
+
+      const parts = [
+        item.date ? `date=${item.date}` : '',
+        item.action ? `action=${item.action}` : '',
+        item.exercise ? `exercise=${item.exercise}` : '',
+        item.from ? `from=${item.from}` : '',
+        item.to ? `to=${item.to}` : '',
+        item.field ? `field=${item.field}` : '',
+        item.oldValue !== undefined
+          ? `old=${item.oldValue}`
+          : '',
+        item.newValue !== undefined
+          ? `new=${item.newValue}`
+          : '',
+      ].filter(Boolean);
+
+      return parts.join(', ');
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  return `── ADAPTIVE PROGRAMMING — LEARN FROM THE ATHLETE'S EDITS ──
+The athlete has previously modified programmed workouts. Treat repeated edits as useful preference/performance feedback.
+
+PREVIOUS WORKOUT EDIT HISTORY:
+${recentHistory}
+
+ADAPTATION RULES:
+- If the athlete repeatedly removes an exercise, do not repeatedly reintroduce the same exercise without a clear reason.
+- If the athlete repeatedly replaces an exercise with another movement, favor the replacement when it still satisfies the training goal.
+- If the athlete consistently increases or decreases sets, reps, or rest, use that pattern as evidence about appropriate training dose.
+- Do not blindly copy every single edit. Interpret the pattern and preserve sound programming principles.
+- Do not remove a necessary movement pattern simply because of one isolated edit.
+- Use the history to make future programs feel progressively more personalized.
+- If an edit conflicts with an explicit injury restriction, safety concern, or the athlete's current goals, prioritize the current safety/goal information.`;
+}
+
+function buildProgramPrompt(
+  trainingType,
+  data = {},
+  adaptationHistory = []
+) {
+  const context = buildContext(data);
+
+  return `You are Kael, an expert ${
+    trainingType || 'fitness'
+  } coach and program designer.
+
+${context}
+
+${getTrainingTypeRules(trainingType)}
+
+${LEG_TRAINING_MANDATE}
+
+${HUNTER_STEIN_METHOD}
+
+${HUNTER_STEIN_WEIGHTS_NOTE}
+
+${buildRecoveryRules()}
+
+${buildAdaptationRules(adaptationHistory)}
+
+── PROGRAM DESIGN RULES ──
+1. Build a coherent 12-week macrocycle, not 12 unrelated weeks.
+2. Use progressive overload appropriate to the athlete and training type.
+3. Progress exercise difficulty, load, reps, sets, density, or quality strategically.
+4. Do not increase every variable simultaneously.
+5. Include appropriate recovery days.
+6. Include deload/reduced-fatigue periods when justified by the program structure and athlete context.
+7. Respect available equipment.
+8. Respect stated restrictions and requirements.
+9. Avoid unnecessary exercise duplication.
+10. Maintain balanced movement patterns.
+11. Skill-heavy work should receive appropriate recovery and technical practice.
+12. Do not use arbitrary advanced exercises simply to make the program look impressive.
+13. Every exercise must have a specific activation_cue.
+14. Sets must be numeric.
+15. Reps must be a string.
+16. Rest must be expressed in seconds.
+17. Keep exercise notes concise but useful.
+18. Make the program realistic for the athlete's stated schedule and experience.
+
+${OUTPUT_FORMAT}
+
+${SCHEMA_INSTRUCTION}`;
+}
+
+// ------------------------------------------------------------
+// Public program prompt
+// ------------------------------------------------------------
+
+export function buildProgramPromptForAI(
+  trainingType,
+  data = {},
+  adaptationHistory = []
+) {
+  return buildProgramPrompt(
+    trainingType,
+    data,
+    adaptationHistory
+  );
+}
+
+// ------------------------------------------------------------
+// Mesocycle / microcycle prompts
+// ------------------------------------------------------------
+
+export function buildMesocyclePrompt(
+  trainingType,
+  data = {},
+  mesocycleIndex = 0,
+  adaptationHistory = []
+) {
+  const baseRules = buildProgramPrompt(
+    trainingType,
+    data,
+    adaptationHistory
+  )
+    .replace(OUTPUT_FORMAT, '')
+    .replace(SCHEMA_INSTRUCTION, '');
+
+  const weekStart =
+    mesocycleIndex * 4 + 1;
+
+  const weekEnd =
+    weekStart + 3;
+
+  const mesocycleNames = [
     {
-      "name": string,
-      "focus": string,
-      "weeks": number,
-      "intensity": string,
-      "week_start": number,
-      "week_end": number
+      name: 'Foundation & Accumulation',
+      focus:
+        'Build movement quality, work capacity, technical consistency, and a strong base for progression.',
+      intensity: 'moderate',
+    },
+    {
+      name: 'Intensification & Progression',
+      focus:
+        'Increase training stimulus through appropriate load, difficulty, volume, or intensity while maintaining recovery.',
+      intensity: 'moderate to high',
+    },
+    {
+      name: 'Peak & Specialization',
+      focus:
+        'Emphasize the athlete’s primary goals and skills while managing fatigue and expressing accumulated adaptations.',
+      intensity: 'high with strategic fatigue management',
+    },
+  ];
+
+  const mesocycle =
+    mesocycleNames[
+      mesocycleIndex
+    ] || mesocycleNames[0];
+
+  return `${baseRules}
+
+MESOCYCLE:
+Name: ${mesocycle.name}
+Weeks: ${weekStart}-${weekEnd}
+Focus: ${mesocycle.focus}
+Intensity: ${mesocycle.intensity}
+
+Generate the programming for this four-week mesocycle.
+
+Each week must meaningfully progress from the previous week while respecting recovery.
+
+Week ${weekEnd} may be a reduced-fatigue/deload week when justified by the athlete's training status and the overall 12-week structure.
+
+OUTPUT: Return ONLY a JSON object containing:
+{
+  "mesocycle": {
+    "name": "${mesocycle.name}",
+    "focus": "${mesocycle.focus}",
+    "weeks": 4,
+    "intensity": "${mesocycle.intensity}",
+    "week_start": ${weekStart},
+    "week_end": ${weekEnd}
+  },
+  "microcycles": [
+    {
+      "week_number": number,
+      "mesocycle_index": ${mesocycleIndex},
+      "week_type": string,
+      "days": [
+        {
+          "day_name": string,
+          "workout_type": string,
+          "exercises": [
+            {
+              "name": string,
+              "sets": number,
+              "reps": string,
+              "rest_seconds": number,
+              "notes": string,
+              "activation_cue": string
+            }
+          ]
+        }
+      ]
     }
   ]
 }`;
-
-// Existing split-generation API
-export function buildStructurePrompt(trainingType, data) {
-  return buildProgramPrompt(trainingType, data)
-    .replace(OUTPUT_FORMAT, STRUCTURE_OUTPUT)
-    .replace(SCHEMA_INSTRUCTION, STRUCTURE_SCHEMA);
 }
 
 export function buildMicrocyclePrompt(
   trainingType,
-  data,
-  mesocycleIndex,
-  mesocycle
+  data = {},
+  mesocycleIndex = 0,
+  mesocycle = null,
+  adaptationHistory = []
 ) {
   const baseRules = buildProgramPrompt(
     trainingType,
-    data
+    data,
+    adaptationHistory
   )
     .replace(OUTPUT_FORMAT, '')
     .replace(SCHEMA_INSTRUCTION, '');
@@ -717,24 +609,33 @@ Respond as a JSON object with this structure:
 // ------------------------------------------------------------
 // Backwards-compatible weekly prompt
 // ------------------------------------------------------------
-// Onboarding currently imports buildWeekPrompt. Keep this export
-// so older onboarding code and newer split-generation code both work.
 
 export function buildWeekPrompt(
   trainingType,
-  data,
-  weekNumber = 1
+  data = {},
+  weekNumber = 1,
+  adaptationHistory = []
 ) {
   const safeWeek = Math.min(
     12,
-    Math.max(1, Number(weekNumber) || 1)
+    Math.max(
+      1,
+      Number(weekNumber) || 1
+    )
   );
 
   const mesocycleIndex =
-    Math.floor((safeWeek - 1) / 4);
+    Math.floor(
+      (safeWeek - 1) / 4
+    );
 
   const mesocycle = {
-    name: `Mesocycle ${mesocycleIndex + 1}`,
+    name:
+      mesocycleIndex === 0
+        ? 'Foundation & Accumulation'
+        : mesocycleIndex === 1
+          ? 'Intensification & Progression'
+          : 'Peak & Specialization',
     focus:
       mesocycleIndex === 0
         ? 'Foundation and adaptation'
@@ -743,7 +644,7 @@ export function buildWeekPrompt(
           : 'Peak and specialization',
     intensity:
       safeWeek % 4 === 0
-        ? 'deload'
+        ? 'deload / reduced fatigue'
         : 'moderate to high',
     week_start: safeWeek,
     week_end: safeWeek,
@@ -753,7 +654,8 @@ export function buildWeekPrompt(
     trainingType,
     data,
     mesocycleIndex,
-    mesocycle
+    mesocycle,
+    adaptationHistory
   );
 }
 
@@ -767,7 +669,8 @@ export function getKaelSystemPrompt(
   isElite = false
 ) {
   const typeContext = {
-    calisthenics: 'elite-level calisthenics coach',
+    calisthenics:
+      'elite-level calisthenics coach',
     weighted_calisthenics:
       'elite-level weighted calisthenics coach',
     weights:
@@ -787,6 +690,66 @@ export function getKaelSystemPrompt(
       'You specialize in combining calisthenics skill work with weight training — structuring sessions to maximize both skill acquisition and muscle/strength growth.',
   };
 
+  const eliteRules = isElite
+    ? `
+
+ELITE COACHING LAYER — ACTIVE:
+The athlete has Elite access. Provide the additional depth promised by the Elite plan when it is relevant to the question.
+
+SECRET TIPS RULE:
+Whenever the user asks HOW to do something — a movement, skill, technique, exercise, or training method — include at least one genuine insider coaching detail when one is relevant.
+
+An elite tip should be:
+- Specific
+- Actionable
+- Biomechanically plausible
+- Useful in actual training
+- More nuanced than generic internet advice
+
+Examples include:
+- Specific tension cues
+- Breathing/bracing timing
+- Scapular positioning
+- Micro-adjustments in body position
+- Grip or wrist positioning
+- Tempo changes
+- Fatigue-management strategies
+- Technical sequencing
+
+Label it clearly with:
+"🔐 Elite tip:"
+or
+"⚡ Secret:"
+
+Do not fabricate a claim simply to make the advice sound exclusive.
+
+RECOVERY & DELOAD RULE — ELITE ONLY:
+When the athlete asks about recovery, fatigue, soreness, performance drops, overreaching, sleep, rest days, or whether they should deload, provide deeper coaching guidance rather than generic "rest more" advice.
+
+Use the athlete's available recent training context to determine whether:
+- Current fatigue is normal
+- Training load should stay the same
+- Volume should decrease
+- Intensity/load should decrease
+- Additional recovery days are appropriate
+- A deload is justified
+- Technique work can remain while fatigue-producing work is reduced
+
+When recommending a deload, make the recommendation concrete. Explain what should change — for example, reducing sets, reducing load/intensity, increasing rest, or limiting training close to failure — and explain how to return to normal training.
+
+Do not automatically prescribe a deload just because the athlete feels somewhat tired.
+
+If the athlete describes persistent, severe, unusual, or worsening pain, neurological symptoms, chest pain, fainting, or another concerning symptom, do not diagnose it. Recommend appropriate medical evaluation.
+
+Label deeper recovery guidance clearly with:
+"🛡️ Elite recovery:"
+or
+"🔋 Recovery call:"
+
+NUTRITION INSIGHT RULE — ELITE:
+When nutrition is relevant, you may connect training performance, recovery, protein intake, carbohydrate availability, hydration, and calorie consistency. Do not invent logged intake or medical diagnoses.`
+    : '';
+
   return `You are Kael, an ${
     typeContext[trainingType] ||
     'elite-level fitness coach'
@@ -802,23 +765,17 @@ You can answer questions about ANY form of training — calisthenics, weighted c
 
 PERSONALITY: Direct, real, no BS. Like a coach who actually knows their stuff and respects the athlete enough to tell them the truth. Friendly but not fluffy. Get to the point.
 
-RESPONSE STYLE: 2-4 sentences max unless a structured breakdown is truly needed. No long intros. No generic advice.${
-    isElite
-      ? `
+RESPONSE STYLE: 2-4 sentences max unless a structured breakdown is truly needed. No long intros. No generic advice.
 
-SECRET TIPS RULE — CRITICAL: Whenever the user asks HOW to do something (a movement, skill, technique, exercise, or training method), you MUST include at least one "secret" or "insider" tip — something elite athletes actually use in practice that most coaches and internet guides never mention. These should be real, specific, and counterintuitive.
-
-Examples:
-- Specific tension cues that elite athletes use
-- Breathing tricks, bracing patterns, or micro-timing cues
-- Progressions that elite athletes use but almost nobody teaches online
-- Recovery or CNS management tricks
-- Hidden biomechanical details
-- Training frequency and density secrets
-- Psychological or visualization techniques
-
-Label these clearly with something like "🔐 Elite tip:" or "⚡ Secret:" so they feel special.`
-      : ''}
+COACHING RULES:
+- Personalize advice to the athlete's stated goals and training type.
+- Prefer practical recommendations over theory.
+- Do not invent workout history, measurements, or results that the athlete has not provided.
+- When discussing progression, explain what the athlete should actually do next.
+- Prioritize technique and sustainable progression over ego lifting.
+- Do not encourage training through significant pain.
+- Never diagnose medical conditions.
+${eliteRules}
 
 Only use their name occasionally when it feels natural — not every message.`;
 }
@@ -854,7 +811,8 @@ export function getProgressPhotoPrompt(
 
   const coachTitle = {
     calisthenics: 'calisthenics',
-    weighted_calisthenics: 'weighted calisthenics',
+    weighted_calisthenics:
+      'weighted calisthenics',
     weights: 'weight training',
     hybrid: 'hybrid training',
   };
@@ -863,18 +821,28 @@ export function getProgressPhotoPrompt(
     firstName || 'the athlete'
   }'s personal ${
     coachTitle[trainingType] || 'fitness'
-  } coach. Review this physique photo and give ${
+  } coach.
+
+Review this physique photo and give ${
     firstName || 'the athlete'
   } direct, genuine, personalized feedback — like a real coach would. Not clinical, not generic.
+
+IMPORTANT BODY-FAT ESTIMATION LIMITATIONS:
+- A photograph cannot establish an exact body-fat percentage.
+- Give a visual ESTIMATE only.
+- Provide a reasonable range rather than pretending the result is laboratory accurate.
+- The midpoint is an estimate for graphing only.
+- Do not claim medical or diagnostic accuracy.
+- If lighting, pose, clothing, image quality, or camera angle makes estimation unreliable, say so.
 
 ${prevContext || ''}
 
 Provide:
-1. An estimated body fat percentage range (specific, like "14-17%")
-2. A numeric midpoint for graphing (just the number, like 15.5)
-3. Specific insights — address ${
+1. An estimated body fat percentage RANGE, such as "14-17%"
+2. A numeric midpoint for graphing, such as 15.5
+3. Specific visual insights — address ${
     firstName || 'the athlete'
-  } directly. What muscles are developing? Where is there visible progress? What areas visually lag behind? If there's a previous photo, compare and call out exactly what changed. Be real and conversational.
+  } directly. What muscles appear developed? Where is there visible progress? What areas visually lag behind? If there is a previous photo, compare only visible changes and explain that photo conditions can affect the comparison.
 4. ${
     exerciseGuidance[trainingType] ||
     exerciseGuidance.calisthenics
