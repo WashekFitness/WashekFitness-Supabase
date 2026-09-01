@@ -56,49 +56,68 @@ const CONTEXT_MESSAGE_COUNT = 30;
  * Kael starts displaying the answer as soon as the AI result
  * arrives, then reveals it rapidly in small chunks.
  *
- * This is intentionally fast. The goal is for the response to
- * feel immediate without making the text unreadably fast.
+ * Response reveal speed increases with the user's plan:
+ *
+ * Free        = slowest
+ * Progress    = faster
+ * Performance = faster
+ * Elite       = fastest
+ *
+ * This only controls how quickly the already-generated answer
+ * appears on screen. It does not change AI quality or logic.
  */
 
-const TYPEWRITER_MIN_DELAY = 5;
-const TYPEWRITER_MAX_DELAY = 18;
+const TYPEWRITER_MIN_DELAY = 3;
+const TYPEWRITER_MAX_DELAY = 16;
 
-const TYPEWRITER_MAX_DURATION = 5000;
+const TYPEWRITER_MAX_DURATION = 4200;
 
 
 /*
- * Calculate a typing delay based on how much text remains.
+ * Calculate a typing delay based on plan and text length.
  *
- * Short answers:
- *   slightly slower so they still feel natural.
- *
- * Long answers:
- *   progressively faster so a huge response does not take
- *   forever to appear.
+ * Higher plans reveal responses faster while still keeping
+ * enough pacing that the answer remains easy to read.
  */
 
 function getTypingDelay(
-  textLength
+  textLength,
+  plan = 'free'
 ) {
+  const planDelay =
+    plan === 'elite'
+      ? 4
+      : plan === 'performance'
+        ? 6
+        : plan === 'progress'
+          ? 8
+          : 11;
+
   if (
     textLength <= 120
   ) {
-    return 12;
+    return planDelay + 1;
   }
 
   if (
     textLength <= 300
   ) {
-    return 9;
+    return planDelay;
   }
 
   if (
     textLength <= 600
   ) {
-    return 7;
+    return Math.max(
+      3,
+      planDelay - 1
+    );
   }
 
-  return 5;
+  return Math.max(
+    3,
+    planDelay - 2
+  );
 }
 
 
@@ -213,7 +232,6 @@ export default function Kael() {
    * Keeps the message box ready for typing so the user does not
    * have to click it again after Kael responds.
    */
-
   const inputRef =
     useRef(null);
 
@@ -314,8 +332,11 @@ export default function Kael() {
    * KEEP BOTTOM VISIBLE
    * ==========================================================
    *
-   * The screen follows Kael while the typewriter response is
-   * being revealed.
+   * The previous version only watched messages.length, which
+   * meant the screen would not necessarily follow Kael while
+   * text was being revealed.
+   *
+   * Now we also watch the actual latest message content.
    */
 
   useEffect(() => {
@@ -336,12 +357,6 @@ export default function Kael() {
    * ==========================================================
    * PLAN / MESSAGE LIMIT
    * ==========================================================
-   *
-   * IMPORTANT:
-   *
-   * These values must be declared before any effect that uses
-   * them. This prevents a render-time reference error that can
-   * otherwise result in a completely blank Kael page.
    */
 
   const plan =
@@ -356,26 +371,14 @@ export default function Kael() {
 
 
   /*
-   * ==========================================================
-   * AUTO-FOCUS KAEL INPUT
-   * ==========================================================
-   *
-   * When Kael finishes answering, the textarea automatically
-   * receives focus again.
-   *
-   * This means the user can immediately start typing their next
-   * message without clicking the input box.
-   *
-   * We do NOT focus the input while Kael is actively responding.
+   * Keep the Kael message box focused whenever the user is able
+   * to type. This runs after loading finishes so focus returns
+   * automatically when Kael has completed a response.
    */
-
   useEffect(() => {
     if (
       !loading &&
-      !(
-        atLimit &&
-        !editingMessage
-      )
+      !(atLimit && !editingMessage)
     ) {
       window.requestAnimationFrame(() => {
         inputRef.current?.focus();
@@ -424,29 +427,18 @@ export default function Kael() {
 
 
     /*
-     * ========================================================
-     * PLAN-BASED RESPONSE DEPTH
-     * ========================================================
-     *
-     * Paid plans do NOT get better intelligence or more
-     * accurate answers. They get progressively more detailed
-     * explanations and coaching.
-     *
-     * These are target ranges, NOT rigid word limits.
-     *
-     * Kael must always exceed the target when additional detail
-     * is genuinely necessary for accuracy, safety, or useful
-     * coaching.
+     * Response length increases by plan, but accuracy,
+     * reasoning quality, and safety standards remain the same.
      */
 
     const responseDepthInstruction =
       plan === 'elite'
-        ? `\n\nRESPONSE DEPTH — ELITE: Give the most complete useful coaching answer. Usually aim for roughly 120–220 words when the question genuinely benefits from detail, but do not pad short or simple answers. Explain the key reasoning, practical application, important nuances, and relevant next steps. Use short bullets when they improve clarity. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+        ? `\n\nRESPONSE DEPTH — ELITE: Give the most complete useful coaching answer. Usually aim for roughly 120–220 words when the question genuinely benefits from detail, but do not pad short/simple answers. Explain the key reasoning, practical application, important nuances, and relevant next steps. Use short bullets when they improve clarity. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
         : plan === 'performance'
-          ? `\n\nRESPONSE DEPTH — PERFORMANCE: Give a moderately detailed coaching answer. Usually aim for roughly 90–160 words when the question genuinely benefits from detail, but do not pad short or simple answers. Include useful reasoning, practical application, and important details without becoming repetitive. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+          ? `\n\nRESPONSE DEPTH — PERFORMANCE: Give a moderately detailed coaching answer. Usually aim for roughly 90–160 words when the question genuinely benefits from detail, but do not pad short/simple answers. Include useful reasoning, practical application, and important details without becoming repetitive. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
           : plan === 'progress'
-            ? `\n\nRESPONSE DEPTH — PROGRESS: Give a concise but meaningfully explained coaching answer. Usually aim for roughly 60–120 words when the question genuinely benefits from detail, but do not pad short or simple answers. Give the recommendation plus the most useful explanation or application detail. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
-            : `\n\nRESPONSE DEPTH — FREE: Keep responses concise and direct. Usually aim for roughly 40–80 words when the question genuinely benefits from more than a one-sentence answer. Give the correct recommendation and only the most useful supporting detail. Do not add filler, long introductions, repeated conclusions, or unnecessary background. IMPORTANT: Free users must receive the same level of accuracy, careful reasoning, safety standards, and quality of recommendation as paid users. Shorter does NOT mean less intelligent, less thoughtful, or less accurate. If extra context is necessary to avoid a misleading or unsafe answer, include it even when it makes the response longer than the target.`;
+            ? `\n\nRESPONSE DEPTH — PROGRESS: Give a concise but meaningfully explained coaching answer. Usually aim for roughly 60–120 words when the question genuinely benefits from detail, but do not pad short/simple answers. Give the recommendation plus the most useful explanation or application detail. Never sacrifice accuracy, safety, or necessary context just to hit a word target.`
+            : `\n\nRESPONSE DEPTH — FREE: Keep responses concise and direct. Usually aim for roughly 40–80 words when the question genuinely benefits from more than a one-sentence answer. Give the correct recommendation and only the most useful supporting detail. Do not add filler, long introductions, repeated conclusions, or unnecessary background. IMPORTANT: Free users must receive the same level of accuracy, careful reasoning, safety standards, and quality of recommendation as paid users. Shorter does NOT mean less intelligent or less accurate. If extra context is necessary to avoid a misleading or unsafe answer, include it even when it makes the response longer than the target.`;
 
 
     const recentHistory =
@@ -508,14 +500,15 @@ export default function Kael() {
 
       /*
        * Keep the complete visual typing animation under roughly
-       * five seconds for normal responses.
+       * 4.2 seconds for normal responses.
        */
 
       const baseDelay =
         Math.min(
           Math.max(
             getTypingDelay(
-              textLength
+              textLength,
+              plan
             ),
             TYPEWRITER_MIN_DELAY
           ),
@@ -532,7 +525,7 @@ export default function Kael() {
       /*
        * Safety adjustment:
        * never allow the typewriter to become excessively slow
-       * on a long Elite response.
+       * on a long response.
        */
 
       const estimatedDuration =
@@ -540,7 +533,7 @@ export default function Kael() {
           textLength /
             chunkSize
         ) *
-        baseDelay;
+          baseDelay;
 
 
       const speedMultiplier =
@@ -551,14 +544,13 @@ export default function Kael() {
           : 1;
 
 
-      const delay =
-        Math.max(
-          2,
-          Math.round(
-            baseDelay *
-              speedMultiplier
-          )
-        );
+      const delay = Math.max(
+        2,
+        Math.round(
+          baseDelay *
+            speedMultiplier
+        )
+      );
 
 
       let visibleText =
@@ -568,7 +560,6 @@ export default function Kael() {
       for (
         let index = 0;
         index < text.length;
-        index += chunkSize
       ) {
 
         if (
@@ -578,20 +569,28 @@ export default function Kael() {
         }
 
 
-        visibleText =
-          text.slice(
-            0,
-            Math.min(
-              index +
-                chunkSize,
-              text.length
-            )
+        const nextIndex =
+          Math.min(
+            text.length,
+            index +
+              chunkSize
           );
 
 
+        const chunk =
+          text.slice(
+            index,
+            nextIndex
+          );
+
+
+        visibleText +=
+          chunk;
+
+
         setMessages(
-          (previous) =>
-            previous.map(
+          (current) =>
+            current.map(
               (message) =>
                 message.id ===
                 temporaryId
@@ -605,10 +604,13 @@ export default function Kael() {
         );
 
 
+        index =
+          nextIndex;
+
+
         const lastCharacter =
-          visibleText[
-            visibleText.length -
-              1
+          chunk[
+            chunk.length - 1
           ];
 
 
@@ -638,26 +640,17 @@ export default function Kael() {
 
   const sendMessage =
     async () => {
-      const text =
+
+      const trimmed =
         input.trim();
 
 
       if (
-        !text ||
-        loading
-      ) {
-        return;
-      }
-
-
-      const isEditing =
-        !!editingMessage;
-
-
-      if (
-        !isEditing &&
-        !canSendMessage(
-          stats
+        !trimmed ||
+        loading ||
+        (
+          atLimit &&
+          !editingMessage
         )
       ) {
         return;
@@ -668,291 +661,275 @@ export default function Kael() {
         true;
 
 
+      const isEditing =
+        !!editingMessage;
+
+
+      const previousMessages =
+        [...messages];
+
+
+      const userMessage = {
+        id:
+          `_user_${Date.now()}`,
+        role:
+          'user',
+        content:
+          trimmed,
+        created_date:
+          new Date().toISOString(),
+      };
+
+
+      const temporaryId =
+        `_typing_${Date.now()}`;
+
+
+      const temporaryMessage = {
+        id:
+          temporaryId,
+        role:
+          'assistant',
+        content:
+          '',
+        created_date:
+          new Date().toISOString(),
+      };
+
+
+      if (
+        isEditing &&
+        editingMessage
+      ) {
+        const editedId =
+          editingMessage.id;
+
+
+        const editedIndex =
+          messages.findIndex(
+            (message) =>
+              message.id ===
+              editedId
+          );
+
+
+        if (
+          editedIndex >= 0
+        ) {
+          const updatedMessages =
+            messages.slice(
+              0,
+              editedIndex
+            );
+
+
+          updatedMessages.push(
+            userMessage
+          );
+
+
+          updatedMessages.push(
+            temporaryMessage
+          );
+
+
+          setMessages(
+            updatedMessages
+          );
+        } else {
+          setMessages(
+            [
+              ...messages,
+              userMessage,
+              temporaryMessage,
+            ]
+          );
+        }
+
+      } else {
+        setMessages(
+          [
+            ...messages,
+            userMessage,
+            temporaryMessage,
+          ]
+        );
+      }
+
+
       setInput('');
+      setEditingMessage(null);
       setLoading(true);
 
 
       try {
 
-        let currentMessages =
-          [
-            ...messages,
-          ];
-
-
-        /*
-         * ----------------------------------------------------
-         * HANDLE EDITING
-         * ----------------------------------------------------
-         */
-
-        if (isEditing) {
-
-          const editIndex =
-            messages.findIndex(
-              (
-                message
-              ) =>
-                message.id ===
-                editingMessage.id
-            );
-
-
-          if (
-            editIndex >=
-            0
-          ) {
-
-            const toDelete =
-              messages.slice(
-                editIndex
-              );
-
-
-            await Promise.all(
-              toDelete.map(
-                (
-                  message
-                ) =>
-                  supabaseApi.entities.KaelMessage.delete(
-                    message.id
+        const historyForPrompt =
+          isEditing &&
+          editingMessage
+            ? previousMessages
+                .slice(
+                  0,
+                  previousMessages.findIndex(
+                    (message) =>
+                      message.id ===
+                      editingMessage.id
                   )
-              )
-            );
+                )
+            : previousMessages;
 
-
-            currentMessages =
-              messages.slice(
-                0,
-                editIndex
-              );
-
-
-            setMessages(
-              currentMessages
-            );
-          }
-
-
-          setEditingMessage(
-            null
-          );
-        }
-
-
-        /*
-         * ----------------------------------------------------
-         * SAVE USER MESSAGE
-         * ----------------------------------------------------
-         */
-
-        const userMsg =
-          await supabaseApi.entities.KaelMessage.create(
-            {
-              role:
-                'user',
-
-              content:
-                text,
-
-              is_edit:
-                isEditing,
-            }
-          );
-
-
-        currentMessages = [
-          ...currentMessages,
-          userMsg,
-        ];
-
-
-        setMessages(
-          currentMessages
-        );
-
-
-        /*
-         * ----------------------------------------------------
-         * ASK KAEL
-         * ----------------------------------------------------
-         */
 
         const prompt =
           buildPrompt(
-            currentMessages
+            [
+              ...historyForPrompt,
+              userMessage,
+            ]
           );
 
 
-        const response =
+        const result =
           await supabaseApi.ai.invoke(
             {
+              prompt,
               type:
                 'kael',
-
-              prompt,
             }
           );
 
 
-        const fullResponse =
-          String(
-            response ||
-              ''
-          ).trim();
+        const responseText =
+          typeof result ===
+          'string'
+            ? result
+            : result?.content ||
+              result?.response ||
+              result?.text ||
+              result?.message ||
+              '';
 
 
-        if (
-          !fullResponse
-        ) {
+        if (!responseText) {
           throw new Error(
             'Kael returned an empty response.'
           );
         }
 
 
-        /*
-         * ----------------------------------------------------
-         * CREATE TEMPORARY ASSISTANT MESSAGE
-         * ----------------------------------------------------
-         *
-         * This message appears immediately and is gradually
-         * filled with the actual AI response.
-         */
-
-        const temporaryId =
-          `_typing_${Date.now()}`;
-
-
-        const temporaryAssistant =
-          {
-            id:
-              temporaryId,
-
-            role:
-              'assistant',
-
-            content:
-              '',
-          };
-
-
-        setMessages(
-          (previous) => [
-            ...previous,
-            temporaryAssistant,
-          ]
-        );
-
-
-        /*
-         * ----------------------------------------------------
-         * TYPE THE RESPONSE
-         * ----------------------------------------------------
-         */
-
         await typeAssistantResponse(
-          fullResponse,
+          responseText,
           temporaryId
         );
 
 
+        typingCancelledRef.current =
+          false;
+
+
         /*
-         * ----------------------------------------------------
-         * SAVE FINAL ASSISTANT MESSAGE
-         * ----------------------------------------------------
+         * Save the completed conversation after the visual
+         * response has finished typing.
          */
 
-        if (
-          typingCancelledRef.current
-        ) {
-          return;
-        }
+        try {
+          await supabaseApi.entities.KaelMessage.create(
+            {
+              role:
+                'user',
+              content:
+                trimmed,
+              created_date:
+                userMessage.created_date,
+            }
+          );
 
-
-        const assistantMsg =
           await supabaseApi.entities.KaelMessage.create(
             {
               role:
                 'assistant',
-
               content:
-                fullResponse,
+                responseText,
+              created_date:
+                new Date().toISOString(),
             }
           );
-
-
-        setMessages(
-          (previous) =>
-            previous.map(
-              (message) =>
-                message.id ===
-                temporaryId
-                  ? assistantMsg
-                  : message
-            )
-        );
+        } catch (saveError) {
+          console.error(
+            '[KAEL] Failed to save conversation:',
+            saveError
+          );
+        }
 
 
         /*
-         * Only count a brand-new user message.
-         * Editing remains free.
+         * Editing an existing message does not consume a new
+         * monthly message.
          */
 
         if (
           !isEditing
         ) {
-          const newStats =
-            await incrementMessageCount(
-              plan
-            );
+          try {
+            const nextStats =
+              await incrementMessageCount(
+                plan
+              );
 
-          setStats(
-            newStats
-          );
+            setStats(
+              nextStats
+            );
+          } catch (countError) {
+            console.error(
+              '[KAEL] Failed to update message count:',
+              countError
+            );
+          }
         }
 
-      } catch (
-        error
-      ) {
+      } catch (error) {
 
         console.error(
-          '[KAEL] Message failed:',
+          '[KAEL] Failed to send message:',
           error
         );
 
 
-        /*
-         * Remove an empty temporary response if one exists.
-         */
-
         setMessages(
-          (previous) =>
-            previous.filter(
-              (
-                message
-              ) =>
-                !String(
-                  message.id
-                ).startsWith(
-                  '_typing_'
-                )
+          (current) =>
+            current.filter(
+              (message) =>
+                message.id !==
+                temporaryId
             )
         );
 
 
-        window.setTimeout(
-          () => {
-            window.alert(
-              error?.message ||
-                'Kael could not respond right now. Please try again.'
-            );
-          },
-          0
+        setMessages(
+          (current) => [
+            ...current,
+            {
+              id:
+                `_error_${Date.now()}`,
+              role:
+                'assistant',
+              content:
+                'Sorry — I had trouble generating that response. Please try again.',
+              created_date:
+                new Date().toISOString(),
+            },
+          ]
         );
 
       } finally {
+
+        typingCancelledRef.current =
+          false;
+
         setLoading(false);
+
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
       }
     };
 
@@ -965,6 +942,7 @@ export default function Kael() {
 
   const handleEdit =
     (message) => {
+
       if (
         loading ||
         !message ||
@@ -986,12 +964,9 @@ export default function Kael() {
       );
 
 
-      window.setTimeout(
-        () => {
-          inputRef.current?.focus();
-        },
-        0
-      );
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     };
 
 
@@ -1009,13 +984,9 @@ export default function Kael() {
 
       setInput('');
 
-
-      window.setTimeout(
-        () => {
-          inputRef.current?.focus();
-        },
-        0
-      );
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     };
 
 
@@ -1027,6 +998,7 @@ export default function Kael() {
 
   const handleKeyDown =
     (event) => {
+
       if (
         event.key ===
           'Enter' &&
@@ -1034,7 +1006,12 @@ export default function Kael() {
       ) {
         event.preventDefault();
 
-        sendMessage();
+        if (
+          !loading &&
+          input.trim()
+        ) {
+          sendMessage();
+        }
       }
     };
 
@@ -1047,110 +1024,102 @@ export default function Kael() {
 
   const greeting = {
     id:
-      'kael-greeting',
-
+      '_greeting',
     role:
       'assistant',
-
     content:
       `Hey${
         firstName
-          ? ` ${firstName}`
+          ? `, ${firstName}`
           : ''
-      } — I'm Kael. What's on your mind?`,
+      }! I'm **Kael**, your coach. What do you need? 💪`,
   };
 
 
-  /*
-   * ==========================================================
-   * RENDER
-   * ==========================================================
-   */
-
   return (
-    <div
-      className="
-        flex
-        flex-col
-        h-[calc(100vh-4rem)]
-        bg-background
-      "
-    >
+    <div className="
+      flex
+      flex-col
+      h-[calc(100vh-3rem)]
+    ">
 
       {/* ======================================================
           HEADER
           ====================================================== */}
 
       <div className="
-        flex-shrink-0
-        px-4
-        py-3
+        px-5
+        pb-3
         border-b
         border-border
-        bg-card/80
+        bg-card/50
         backdrop-blur-sm
+        flex-shrink-0
       ">
 
         <div className="
           flex
           items-center
-          justify-between
           gap-3
         ">
 
           <div className="
+            w-10
+            h-10
+            rounded-2xl
+            bg-primary/15
             flex
             items-center
-            gap-3
+            justify-center
+            border
+            border-primary/20
           ">
 
-            <div className="
-              w-10
-              h-10
-              rounded-2xl
-              bg-primary/15
-              flex
-              items-center
-              justify-center
-              flex-shrink-0
+            <Zap className="
+              w-5
+              h-5
+              text-primary
+            " />
+
+          </div>
+
+
+          <div>
+
+            <h1 className="
+              font-heading
+              font-bold
+              text-lg
+              leading-tight
             ">
+              Kael
+            </h1>
 
-              <Zap className="
-                w-5
-                h-5
-                text-primary
-              " />
-
-            </div>
-
-
-            <div>
-
-              <h1 className="
-                font-heading
-                font-bold
-                text-lg
-              ">
-                Kael
-              </h1>
-
-              <p className="
-                text-[10px]
-                text-muted-foreground
-              ">
-                Your AI fitness coach
-              </p>
-
-            </div>
+            <p className="
+              text-xs
+              text-muted-foreground
+            ">
+              AI Fitness Coach · Available anytime
+            </p>
 
           </div>
 
 
           <div className="
+            ml-auto
             flex
             items-center
             gap-2
           ">
+
+            <div className="
+              w-2
+              h-2
+              rounded-full
+              bg-accent
+              animate-pulse
+            " />
+
 
             {stats && (
               <span
@@ -1290,36 +1259,66 @@ export default function Kael() {
                 flex
                 items-center
                 justify-center
-                gap-1
+                mr-2
+                flex-shrink-0
+                mt-0.5
+              ">
+
+                <Zap className="
+                  w-3.5
+                  h-3.5
+                  text-primary
+                " />
+
+              </div>
+
+
+              <div className="
+                bg-card
+                border
+                border-border
+                rounded-2xl
+                rounded-tl-sm
+                px-4
+                py-3
               ">
 
                 <div className="
-                  w-1.5
-                  h-1.5
-                  bg-muted-foreground/60
-                  rounded-full
-                  animate-bounce
-                " />
+                  flex
+                  gap-1.5
+                  items-center
+                  h-5
+                ">
+
+                  <div className="
+                    w-1.5
+                    h-1.5
+                    bg-muted-foreground/60
+                    rounded-full
+                    animate-bounce
+                  " />
 
 
-                <div className="
-                  w-1.5
-                  h-1.5
-                  bg-muted-foreground/60
-                  rounded-full
-                  animate-bounce
-                  [animation-delay:150ms]
-                " />
+                  <div className="
+                    w-1.5
+                    h-1.5
+                    bg-muted-foreground/60
+                    rounded-full
+                    animate-bounce
+                    [animation-delay:150ms]
+                  " />
 
 
-                <div className="
-                  w-1.5
-                  h-1.5
-                  bg-muted-foreground/60
-                  rounded-full
-                  animate-bounce
-                  [animation-delay:300ms]
-                " />
+                  <div className="
+                    w-1.5
+                    h-1.5
+                    bg-muted-foreground/60
+                    rounded-full
+                    animate-bounce
+                    [animation-delay:300ms]
+                  " />
+
+                </div>
 
               </div>
 
