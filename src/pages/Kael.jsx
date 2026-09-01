@@ -288,6 +288,16 @@ export default function Kael() {
    * ==========================================================
    * LOAD CHAT HISTORY
    * ==========================================================
+   *
+   * IMPORTANT:
+   *
+   * Kael messages are stored in Supabase using created_at.
+   * The generic entity layer automatically scopes these records
+   * to the signed-in user's user_id.
+   *
+   * Load the full recent stored conversation, normalize the
+   * timestamp field for the UI, and then sort oldest -> newest
+   * so the conversation appears in the correct order.
    */
 
   useEffect(() => {
@@ -300,17 +310,41 @@ export default function Kael() {
     supabaseApi.entities.KaelMessage
       .filter(
         {},
-        'created_date',
-        200
+        'created_at',
+        500
       )
       .then((msgs) => {
-        if (active) {
-          setMessages(
-            Array.isArray(msgs)
-              ? msgs
-              : []
-          );
+        if (!active) {
+          return;
         }
+
+        const normalizedMessages =
+          Array.isArray(msgs)
+            ? msgs
+                .map((message) => ({
+                  ...message,
+                  created_date:
+                    message.created_date ||
+                    message.created_at ||
+                    message.createdAt ||
+                    null,
+                }))
+                .sort(
+                  (a, b) =>
+                    new Date(
+                      a.created_date ||
+                        0
+                    ).getTime() -
+                    new Date(
+                      b.created_date ||
+                        0
+                    ).getTime()
+                )
+            : [];
+
+        setMessages(
+          normalizedMessages
+        );
       })
       .catch((error) => {
         console.error(
@@ -827,8 +861,12 @@ export default function Kael() {
 
 
         /*
-         * Save the completed conversation after the visual
-         * response has finished typing.
+         * Save the completed conversation.
+         *
+         * IMPORTANT:
+         * The database uses created_at. The generic Supabase
+         * entity layer automatically supplies user_id for the
+         * signed-in user.
          */
 
         try {
@@ -838,7 +876,7 @@ export default function Kael() {
                 'user',
               content:
                 trimmed,
-              created_date:
+              created_at:
                 userMessage.created_date,
             }
           );
@@ -849,7 +887,7 @@ export default function Kael() {
                 'assistant',
               content:
                 responseText,
-              created_date:
+              created_at:
                 new Date().toISOString(),
             }
           );
