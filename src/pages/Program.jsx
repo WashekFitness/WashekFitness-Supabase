@@ -358,21 +358,49 @@ export default function Program() {
 
           </div>
 
+          {/*
+           * The Link itself is now the button.
+           *
+           * Previously this was:
+           *
+           * <Link>
+           *   <Button>...</Button>
+           * </Link>
+           *
+           * which creates a button inside an anchor. On mobile
+           * browsers that can interfere with tap/click handling.
+           */}
+
           <Link
             to="/live-workout"
-            className="shrink-0"
+            className="
+              inline-flex
+              shrink-0
+              items-center
+              justify-center
+              gap-1.5
+              rounded-xl
+              bg-primary
+              px-3
+              py-2
+              text-sm
+              font-heading
+              font-semibold
+              text-primary-foreground
+              shadow-sm
+              transition-colors
+              hover:bg-primary/90
+              focus-visible:outline-none
+              focus-visible:ring-2
+              focus-visible:ring-ring
+              focus-visible:ring-offset-2
+              active:scale-[0.98]
+            "
           >
 
-            <Button
-              size="sm"
-              className="gap-1.5 rounded-xl font-heading font-semibold"
-            >
+            <Play className="w-3.5 h-3.5" />
 
-              <Play className="w-3.5 h-3.5" />
-
-              Live
-
-            </Button>
+            Live
 
           </Link>
 
