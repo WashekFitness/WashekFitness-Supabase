@@ -286,6 +286,14 @@ function formatPhotoDateHeading(
    PAGE
    ========================================================== */
 
+function getPhotoDisplayUrl(photo) {
+  return (
+    photo?.resolved_photo_url ||
+    photo?.photo_url ||
+    null
+  );
+}
+
 export default function ProgressPhotos() {
   const queryClient =
     useQueryClient();
@@ -477,17 +485,32 @@ export default function ProgressPhotos() {
       ],
 
       queryFn:
-        () =>
-          supabaseApi.entities.ProgressPhoto.filter(
-            {
-              created_by:
-                user.email,
-            },
+        async () => {
+          const rows =
+            await supabaseApi.entities.ProgressPhoto.filter(
+              {
+                created_by:
+                  user.email,
+              },
 
-            '-date',
+              '-date',
 
-            100
-          ),
+              100
+            );
+
+          return Promise.all(
+            rows.map(async (photo) => ({
+              ...photo,
+              resolved_photo_url:
+                photo?.photo_url
+                  ? await supabaseApi.storage.resolveMediaUrl(
+                      photo.photo_url,
+                      3600
+                    )
+                  : null,
+            }))
+          );
+        },
 
       enabled:
         !!user?.email,
@@ -714,17 +737,18 @@ export default function ProgressPhotos() {
           );
 
         if (
-          !uploaded?.file_url
+          !uploaded?.file_url ||
+          !uploaded?.path
         ) {
           throw new Error(
-            'The photo uploaded, but no photo URL was returned.'
+            'The photo uploaded, but no storage path or temporary URL was returned.'
           );
         }
 
         await createMutation.mutateAsync(
           {
             photo_url:
-              uploaded.file_url,
+              uploaded.path,
 
             date:
               today,
@@ -866,9 +890,10 @@ insights must contain personalized coaching analysis.
 `;
 
 
-        if (
-          !photo?.photo_url
-        ) {
+        const photoUrl =
+          getPhotoDisplayUrl(photo);
+
+        if (!photoUrl) {
           throw new Error(
             'This progress photo does not have a valid image URL.'
           );
@@ -884,7 +909,7 @@ insights must contain personalized coaching analysis.
               prompt,
 
               file_urls: [
-                photo.photo_url,
+                photoUrl,
               ],
 
               response_json_schema:
@@ -1945,7 +1970,7 @@ insights must contain personalized coaching analysis.
                   </p>
 
 
-                  {compareLeft?.photo_url ? (
+                  {getPhotoDisplayUrl(compareLeft) ? (
 
                     <button
                       type="button"
@@ -1960,14 +1985,14 @@ insights must contain personalized coaching analysis.
                       "
                       onClick={() =>
                         setLightboxUrl(
-                          compareLeft.photo_url
+                          getPhotoDisplayUrl(compareLeft)
                         )
                       }
                     >
 
                       <img
                         src={
-                          compareLeft.photo_url
+                          getPhotoDisplayUrl(compareLeft)
                         }
                         alt="Earlier progress"
                         className="
@@ -2029,7 +2054,7 @@ insights must contain personalized coaching analysis.
                   </p>
 
 
-                  {compareRight?.photo_url ? (
+                  {getPhotoDisplayUrl(compareRight) ? (
 
                     <button
                       type="button"
@@ -2044,14 +2069,14 @@ insights must contain personalized coaching analysis.
                       "
                       onClick={() =>
                         setLightboxUrl(
-                          compareRight.photo_url
+                          getPhotoDisplayUrl(compareRight)
                         )
                       }
                     >
 
                       <img
                         src={
-                          compareRight.photo_url
+                          getPhotoDisplayUrl(compareRight)
                         }
                         alt="Later progress"
                         className="
@@ -2631,7 +2656,7 @@ insights must contain personalized coaching analysis.
 
                           <img
                             src={
-                              photo.photo_url
+                              getPhotoDisplayUrl(photo)
                             }
                             alt="Progress"
                             className="
