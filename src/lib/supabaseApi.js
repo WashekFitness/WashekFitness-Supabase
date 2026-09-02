@@ -93,10 +93,7 @@ async function getProfile(
   }
 
   /*
-   * IMPORTANT:
-   *
-   * A missing row is NOT treated as a Free account.
-   * That was masking the actual problem.
+   * A missing profile is not silently treated as a Free user.
    */
   if (!data) {
     throw new Error(
@@ -520,35 +517,32 @@ function entity(
  * STORAGE
  * ------------------------------------------------------------
  *
- * IMPORTANT:
- *
- * The media bucket will be private.
+ * The media bucket is private.
  *
  * Permanent database references should use `path`, NOT
  * `file_url`, because signed URLs expire.
  *
- * `file_url` is still returned from uploadFile for backwards
- * compatibility with existing upload flows. It is a temporary
- * signed URL and should NOT be permanently stored in the DB.
+ * `file_url` is still returned by uploadFile for existing
+ * upload flows. It is a temporary signed URL.
  */
 
 
 /*
  * Convert an existing media URL into its storage path.
  *
- * This supports:
+ * Supports:
  *
- * 1. A raw storage path:
+ * 1. Raw storage path:
  *    user-id/folder/file.jpg
  *
- * 2. An old public Supabase storage URL:
+ * 2. Public Supabase URL:
  *    .../storage/v1/object/public/user-media/user-id/...
  *
- * 3. A signed Supabase storage URL:
+ * 3. Signed Supabase URL:
  *    .../storage/v1/object/sign/user-media/user-id/...
  *
- * This is useful while existing database records are migrated
- * from URLs to storage paths.
+ * 4. Authenticated Supabase URL:
+ *    .../storage/v1/object/authenticated/user-media/user-id/...
  */
 function getStoragePath(
   value
@@ -603,13 +597,6 @@ function getStoragePath(
         marker.length
       );
 
-    /*
-     * Supported formats:
-     *
-     * public/<bucket>/<path>
-     * sign/<bucket>/<path>
-     * authenticated/<bucket>/<path>
-     */
     const parts =
       afterMarker
         .split('/')
@@ -657,10 +644,6 @@ function getStoragePath(
 
 /*
  * Create a temporary signed URL for a user's media file.
- *
- * The caller should store the storage `path` permanently and
- * request a fresh signed URL whenever the file needs to be
- * displayed or sent to an external AI service.
  */
 async function createSignedUrl(
   value,
@@ -681,8 +664,7 @@ async function createSignedUrl(
     await requireUser();
 
   /*
-   * Never allow one authenticated user to request a signed
-   * URL for another user's folder.
+   * Users may only access their own folder.
    */
   const expectedPrefix =
     `${user.id}/`;
@@ -730,8 +712,6 @@ async function createSignedUrl(
 
 /*
  * Create temporary signed URLs for multiple files.
- *
- * Returns an array in the same order as the supplied values.
  */
 async function createSignedUrls(
   values = [],
@@ -815,13 +795,6 @@ async function createSignedUrls(
 
 /*
  * Resolve a media value into a temporary secure URL.
- *
- * If the supplied value is already a valid signed URL, it is
- * returned as-is. Otherwise it is treated as a storage path or
- * old Supabase public URL and converted into a fresh signed URL.
- *
- * This provides backwards compatibility while the rest of the
- * app is migrated from storing URLs to storing paths.
  */
 async function resolveMediaUrl(
   value,
@@ -838,11 +811,6 @@ async function resolveMediaUrl(
     return null;
   }
 
-  /*
-   * A currently signed Supabase URL can be reused until it
-   * expires. This avoids unnecessary requests during the same
-   * operation.
-   */
   if (
     raw.startsWith(
       'http://'
@@ -857,21 +825,12 @@ async function resolveMediaUrl(
       );
 
     /*
-     * If this isn't a Supabase media URL, leave it alone.
-     * This keeps the helper safe for unrelated URLs.
+     * Non-Supabase URLs are left untouched.
      */
     if (!path) {
       return raw;
     }
 
-    /*
-     * Existing public URLs must NOT be returned because the
-     * bucket is being made private.
-     *
-     * Existing signed URLs are acceptable temporarily, but
-     * generating a fresh signed URL is safer and makes this
-     * helper deterministic.
-     */
     return createSignedUrl(
       path,
       expiresIn
@@ -886,15 +845,20 @@ async function resolveMediaUrl(
 
 
 /*
- * Upload a file and return both:
+ * Upload a file and return:
  *
- * - path: permanent storage identifier
- * - file_url: temporary signed URL
+ * {
+ *   file_url: temporary signed URL,
+ *   path: permanent storage path
+ * }
  *
  * IMPORTANT:
  *
- * Consumers should persist `path` in their database rather
- * than `file_url`.
+ * There is intentionally NO Storage `.list()` verification
+ * here. The upload operation itself confirms the object was
+ * created. Listing is a separate permission-controlled
+ * operation and can incorrectly report "object not found"
+ * even when the object was successfully uploaded.
  */
 async function uploadFile(
   input,
@@ -930,12 +894,6 @@ async function uploadFile(
     `${user.id}/${actualFolder}/` +
     `${crypto.randomUUID()}-${safeName}`;
 
-  /*
-   * ----------------------------------------------------------
-   * UPLOAD
-   * ----------------------------------------------------------
-   */
-
   const {
     error
   } =
@@ -965,71 +923,11 @@ async function uploadFile(
   }
 
   /*
-   * ----------------------------------------------------------
-   * VERIFY THE OBJECT EXISTS
-   * ----------------------------------------------------------
+   * The upload succeeded.
    *
-   * Confirm Storage can see the object before attempting to
-   * create a signed URL.
+   * Now create the signed URL directly from the exact path
+   * that Storage just accepted.
    */
-
-  const objectName =
-    path.split('/').pop();
-
-  const {
-    data: uploadedFiles,
-    error: verifyError,
-  } =
-    await supabase
-      .storage
-      .from(
-        MEDIA_BUCKET
-      )
-      .list(
-        `${user.id}/${actualFolder}`,
-        {
-          search:
-            objectName,
-
-          limit:
-            1,
-        }
-      );
-
-  if (verifyError) {
-    throw errorFrom(
-      verifyError,
-      'The file uploaded, but Storage could not verify the object.'
-    );
-  }
-
-  const objectExists =
-    Array.isArray(
-      uploadedFiles
-    ) &&
-    uploadedFiles.some(
-      item =>
-        item?.name ===
-        objectName
-    );
-
-  if (!objectExists) {
-    throw new Error(
-      'The file upload completed, but the uploaded object could not be found in Storage.'
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * CREATE SECURE URL
-   * ----------------------------------------------------------
-   *
-   * The bucket is private, so never use getPublicUrl().
-   *
-   * The permanent value is `path`.
-   * `file_url` is only a temporary signed URL.
-   */
-
   const fileUrl =
     await createSignedUrl(
       path,
@@ -1061,10 +959,9 @@ async function invokeAI({
 } = {}) {
 
   /*
-   * Get the current authenticated session first.
-   * supabase-js will send the JWT when invoking the function.
+   * Make sure the browser has an authenticated session before
+   * invoking the Edge Function.
    */
-
   await requireUser();
 
   const {
@@ -1241,11 +1138,10 @@ export const supabaseApi = {
 
 
     /*
-     * IMPORTANT:
+     * Only updates normal profile fields.
      *
-     * updateMe ONLY updates the authenticated user's existing
-     * profile. It will NOT create a replacement profile and
-     * will NOT overwrite subscription fields.
+     * Subscription fields remain controlled by the Stripe
+     * subscription system.
      */
     updateMe:
       async (
@@ -1259,13 +1155,13 @@ export const supabaseApi = {
           ...patch,
         };
 
-        /*
-         * NEVER allow profile editing to alter these fields.
-         * Stripe is the authority for subscription state.
-         */
         delete safePatch.id;
         delete safePatch.user_id;
 
+        /*
+         * Never allow client profile updates to modify
+         * Stripe-controlled subscription state.
+         */
         delete safePatch.subscription_plan;
         delete safePatch.subscription_status;
         delete safePatch.stripe_customer_id;
