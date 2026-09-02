@@ -22,7 +22,7 @@ export const PLAN_HIERARCHY = [
  * Monthly Kael message allowances.
  */
 export const AI_MESSAGE_LIMITS = {
-  free: 25,
+  free: 100,
   progress: 300,
   performance: 800,
   elite: 2000,
