@@ -776,6 +776,12 @@ export default function FormLab() {
     useState(null);
 
   const [
+    videoPath,
+    setVideoPath,
+  ] =
+    useState(null);
+
+  const [
     uploading,
     setUploading,
   ] =
@@ -1030,15 +1036,20 @@ export default function FormLab() {
           );
 
         if (
-          !uploaded?.file_url
+          !uploaded?.file_url ||
+          !uploaded?.path
         ) {
           throw new Error(
-            'The video uploaded, but no video URL was returned.'
+            'The video uploaded, but no video URL or storage path was returned.'
           );
         }
 
         setVideoUrl(
           uploaded.file_url
+        );
+
+        setVideoPath(
+          uploaded.path
         );
 
         const nextParams =
@@ -1072,6 +1083,10 @@ export default function FormLab() {
         );
 
         setVideoUrl(
+          null
+        );
+
+        setVideoPath(
           null
         );
       } finally {
@@ -1472,6 +1487,7 @@ export default function FormLab() {
           await supabaseApi.entities.FormAnalysis.create(
             {
               video_url:
+                videoPath ||
                 videoUrl,
 
               exercise_name:
@@ -1548,6 +1564,10 @@ export default function FormLab() {
       );
 
       setVideoUrl(
+        null
+      );
+
+      setVideoPath(
         null
       );
 
