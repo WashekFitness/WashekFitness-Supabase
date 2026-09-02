@@ -92,6 +92,12 @@ async function getProfile(
     );
   }
 
+  /*
+   * IMPORTANT:
+   *
+   * A missing row is NOT treated as a Free account.
+   * That was masking the actual problem.
+   */
   if (!data) {
     throw new Error(
       'Your Washek Fitness profile could not be found. Your login still exists, but your profile record is missing or inaccessible.'
@@ -513,6 +519,30 @@ function entity(
  * ------------------------------------------------------------
  * STORAGE
  * ------------------------------------------------------------
+ *
+ * The user-media bucket is PRIVATE.
+ *
+ * Permanent database references must use the storage path.
+ *
+ * Example:
+ *
+ *   user-id/uploads/file.jpg
+ *
+ * Signed URLs are temporary and are only used when a component
+ * needs to display the media immediately.
+ */
+
+
+/*
+ * Convert a Supabase Storage URL or storage path into
+ * the permanent storage path.
+ *
+ * Supports:
+ *
+ * 1. Raw storage path
+ * 2. Public Supabase Storage URL
+ * 3. Signed Supabase Storage URL
+ * 4. Authenticated Supabase Storage URL
  */
 
 function getStoragePath(
@@ -530,7 +560,7 @@ function getStoragePath(
   }
 
   /*
-   * Already a Storage path.
+   * Already a storage path.
    */
   if (
     !raw.startsWith(
@@ -613,9 +643,12 @@ function getStoragePath(
 }
 
 
-async function createSignedUrl(
-  value,
-  expiresIn = 3600
+/*
+ * Verify that a storage path belongs to the currently
+ * authenticated user.
+ */
+async function validateOwnStoragePath(
+  value
 ) {
   const path =
     getStoragePath(
@@ -643,6 +676,32 @@ async function createSignedUrl(
       'You do not have permission to access this file.'
     );
   }
+
+  return {
+    path,
+    user,
+  };
+}
+
+
+/*
+ * Create a temporary signed URL.
+ *
+ * This is intentionally separate from uploadFile().
+ *
+ * If signed URL creation fails, the permanent storage path
+ * still exists and can be sent to ai-generate.
+ */
+async function createSignedUrl(
+  value,
+  expiresIn = 3600
+) {
+  const {
+    path
+  } =
+    await validateOwnStoragePath(
+      value
+    );
 
   const {
     data,
@@ -675,6 +734,9 @@ async function createSignedUrl(
 }
 
 
+/*
+ * Create temporary signed URLs for multiple files.
+ */
 async function createSignedUrls(
   values = [],
   expiresIn = 3600
@@ -755,6 +817,11 @@ async function createSignedUrls(
 }
 
 
+/*
+ * Resolve a stored media path or old URL into a signed URL.
+ *
+ * This is primarily for UI display.
+ */
 async function resolveMediaUrl(
   value,
   expiresIn = 3600
@@ -770,31 +837,34 @@ async function resolveMediaUrl(
     return null;
   }
 
-  if (
-    raw.startsWith(
-      'http://'
-    ) ||
-    raw.startsWith(
-      'https://'
-    )
-  ) {
-    const path =
-      getStoragePath(
-        raw
-      );
+  const path =
+    getStoragePath(
+      raw
+    );
 
-    if (!path) {
+  /*
+   * If this is not one of our Supabase Storage URLs,
+   * leave it untouched.
+   */
+  if (
+    !path
+  ) {
+    if (
+      raw.startsWith(
+        'http://'
+      ) ||
+      raw.startsWith(
+        'https://'
+      )
+    ) {
       return raw;
     }
 
-    return createSignedUrl(
-      path,
-      expiresIn
-    );
+    return null;
   }
 
   return createSignedUrl(
-    raw,
+    path,
     expiresIn
   );
 }
@@ -803,10 +873,32 @@ async function resolveMediaUrl(
 /*
  * Upload a file.
  *
- * `path` is the permanent Storage reference.
+ * IMPORTANT CHANGE:
  *
- * `file_url` remains a signed URL so existing UI previews
- * continue to work.
+ * The permanent storage path is now the authoritative value.
+ *
+ * We attempt to create a signed URL for existing UI consumers,
+ * but failure to create the signed URL does NOT invalidate the
+ * upload.
+ *
+ * This prevents:
+ *
+ * upload succeeds
+ *       ↓
+ * signed URL fails
+ *       ↓
+ * AI never gets invoked
+ *
+ * Instead:
+ *
+ * upload succeeds
+ *       ↓
+ * path returned
+ *       ↓
+ * AI can use the path
+ *
+ * Existing UI components still receive file_url whenever
+ * signed URL creation succeeds.
  */
 async function uploadFile(
   input,
@@ -871,15 +963,35 @@ async function uploadFile(
   }
 
   /*
-   * Keep returning a signed URL for the existing browser UI.
-   * The AI layer below converts this signed URL back into the
-   * permanent Storage path before invoking the Edge Function.
+   * IMPORTANT:
+   *
+   * The upload itself succeeded.
+   *
+   * Try to create the signed URL for existing components,
+   * but DO NOT throw if signing fails.
+   *
+   * The path is still valid and is the permanent identifier.
    */
-  const fileUrl =
-    await createSignedUrl(
-      path,
-      3600
-    );
+  let fileUrl =
+    null;
+
+  try {
+    fileUrl =
+      await createSignedUrl(
+        path,
+        3600
+      );
+  } catch {
+    /*
+     * Intentionally ignored.
+     *
+     * The caller still receives the permanent path.
+     *
+     * ai-generate can work from the storage path, and UI
+     * components that require a preview can request a signed
+     * URL separately with createSignedUrl().
+     */
+  }
 
   return {
     file_url:
@@ -904,39 +1016,42 @@ async function invokeAI({
   schema = null,
   type = 'general',
 } = {}) {
-
+  /*
+   * Make sure the user is authenticated before invoking AI.
+   *
+   * supabase-js sends the user's JWT to the Edge Function.
+   */
   await requireUser();
 
-
   /*
-   * For private user media, send the permanent Storage path to
-   * the Edge Function instead of relying on an expiring signed
-   * URL.
+   * IMPORTANT MEDIA HANDLING:
    *
-   * The Edge Function retrieves the object securely with its
-   * server-side Storage credentials.
+   * Convert Supabase Storage URLs into permanent storage paths
+   * before sending them to ai-generate.
    *
-   * Non-Supabase/external URLs are left unchanged.
+   * This is critical for PRIVATE buckets.
+   *
+   * ai-generate can then use its server-side service role to
+   * download the object directly from Supabase Storage.
+   *
+   * Non-Supabase URLs are left untouched.
    */
-  const aiFileUrls =
+  const normalizedFileUrls =
     Array.isArray(
       file_urls
     )
       ? file_urls.map(
           value => {
-            const storagePath =
+            const path =
               getStoragePath(
                 value
               );
 
-            return (
-              storagePath ||
-              value
-            );
+            return path ||
+              value;
           }
         )
       : [];
-
 
   const {
     data,
@@ -950,9 +1065,21 @@ async function invokeAI({
           body: {
             type,
             prompt,
+
+            /*
+             * Send storage paths rather than temporary signed
+             * URLs whenever the media belongs to user-media.
+             */
             file_urls:
-              aiFileUrls,
+              normalizedFileUrls,
+
+            /*
+             * Keep the existing model argument for compatibility.
+             * The server-side ai-generate function remains the
+             * authority over the actual model used.
+             */
             model,
+
             schema:
               schema ||
               response_json_schema ||
@@ -1016,7 +1143,6 @@ async function sendEmail({
   email,
   message,
 } = {}) {
-
   const cleanName =
     typeof name ===
     'string'
@@ -1105,18 +1231,22 @@ async function sendEmail({
  */
 
 export const supabaseApi = {
-
   auth: {
-
     me:
       currentUser,
 
 
+    /*
+     * IMPORTANT:
+     *
+     * updateMe ONLY updates the authenticated user's existing
+     * profile. It will NOT create a replacement profile and
+     * will NOT overwrite subscription fields.
+     */
     updateMe:
       async (
         patch
       ) => {
-
         const user =
           await requireUser();
 
@@ -1124,12 +1254,13 @@ export const supabaseApi = {
           ...patch,
         };
 
+        /*
+         * NEVER allow profile editing to alter these fields.
+         * Stripe is the authority for subscription state.
+         */
         delete safePatch.id;
         delete safePatch.user_id;
 
-        /*
-         * Stripe controls these fields.
-         */
         delete safePatch.subscription_plan;
         delete safePatch.subscription_status;
         delete safePatch.stripe_customer_id;
@@ -1176,7 +1307,6 @@ export const supabaseApi = {
 
     logout:
       async () => {
-
         const {
           error
         } =
@@ -1199,12 +1329,10 @@ export const supabaseApi = {
           '/login'
         );
       },
-
   },
 
 
   entities: {
-
     WorkoutProgram:
       entity(
         'workout_programs'
@@ -1239,19 +1367,14 @@ export const supabaseApi = {
       entity(
         'kael_messages'
       ),
-
   },
 
 
   storage: {
     uploadFile,
-
     createSignedUrl,
-
     createSignedUrls,
-
     resolveMediaUrl,
-
     getStoragePath,
   },
 
@@ -1266,7 +1389,6 @@ export const supabaseApi = {
     send:
       sendEmail,
   },
-
 };
 
 
