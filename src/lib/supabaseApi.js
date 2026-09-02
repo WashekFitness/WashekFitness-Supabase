@@ -69,21 +69,15 @@ async function requireUser() {
  * ------------------------------------------------------------
  */
 
-async function getProfile(
-  userId
-) {
+async function getProfile(userId) {
   const {
     data,
     error
-  } =
-    await supabase
-      .from('profiles')
-      .select('*')
-      .eq(
-        'id',
-        userId
-      )
-      .maybeSingle();
+  } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
 
   if (error) {
     throw errorFrom(
@@ -92,12 +86,6 @@ async function getProfile(
     );
   }
 
-  /*
-   * IMPORTANT:
-   *
-   * A missing row is NOT treated as a Free account.
-   * That was masking the actual problem.
-   */
   if (!data) {
     throw new Error(
       'Your Washek Fitness profile could not be found. Your login still exists, but your profile record is missing or inaccessible.'
@@ -218,10 +206,8 @@ function applyFilters(
     }
 
     if (
-      value ===
-        undefined ||
-      value ===
-        null
+      value === undefined ||
+      value === null
     ) {
       continue;
     }
@@ -519,37 +505,8 @@ function entity(
  * ------------------------------------------------------------
  * STORAGE
  * ------------------------------------------------------------
- *
- * IMPORTANT:
- *
- * The media bucket will be private.
- *
- * Permanent database references should use `path`, NOT
- * `file_url`, because signed URLs expire.
- *
- * `file_url` is still returned from uploadFile for backwards
- * compatibility with existing upload flows. It is a temporary
- * signed URL and should NOT be permanently stored in the DB.
  */
 
-
-/*
- * Convert an existing media URL into its storage path.
- *
- * This supports:
- *
- * 1. A raw storage path:
- *    user-id/folder/file.jpg
- *
- * 2. An old public Supabase storage URL:
- *    .../storage/v1/object/public/user-media/user-id/...
- *
- * 3. A signed Supabase storage URL:
- *    .../storage/v1/object/sign/user-media/user-id/...
- *
- * This is useful while existing database records are migrated
- * from URLs to storage paths.
- */
 function getStoragePath(
   value
 ) {
@@ -568,12 +525,8 @@ function getStoragePath(
    * Already a storage path.
    */
   if (
-    !raw.startsWith(
-      'http://'
-    ) &&
-    !raw.startsWith(
-      'https://'
-    )
+    !raw.startsWith('http://') &&
+    !raw.startsWith('https://')
   ) {
     return raw;
   }
@@ -583,7 +536,7 @@ function getStoragePath(
       new URL(raw);
 
     const marker =
-      `/storage/v1/object/`;
+      '/storage/v1/object/';
 
     const markerIndex =
       url.pathname.indexOf(
@@ -591,8 +544,7 @@ function getStoragePath(
       );
 
     if (
-      markerIndex ===
-      -1
+      markerIndex === -1
     ) {
       return null;
     }
@@ -603,21 +555,13 @@ function getStoragePath(
         marker.length
       );
 
-    /*
-     * Supported formats:
-     *
-     * public/<bucket>/<path>
-     * sign/<bucket>/<path>
-     * authenticated/<bucket>/<path>
-     */
     const parts =
       afterMarker
         .split('/')
         .filter(Boolean);
 
     if (
-      parts.length <
-      3
+      parts.length < 3
     ) {
       return null;
     }
@@ -626,12 +570,9 @@ function getStoragePath(
       parts.shift();
 
     if (
-      accessType !==
-        'public' &&
-      accessType !==
-        'sign' &&
-      accessType !==
-        'authenticated'
+      accessType !== 'public' &&
+      accessType !== 'sign' &&
+      accessType !== 'authenticated'
     ) {
       return null;
     }
@@ -640,8 +581,7 @@ function getStoragePath(
       parts.shift();
 
     if (
-      bucket !==
-      MEDIA_BUCKET
+      bucket !== MEDIA_BUCKET
     ) {
       return null;
     }
@@ -655,13 +595,6 @@ function getStoragePath(
 }
 
 
-/*
- * Create a temporary signed URL for a user's media file.
- *
- * The caller should store the storage `path` permanently and
- * request a fresh signed URL whenever the file needs to be
- * displayed or sent to an external AI service.
- */
 async function createSignedUrl(
   value,
   expiresIn = 3600
@@ -680,10 +613,6 @@ async function createSignedUrl(
   const user =
     await requireUser();
 
-  /*
-   * Never allow one authenticated user to request a signed
-   * URL for another user's folder.
-   */
   const expectedPrefix =
     `${user.id}/`;
 
@@ -728,21 +657,13 @@ async function createSignedUrl(
 }
 
 
-/*
- * Create temporary signed URLs for multiple files.
- *
- * Returns an array in the same order as the supplied values.
- */
 async function createSignedUrls(
   values = [],
   expiresIn = 3600
 ) {
   if (
-    !Array.isArray(
-      values
-    ) ||
-    values.length ===
-      0
+    !Array.isArray(values) ||
+    values.length === 0
   ) {
     return [];
   }
@@ -755,8 +676,7 @@ async function createSignedUrls(
       .filter(Boolean);
 
   if (
-    paths.length ===
-    0
+    paths.length === 0
   ) {
     return [];
   }
@@ -803,8 +723,7 @@ async function createSignedUrls(
   }
 
   return (
-    data ||
-    []
+    data || []
   ).map(
     item =>
       item?.signedUrl ||
@@ -813,16 +732,6 @@ async function createSignedUrls(
 }
 
 
-/*
- * Resolve a media value into a temporary secure URL.
- *
- * If the supplied value is already a valid signed URL, it is
- * returned as-is. Otherwise it is treated as a storage path or
- * old Supabase public URL and converted into a fresh signed URL.
- *
- * This provides backwards compatibility while the rest of the
- * app is migrated from storing URLs to storing paths.
- */
 async function resolveMediaUrl(
   value,
   expiresIn = 3600
@@ -838,40 +747,19 @@ async function resolveMediaUrl(
     return null;
   }
 
-  /*
-   * A currently signed Supabase URL can be reused until it
-   * expires. This avoids unnecessary requests during the same
-   * operation.
-   */
   if (
-    raw.startsWith(
-      'http://'
-    ) ||
-    raw.startsWith(
-      'https://'
-    )
+    raw.startsWith('http://') ||
+    raw.startsWith('https://')
   ) {
     const path =
       getStoragePath(
         raw
       );
 
-    /*
-     * If this isn't a Supabase media URL, leave it alone.
-     * This keeps the helper safe for unrelated URLs.
-     */
     if (!path) {
       return raw;
     }
 
-    /*
-     * Existing public URLs must NOT be returned because the
-     * bucket is being made private.
-     *
-     * Existing signed URLs are acceptable temporarily, but
-     * generating a fresh signed URL is safer and makes this
-     * helper deterministic.
-     */
     return createSignedUrl(
       path,
       expiresIn
@@ -885,17 +773,6 @@ async function resolveMediaUrl(
 }
 
 
-/*
- * Upload a file and return both:
- *
- * - path: permanent storage identifier
- * - file_url: temporary signed URL
- *
- * IMPORTANT:
- *
- * Consumers should persist `path` in their database rather
- * than `file_url`.
- */
 async function uploadFile(
   input,
   folder = 'uploads'
@@ -959,9 +836,8 @@ async function uploadFile(
   }
 
   /*
-   * The bucket will be private, so never use getPublicUrl().
-   *
-   * Return a temporary signed URL for existing upload flows.
+   * We still return a signed URL because existing UI flows
+   * use file_url immediately after uploading.
    */
   const fileUrl =
     await createSignedUrl(
@@ -982,23 +858,68 @@ async function uploadFile(
  * ------------------------------------------------------------
  * AI
  * ------------------------------------------------------------
+ *
+ * IMPORTANT:
+ *
+ * Media AI requests now send storage paths separately from
+ * temporary URLs.
+ *
+ * `file_paths` are permanent storage references.
+ * `file_urls` remains supported for backwards compatibility.
+ *
+ * The Edge Function can therefore create fresh signed URLs
+ * server-side instead of depending on an old/expired URL.
  */
 
 async function invokeAI({
   prompt,
   file_urls = [],
+  file_paths = [],
   model = null,
   response_json_schema = null,
   schema = null,
   type = 'general',
 } = {}) {
 
-  /*
-   * Get the current authenticated session first.
-   * supabase-js will send the JWT when invoking the function.
-   */
-
   await requireUser();
+
+  const normalizedFilePaths =
+    Array.isArray(file_paths)
+      ? file_paths
+          .map(
+            getStoragePath
+          )
+          .filter(Boolean)
+      : [];
+
+  /*
+   * If callers only supplied URLs, attempt to extract the
+   * underlying storage paths as well.
+   */
+  const extractedPaths =
+    Array.isArray(file_urls)
+      ? file_urls
+          .map(
+            getStoragePath
+          )
+          .filter(Boolean)
+      : [];
+
+  const combinedPaths =
+    [
+      ...normalizedFilePaths,
+      ...extractedPaths,
+    ];
+
+  /*
+   * Remove duplicate paths while preserving order.
+   */
+  const uniqueFilePaths =
+    [
+      ...new Set(
+        combinedPaths
+      ),
+    ];
 
   const {
     data,
@@ -1012,8 +933,20 @@ async function invokeAI({
           body: {
             type,
             prompt,
+
+            /*
+             * Existing callers remain compatible.
+             */
             file_urls,
+
+            /*
+             * New canonical media references.
+             */
+            file_paths:
+              uniqueFilePaths,
+
             model,
+
             schema:
               schema ||
               response_json_schema ||
@@ -1030,8 +963,7 @@ async function invokeAI({
   }
 
   if (
-    data?.success ===
-    false
+    data?.success === false
   ) {
     const err =
       new Error(
@@ -1079,20 +1011,17 @@ async function sendEmail({
 } = {}) {
 
   const cleanName =
-    typeof name ===
-    'string'
+    typeof name === 'string'
       ? name.trim()
       : '';
 
   const cleanEmail =
-    typeof email ===
-    'string'
+    typeof email === 'string'
       ? email.trim()
       : '';
 
   const cleanMessage =
-    typeof message ===
-    'string'
+    typeof message === 'string'
       ? message.trim()
       : '';
 
@@ -1146,8 +1075,7 @@ async function sendEmail({
   }
 
   if (
-    data?.success ===
-    false
+    data?.success === false
   ) {
     throw new Error(
       data.error ||
@@ -1172,14 +1100,6 @@ export const supabaseApi = {
     me:
       currentUser,
 
-
-    /*
-     * IMPORTANT:
-     *
-     * updateMe ONLY updates the authenticated user's existing
-     * profile. It will NOT create a replacement profile and
-     * will NOT overwrite subscription fields.
-     */
     updateMe:
       async (
         patch
@@ -1192,10 +1112,6 @@ export const supabaseApi = {
           ...patch,
         };
 
-        /*
-         * NEVER allow profile editing to alter these fields.
-         * Stripe is the authority for subscription state.
-         */
         delete safePatch.id;
         delete safePatch.user_id;
 
@@ -1242,7 +1158,6 @@ export const supabaseApi = {
         );
       },
 
-
     logout:
       async () => {
 
@@ -1260,7 +1175,6 @@ export const supabaseApi = {
           );
         }
       },
-
 
     redirectToLogin:
       () => {
