@@ -258,53 +258,34 @@ function MovementBaseline({ trainingType }) {
       setValues(v);
 
       if (b.custom_entries) {
-        setCustomEntries(b.custom_entries);
+        setCustomEntries(
+          Array.isArray(b.custom_entries)
+            ? b.custom_entries
+            : []
+        );
       }
     }
   }, [baselines]);
 
-  const saveBaseline = async () => {
-    setSaving(true);
-
-    const data = {
-      recorded_date: today,
-      custom_entries: customEntries,
-    };
-
-    ALL_BASELINE_MOVEMENTS.forEach(m => {
-      if (values[m.key]) {
-        data[m.key] = parseFloat(values[m.key]);
-      }
-    });
-
-    if (baselines[0]?.recorded_date === today) {
-      await supabaseApi.entities.MovementBaseline.update(
-        baselines[0].id,
-        data
-      );
-    } else {
-      await supabaseApi.entities.MovementBaseline.create(data);
-    }
-
-    queryClient.invalidateQueries({
-      queryKey: ['baselines'],
-    });
-
-    toast.success(
-      'Baseline saved! Kael will use this to adjust your workouts.'
-    );
-
-    setSaving(false);
+  const updateValue = (key, value) => {
+    setValues(prev => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
   const addCustom = () => {
-    if (!newCustomName.trim()) return;
+    const name = newCustomName.trim();
+
+    if (!name || !newCustomVal) {
+      return;
+    }
 
     setCustomEntries(prev => [
       ...prev,
       {
-        name: newCustomName.trim(),
-        value: newCustomVal.trim(),
+        name,
+        value: Number(newCustomVal),
       },
     ]);
 
@@ -312,62 +293,117 @@ function MovementBaseline({ trainingType }) {
     setNewCustomVal('');
   };
 
+  const removeCustom = index => {
+    setCustomEntries(prev =>
+      prev.filter((_, i) => i !== index)
+    );
+  };
+
+  const saveBaseline = async () => {
+    setSaving(true);
+
+    try {
+      const payload = {
+        recorded_date: today,
+        training_type: trainingType,
+        custom_entries: customEntries,
+      };
+
+      ALL_BASELINE_MOVEMENTS.forEach(m => {
+        if (values[m.key] !== undefined && values[m.key] !== '') {
+          payload[m.key] = Number(values[m.key]);
+        }
+      });
+
+      const existing = baselines[0];
+
+      if (existing?.id) {
+        await supabaseApi.entities.MovementBaseline.update(
+          existing.id,
+          payload
+        );
+      } else {
+        await supabaseApi.entities.MovementBaseline.create(
+          payload
+        );
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ['baselines'],
+      });
+
+      toast.success('Movement baseline saved.');
+    } catch (error) {
+      console.error(
+        'Failed to save movement baseline:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Could not save movement baseline.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="space-y-4 pb-4">
-      <div className="bg-muted/40 rounded-2xl p-4 border border-border">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Log your current maxes here. This{' '}
-          <strong>doesn't affect your live workout</strong> — it's
-          just so Kael knows where you're at and can program
-          smarter.
-        </p>
+    <Card className="p-4 md:p-6">
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="font-heading font-bold text-lg">
+            Movement Baseline
+          </h2>
+
+          <p className="text-sm text-muted-foreground mt-1">
+            Record your current numbers so Kael can use them
+            when evaluating progression.
+          </p>
+        </div>
+
+        <Badge variant="outline">
+          Baseline
+        </Badge>
       </div>
 
       {showCalisthenics && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Calisthenics Maxes
+        <div className="mb-6">
+          <h3 className="font-semibold text-sm mb-3">
+            Calisthenics
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            {CALISTHENICS_MOVEMENTS.map(
-              ({ key, label, unit }) => (
-                <MovementInput
-                  key={key}
-                  label={label}
-                  unit={unit}
-                  value={values[key]}
-                  onChange={v =>
-                    setValues(prev => ({
-                      ...prev,
-                      [key]: v,
-                    }))
-                  }
-                />
-              )
-            )}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {CALISTHENICS_MOVEMENTS.map(m => (
+              <MovementInput
+                key={m.key}
+                label={m.label}
+                unit={m.unit}
+                value={values[m.key]}
+                onChange={value =>
+                  updateValue(m.key, value)
+                }
+              />
+            ))}
           </div>
         </div>
       )}
 
       {showWeights && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Weight PRs (1RM)
+        <div className="mb-6">
+          <h3 className="font-semibold text-sm mb-3">
+            Weight Training
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            {WEIGHT_MOVEMENTS.map(({ key, label }) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {WEIGHT_MOVEMENTS.map(m => (
               <MovementInput
-                key={key}
-                label={label}
+                key={m.key}
+                label={m.label}
                 unit={weightUnit}
-                value={values[key]}
-                onChange={v =>
-                  setValues(prev => ({
-                    ...prev,
-                    [key]: v,
-                  }))
+                value={values[m.key]}
+                onChange={value =>
+                  updateValue(m.key, value)
                 }
               />
             ))}
@@ -376,128 +412,301 @@ function MovementBaseline({ trainingType }) {
       )}
 
       {showWeightedCali && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-            Weighted Calisthenics PRs (Max Added Weight)
+        <div className="mb-6">
+          <h3 className="font-semibold text-sm mb-3">
+            Weighted Calisthenics
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            {WEIGHTED_CALI_MOVEMENTS.map(
-              ({ key, label }) => (
-                <MovementInput
-                  key={key}
-                  label={label}
-                  unit={weightUnit}
-                  value={values[key]}
-                  onChange={v =>
-                    setValues(prev => ({
-                      ...prev,
-                      [key]: v,
-                    }))
-                  }
-                />
-              )
-            )}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {WEIGHTED_CALI_MOVEMENTS.map(m => (
+              <MovementInput
+                key={m.key}
+                label={m.label}
+                unit={weightUnit}
+                value={values[m.key]}
+                onChange={value =>
+                  updateValue(m.key, value)
+                }
+              />
+            ))}
           </div>
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-semibold">
-          Custom Movement
-        </p>
+      <div className="mb-6">
+        <h3 className="font-semibold text-sm mb-3">
+          Custom Movements
+        </h3>
 
-        <div className="flex gap-2">
+        {customEntries.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {customEntries.map((entry, index) => (
+              <div
+                key={`${entry.name}-${index}`}
+                className="flex items-center justify-between gap-3 border border-border rounded-xl p-3"
+              >
+                <div>
+                  <p className="font-medium text-sm">
+                    {entry.name}
+                  </p>
+
+                  <p className="text-xs text-muted-foreground">
+                    {entry.value}
+                  </p>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    removeCustom(index)
+                  }
+                >
+                  <Minus className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-[1fr_120px_auto] gap-2">
           <Input
-            placeholder="e.g. Typewriter Pull Up"
             value={newCustomName}
             onChange={e =>
               setNewCustomName(e.target.value)
             }
-            className="h-9 text-sm flex-1"
+            placeholder="Movement"
           />
 
           <Input
-            placeholder="e.g. 3 reps"
+            type="number"
             value={newCustomVal}
             onChange={e =>
               setNewCustomVal(e.target.value)
             }
-            className="h-9 text-sm w-28"
+            placeholder="Value"
           />
 
           <Button
-            size="sm"
+            type="button"
             variant="outline"
             onClick={addCustom}
           >
             <Plus className="w-4 h-4" />
           </Button>
         </div>
-
-        {customEntries.map((c, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between text-sm"
-          >
-            <span>{c.name}</span>
-
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">
-                {c.value}
-              </span>
-
-              <button
-                onClick={() =>
-                  setCustomEntries(prev =>
-                    prev.filter((_, j) => j !== i)
-                  )
-                }
-                className="text-destructive hover:text-destructive/80"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ))}
       </div>
 
       <Button
-        className="w-full h-12 font-heading font-semibold"
         onClick={saveBaseline}
         disabled={saving}
+        className="w-full"
       >
-        {saving ? 'Saving...' : 'Save My Baseline'}
+        {saving
+          ? 'Saving...'
+          : 'Save Movement Baseline'}
       </Button>
-    </div>
+    </Card>
   );
 }
 
-// ─── Elite Live Adjustment ──────────────────────────────
+// ─── Exercise Card ──────────────────────────────────────
+function ExerciseCard({
+  exercise,
+  index,
+  completedSets,
+  currentSet,
+  onCompleteSet,
+  onUndoSet,
+  onRequestAdjustment,
+  canAdjust,
+  adjusted,
+}) {
+  const completed =
+    completedSets?.length || 0;
+
+  const totalSets =
+    Math.max(
+      1,
+      Number(exercise?.sets) || 1
+    );
+
+  const isComplete =
+    completed >= totalSets;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-4 md:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Badge variant="secondary">
+                {index + 1}
+              </Badge>
+
+              {adjusted && (
+                <Badge className="gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Adjusted
+                </Badge>
+              )}
+            </div>
+
+            <h3 className="font-heading font-bold text-lg truncate">
+              {exercise?.name || 'Exercise'}
+            </h3>
+
+            <p className="text-sm text-muted-foreground mt-1">
+              {exercise?.sets || 1} sets ×{' '}
+              {exercise?.reps || '—'}
+            </p>
+          </div>
+
+          <Dumbbell className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+        </div>
+
+        {exercise?.notes && (
+          <div className="mt-4 rounded-xl bg-muted/50 p-3">
+            <p className="text-sm">
+              {exercise.notes}
+            </p>
+          </div>
+        )}
+
+        {exercise?.activation_cue && (
+          <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
+              Activation Cue
+            </p>
+
+            <p className="text-sm">
+              {exercise.activation_cue}
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 mt-5">
+          {Array.from({
+            length: totalSets,
+          }).map((_, setNumber) => {
+            const done =
+              setNumber <
+              completed;
+
+            const active =
+              setNumber ===
+              currentSet &&
+              !done;
+
+            return (
+              <button
+                key={setNumber}
+                type="button"
+                onClick={() =>
+                  done
+                    ? onUndoSet(setNumber)
+                    : onCompleteSet(setNumber)
+                }
+                className={cn(
+                  'flex-1 h-12 rounded-xl border flex items-center justify-center transition',
+                  done &&
+                    'bg-primary text-primary-foreground border-primary',
+                  active &&
+                    !done &&
+                    'border-primary text-primary',
+                  !done &&
+                    !active &&
+                    'border-border text-muted-foreground'
+                )}
+              >
+                {done ? (
+                  <CheckCircle2 className="w-5 h-5" />
+                ) : (
+                  <span className="font-semibold text-sm">
+                    Set {setNumber + 1}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-2 mt-4">
+          <Button
+            className="flex-1"
+            onClick={() =>
+              onCompleteSet(currentSet)
+            }
+            disabled={
+              isComplete ||
+              currentSet >= totalSets
+            }
+          >
+            <CheckCircle2 className="w-4 h-4 mr-2" />
+            Complete Set
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() =>
+              onUndoSet(
+                Math.max(
+                  0,
+                  completed - 1
+                )
+              )
+            }
+            disabled={completed === 0}
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="mt-4">
+          {canAdjust ? (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={onRequestAdjustment}
+            >
+              <Sparkles className="w-4 h-4" />
+              Adjust With Kael
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              disabled
+            >
+              <Lock className="w-4 h-4" />
+              Elite Adjustment
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Live Adjustment Panel ─────────────────────────────
 function LiveAdjustmentPanel({
   exercise,
   exerciseIndex,
   setIndex,
   totalSets,
+  completedCount,
   repsAchieved,
-  completedSets,
-  trainingType,
   seconds,
-  onApply,
+  trainingType,
+  feedback,
+  setFeedback,
+  loading,
+  setLoading,
+  lastAdjustment,
+  setLastAdjustment,
+  applyAdjustment,
   disabled,
 }) {
-  const [feedback, setFeedback] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [lastAdjustment, setLastAdjustment] =
-    useState('');
-
-  const completedCount = Array.from({
-    length: totalSets,
-  }).filter(
-    (_, si) =>
-      completedSets[`${exerciseIndex}-${si}`]
-  ).length;
-
   const requestAdjustment = async () => {
     if (!exercise || loading || disabled) return;
 
@@ -556,7 +765,7 @@ Return ONLY JSON:
 }`;
 
       const result = await supabaseApi.ai.invoke({
-        type: 'live_workout',
+        type: 'live_workout_adjustment',
         prompt,
         response_json_schema: {
           type: 'object',
@@ -609,27 +818,22 @@ Return ONLY JSON:
           Number(result.adjusted_exercise.sets) ||
             totalSets
         ),
-        rest_seconds:
-          Number(result.adjusted_exercise.rest_seconds) ||
-          exercise.rest_seconds ||
-          60,
       };
 
-      onApply(adjusted);
+      applyAdjustment(adjusted);
 
       const summary =
         result.adjustment_summary ||
         'Kael adjusted the exercise based on your current performance.';
 
+      const safety =
+        result.safety_note;
+
       setLastAdjustment(
-        result.safety_note
-          ? `${summary} ${result.safety_note}`
+        safety
+          ? `${summary} ${safety}`
           : summary
       );
-
-      setFeedback('');
-
-      toast.success('Kael adjusted your workout in real time.');
     } catch (error) {
       console.error(
         'Live workout adjustment failed:',
@@ -638,7 +842,7 @@ Return ONLY JSON:
 
       toast.error(
         error?.message ||
-          'Kael could not adjust this exercise right now.'
+          'Could not adjust this exercise.'
       );
     } finally {
       setLoading(false);
@@ -646,125 +850,106 @@ Return ONLY JSON:
   };
 
   return (
-    <div className="mt-4 border border-chart-4/30 bg-chart-4/5 rounded-2xl p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-chart-4" />
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
 
-        <div className="flex-1">
-          <p className="text-xs font-bold uppercase tracking-wider text-chart-4">
-            Elite Live Adjustment
-          </p>
+            <h3 className="font-semibold">
+              Live Kael Adjustment
+            </h3>
+          </div>
 
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            Tell Kael what you're feeling and he'll adjust the
-            remaining work now.
+          <p className="text-xs text-muted-foreground mt-1">
+            Elite can adapt the current exercise while you
+            train.
           </p>
         </div>
 
-        <Badge
-          variant="outline"
-          className="text-[9px] border-chart-4/30 text-chart-4"
-        >
-          ELITE
-        </Badge>
+        {!disabled && (
+          <Badge>
+            Elite
+          </Badge>
+        )}
       </div>
 
       <Textarea
         value={feedback}
-        onChange={e => setFeedback(e.target.value)}
-        placeholder='e.g. "This feels too easy" or "My shoulder is getting tight" or "I barely hit the target reps."'
-        className="min-h-[72px] text-xs resize-none bg-background/60"
+        onChange={e =>
+          setFeedback(e.target.value)
+        }
+        placeholder="How does this set feel? Too easy, too hard, fatigue, technique issue, pain, etc."
+        className="min-h-[90px]"
         disabled={loading || disabled}
       />
 
       <Button
-        type="button"
-        className="w-full h-10 font-heading font-semibold"
+        className="w-full mt-3"
         onClick={requestAdjustment}
-        disabled={loading || disabled}
+        disabled={
+          loading ||
+          disabled ||
+          !exercise
+        }
       >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-            Kael is adjusting...
-          </span>
-        ) : (
-          <>
-            <Zap className="w-4 h-4 mr-2" />
-            Adjust This Exercise
-          </>
-        )}
+        <Zap className="w-4 h-4 mr-2" />
+
+        {loading
+          ? 'Kael is adjusting...'
+          : 'Adjust This Exercise'}
       </Button>
 
       {lastAdjustment && (
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-background/70 border border-chart-4/20">
-          <MessageSquare className="w-4 h-4 text-chart-4 shrink-0 mt-0.5" />
+        <div className="mt-4 rounded-xl bg-primary/5 border border-primary/20 p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
+            Kael
+          </p>
 
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-chart-4 mb-1">
-              Kael's Adjustment
-            </p>
-
-            <p className="text-xs leading-relaxed">
-              {lastAdjustment}
-            </p>
-          </div>
+          <p className="text-sm">
+            {lastAdjustment}
+          </p>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
-// ─── Post Workout Checkin ──────────────────────────────
-function PostWorkoutCheckin({
+// ─── Workout Check-In ──────────────────────────────────
+function WorkoutCheckIn({
   log,
-  onSave,
-  canAdjust,
+  exerciseSummary,
   program,
-  onProgramUpdated,
+  onSave,
 }) {
   const [checkin, setCheckin] = useState('');
   const [aiNote, setAiNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
+  const currentWeek =
+    program?.current_week || 1;
+
+  const nextMicrocycle =
+    program?.microcycles?.find(
+      m =>
+        m.week_number ===
+        currentWeek + 1
+    );
+
   const submit = async () => {
-    if (!checkin.trim()) return;
+    if (!checkin.trim() || loading) {
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const exerciseSummary = (
-        log?.exercises_completed || []
-      )
-        .map(
-          e =>
-            `${e.name}: ${e.sets_completed} sets, ${e.reps_achieved} reps`
-        )
-        .join('\n');
+      const elitePrompt = `You are Kael, the athlete's coach.
 
-      if (canAdjust && program) {
-        const currentWeek = program.current_week || 1;
+The athlete just finished this workout and provided feedback.
 
-        const nextMicrocycle =
-          program.microcycles?.find(
-            m => m.week_number === currentWeek + 1
-          ) || null;
-
-        const trainingType =
-          program?.training_type || 'calisthenics';
-
-        const typeLabel = {
-          calisthenics: 'calisthenics',
-          weighted_calisthenics:
-            'weighted calisthenics',
-          weights: 'weight training',
-          hybrid: 'hybrid training',
-        }[trainingType];
-
-        const elitePrompt = `You are Kael, an elite ${typeLabel} coach. An athlete just finished a workout and gave you feedback.
-
-POST-WORKOUT FEEDBACK:
+ATHLETE CHECK-IN:
 "${checkin}"
 
 EXERCISES COMPLETED TODAY:
@@ -812,131 +997,130 @@ Respond in JSON:
   ]
 }`;
 
-        const result = await supabaseApi.ai.invoke({
-          type: 'live_workout',
-          prompt: elitePrompt,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              coach_response: {
-                type: 'string',
-              },
-              adjustments_summary: {
-                type: 'string',
-              },
-              adjusted_exercises: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: {
-                      type: 'string',
-                    },
-                    sets: {
-                      type: 'number',
-                    },
-                    reps: {
-                      type: 'string',
-                    },
-                    rest_seconds: {
-                      type: 'number',
-                    },
-                    notes: {
-                      type: 'string',
-                    },
-                    activation_cue: {
-                      type: 'string',
-                    },
+      const result = await supabaseApi.ai.invoke({
+        type: 'live_workout_adjustment',
+        prompt: elitePrompt,
+        response_json_schema: {
+          type: 'object',
+          properties: {
+            coach_response: {
+              type: 'string',
+            },
+            adjustments_summary: {
+              type: 'string',
+            },
+            adjusted_exercises: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: {
+                    type: 'string',
+                  },
+                  sets: {
+                    type: 'number',
+                  },
+                  reps: {
+                    type: 'string',
+                  },
+                  rest_seconds: {
+                    type: 'number',
+                  },
+                  notes: {
+                    type: 'string',
+                  },
+                  activation_cue: {
+                    type: 'string',
                   },
                 },
+                required: [
+                  'name',
+                  'sets',
+                  'reps',
+                  'rest_seconds',
+                  'notes',
+                  'activation_cue',
+                ],
               },
             },
           },
-        });
+          required: [
+            'coach_response',
+            'adjustments_summary',
+            'adjusted_exercises',
+          ],
+        },
+      });
 
-        const note = `${result.coach_response}\n\n📋 Next workout adjusted: ${result.adjustments_summary}`;
+      setAiNote(
+        result?.coach_response ||
+          ''
+      );
 
-        setAiNote(note);
-
-        await onSave(checkin, note);
-
-        if (
-          nextMicrocycle &&
-          result.adjusted_exercises?.length > 0
-        ) {
-          const updatedMicrocycles =
-            program.microcycles.map(mc => {
+      /*
+       * Save the athlete's feedback and Kael's response.
+       *
+       * If a next-week program exists, apply the returned
+       * adjusted exercises to the matching day.
+       */
+      if (
+        result?.adjusted_exercises?.length &&
+        nextMicrocycle
+      ) {
+        const updatedMicrocycles =
+          program.microcycles.map(
+            microcycle => {
               if (
-                mc.week_number !==
+                microcycle.week_number !==
                 currentWeek + 1
               ) {
-                return mc;
+                return microcycle;
               }
 
-              const updatedDays = mc.days.map(d => {
-                if (
-                  d.day_name ===
-                  log?.day_name
-                ) {
-                  return {
-                    ...d,
-                    exercises:
-                      result.adjusted_exercises,
-                  };
-                }
-
-                return d;
-              });
-
               return {
-                ...mc,
-                days: updatedDays,
-              };
-            });
+                ...microcycle,
+                days:
+                  microcycle.days?.map(
+                    d => {
+                      if (
+                        d.day_name !==
+                        log?.day_name
+                      ) {
+                        return d;
+                      }
 
-          await supabaseApi.entities.WorkoutProgram.update(
-            program.id,
-            {
-              microcycles: updatedMicrocycles,
+                      return {
+                        ...d,
+                        exercises:
+                          result.adjusted_exercises,
+                      };
+                    }
+                  ),
+              };
             }
           );
 
-          if (onProgramUpdated) {
-            onProgramUpdated();
+        await supabaseApi.entities.Program.update(
+          program.id,
+          {
+            microcycles:
+              updatedMicrocycles,
           }
+        );
+
+        if (onSave) {
+          await onSave(
+            checkin,
+            result.coach_response,
+            updatedMicrocycles
+          );
         }
-      } else {
-        const trainingType =
-          program?.training_type || 'calisthenics';
-
-        const typeLabel = {
-          calisthenics: 'calisthenics',
-          weighted_calisthenics:
-            'weighted calisthenics',
-          weights: 'weight training',
-          hybrid: 'hybrid training',
-        }[trainingType];
-
-        const prompt = `You are Kael, a real-talk ${typeLabel} coach. Based on this post-workout check-in, give a SHORT (2-3 sentence) human response and a concrete note on how to adjust the next workout. Sound like a person, not a bot.
-
-Check-in: "${checkin}"
-
-Workout: ${log?.day_name || 'unknown'}
-
-${exerciseSummary}
-
-Respond with:
-1. One empathetic/direct sentence.
-2. One specific adjustment for next time.`;
-
-        const result = await supabaseApi.ai.invoke({
-          type: 'live_workout',
-          prompt,
-        });
-
-        setAiNote(result);
-
-        await onSave(checkin, result);
+      } else if (onSave) {
+        await onSave(
+          checkin,
+          result?.coach_response || '',
+          null
+        );
       }
 
       setLoading(false);
@@ -958,63 +1142,77 @@ Respond with:
 
   if (done) {
     return (
-      <Card className="p-4 border-accent/30 bg-accent/5">
-        <p className="text-xs font-bold text-accent uppercase tracking-wider mb-2">
-          Kael heard you
-        </p>
+      <Card className="p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <CheckCircle2 className="w-5 h-5 text-primary" />
 
-        <p className="text-sm whitespace-pre-line">
-          {aiNote}
-        </p>
+          <h3 className="font-heading font-bold">
+            Workout Complete
+          </h3>
+        </div>
+
+        {aiNote && (
+          <div className="rounded-xl bg-muted/50 p-4">
+            <p className="text-sm">
+              {aiNote}
+            </p>
+          </div>
+        )}
       </Card>
     );
   }
 
   return (
-    <Card className="p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-primary" />
+    <Card className="p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <MessageSquare className="w-5 h-5 text-primary" />
 
-        <p className="font-heading font-bold text-sm">
-          Post-Workout Check-in
-        </p>
+        <h3 className="font-heading font-bold">
+          Post-Workout Check-In
+        </h3>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        How did it go? Any pain, anything that felt too easy
-        or too hard, energy levels — just tell Kael in your
-        own words.
+      <p className="text-sm text-muted-foreground mb-4">
+        Tell Kael how the workout felt and get a concise
+        coaching response.
       </p>
 
       <Textarea
         value={checkin}
-        onChange={e => setCheckin(e.target.value)}
-        placeholder='e.g. "Shoulder felt a bit tight on the dips. Pull-ups felt strong today, could probably do more reps. Pretty gassed by the end."'
-        className="min-h-[100px] text-sm resize-none"
+        onChange={e =>
+          setCheckin(e.target.value)
+        }
+        placeholder="How did the workout feel?"
+        className="min-h-[110px]"
+        disabled={loading}
       />
 
       <Button
-        className="w-full h-11 font-heading font-semibold"
+        className="w-full mt-3"
         onClick={submit}
-        disabled={!checkin.trim() || loading}
+        disabled={
+          loading ||
+          !checkin.trim()
+        }
       >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-            Getting Kael's take...
-          </span>
-        ) : (
-          'Send to Kael'
-        )}
+        <Sparkles className="w-4 h-4 mr-2" />
+
+        {loading
+          ? 'Kael is reviewing...'
+          : 'Ask Kael'}
       </Button>
     </Card>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────
+// ─── Main Live Workout ─────────────────────────────────
 export default function LiveWorkout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  const {
+    settings,
+  } = useAppSettings();
 
   const {
     seconds,
@@ -1023,160 +1221,100 @@ export default function LiveWorkout() {
     fmt,
   } = useTimer();
 
-  const [user, setUser] = useState(null);
+  const [dayIndex, setDayIndex] =
+    useState(0);
 
-  const [dayIndex, setDayIndex] = useState(0);
-  const [exIndex, setExIndex] = useState(0);
-  const [setIndex, setSetIndex] = useState(0);
+  const [exIndex, setExIndex] =
+    useState(0);
 
-  const [resting, setResting] = useState(false);
+  const [setIndex, setSetIndex] =
+    useState(0);
 
-  const [completedSets, setCompletedSets] =
-    useState({});
-
-  const [repsAchieved, setRepsAchieved] =
-    useState({});
-
-  const [started, setStarted] = useState(false);
-  const [workoutDone, setWorkoutDone] =
+  const [resting, setResting] =
     useState(false);
 
-  const [savedLog, setSavedLog] = useState(null);
-
-  // Local live workout copy.
-  // This is what Elite real-time adjustments modify.
   const [liveExercises, setLiveExercises] =
     useState([]);
 
-  const [adjustedExerciseIndexes, setAdjustedExerciseIndexes] =
-    useState({});
+  const [
+    completedSets,
+    setCompletedSets,
+  ] = useState({});
 
-  useEffect(() => {
-    supabaseApi.auth.me().then(setUser);
-  }, []);
+  const [
+    repsAchieved,
+    setRepsAchieved,
+  ] = useState('');
 
-  // iOS back gesture: when workout is done, back navigates
-  // to program page.
-  useEffect(() => {
-    if (!workoutDone) return;
+  const [
+    feedback,
+    setFeedback,
+  ] = useState('');
 
-    window.history.pushState(
-      { workoutDone },
-      ''
-    );
+  const [
+    loadingAdjustment,
+    setLoadingAdjustment,
+  ] = useState(false);
 
-    const handler = () =>
-      navigate('/program');
+  const [
+    lastAdjustment,
+    setLastAdjustment,
+  ] = useState('');
 
-    window.addEventListener(
-      'popstate',
-      handler
-    );
+  const [
+    adjustedExerciseIndexes,
+    setAdjustedExerciseIndexes,
+  ] = useState({});
 
-    return () =>
-      window.removeEventListener(
-        'popstate',
-        handler
-      );
-  }, [workoutDone, navigate]);
-
-  const { data: programs = [] } = useQuery({
-    queryKey: ['programs'],
+  const {
+    data: user,
+    isLoading: userLoading,
+  } = useQuery({
+    queryKey: ['current-user'],
     queryFn: () =>
-      supabaseApi.entities.WorkoutProgram.filter(
-        { status: 'active' },
+      supabaseApi.auth.me(),
+  });
+
+  const {
+    data: program,
+    isLoading: programLoading,
+  } = useQuery({
+    queryKey: ['active-program'],
+    queryFn: async () => {
+      const programs =
+        await supabaseApi.entities.Program.list(
+          '-created_date',
+          20
+        );
+
+      return (
+        programs?.find(
+          p =>
+            p.status ===
+              'active' ||
+            p.is_active === true
+        ) ||
+        programs?.[0] ||
+        null
+      );
+    },
+  });
+
+  const {
+    data: workoutLogs = [],
+  } = useQuery({
+    queryKey: ['workout-logs'],
+    queryFn: () =>
+      supabaseApi.entities.WorkoutLog.list(
         '-created_date',
-        1
+        100
       ),
   });
 
-  const logMutation = useMutation({
-    mutationFn: data =>
-      supabaseApi.entities.WorkoutLog.create(data),
-
-    onMutate: async data => {
-      await queryClient.cancelQueries({
-        queryKey: ['logs'],
-      });
-
-      const prev =
-        queryClient.getQueryData(['logs']);
-
-      const optimistic = {
-        id: `_opt_${Date.now()}`,
-        ...data,
-      };
-
-      queryClient.setQueryData(
-        ['logs'],
-        old => [...(old || []), optimistic]
-      );
-
-      return { prev };
-    },
-
-    onError: (_err, _data, ctx) => {
-      if (ctx?.prev) {
-        queryClient.setQueryData(
-          ['logs'],
-          ctx.prev
-        );
-      }
-    },
-
-    onSuccess: log => {
-      queryClient.invalidateQueries({
-        queryKey: ['logs'],
-      });
-
-      setSavedLog(log);
-    },
-  });
-
-  const updateLogMutation = useMutation({
-    mutationFn: ({ id, data }) =>
-      supabaseApi.entities.WorkoutLog.update(
-        id,
-        data
-      ),
-
-    onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries({
-        queryKey: ['logs'],
-      });
-
-      const prev =
-        queryClient.getQueryData(['logs']);
-
-      queryClient.setQueryData(
-        ['logs'],
-        old =>
-          (old || []).map(l =>
-            l.id === id
-              ? { ...l, ...data }
-              : l
-          )
-      );
-
-      return { prev };
-    },
-
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) {
-        queryClient.setQueryData(
-          ['logs'],
-          ctx.prev
-        );
-      }
-    },
-
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ['logs'],
-      }),
-  });
-
-  const program = programs[0];
+  const trainingType =
+    program?.training_type ||
+    user?.training_type ||
+    'calisthenics';
 
   const currentWeekNum =
     program?.current_week || 1;
@@ -1269,595 +1407,654 @@ export default function LiveWorkout() {
 
     if (setIndex >= newSetCount) {
       setSetIndex(
-        Math.max(0, newSetCount - 1)
+        Math.max(
+          0,
+          newSetCount - 1
+        )
       );
     }
-
-    setResting(false);
   };
 
-  const markSet = () => {
-    if (!exercise) return;
+  const currentCompleted =
+    completedSets[exIndex] || [];
 
-    const key = `${exIndex}-${setIndex}`;
+  const completedCount =
+    currentCompleted.length;
+
+  const currentSet =
+    Math.min(
+      setIndex,
+      Math.max(
+        0,
+        totalSets - 1
+      )
+    );
+
+  const completeSet = setNumber => {
+    if (
+      !exercise ||
+      currentCompleted.includes(
+        setNumber
+      )
+    ) {
+      return;
+    }
 
     setCompletedSets(prev => ({
       ...prev,
-      [key]: true,
+      [exIndex]: [
+        ...(prev[exIndex] || []),
+        setNumber,
+      ].sort(
+        (a, b) => a - b
+      ),
     }));
 
-    if (setIndex + 1 < totalSets) {
-      setResting(true);
-    } else if (
-      exIndex + 1 <
-      exercises.length
+    if (
+      setNumber <
+      totalSets - 1
     ) {
-      setExIndex(i => i + 1);
-      setSetIndex(0);
-      setResting(false);
-
-      toast.success(
-        'Next exercise! 🔥'
+      setSetIndex(
+        setNumber + 1
       );
+
+      setResting(true);
     } else {
-      finishWorkout();
+      setSetIndex(
+        totalSets
+      );
     }
   };
 
-  const afterRest = () => {
-    setResting(false);
-    setSetIndex(s => s + 1);
-  };
-
-  const finishWorkout = () => {
-    setRunning(false);
-    setWorkoutDone(true);
-
-    const exercisesCompleted =
-      exercises.map((ex, ei) => ({
-        name: ex.name,
-
-        sets_completed: Array.from({
-          length: ex.sets || 1,
-        }).filter(
-          (_, si) =>
-            completedSets[
-              `${ei}-${si}`
-            ]
-        ).length,
-
-        reps_achieved:
-          repsAchieved[ei] ||
-          ex.reps,
-
-        notes: '',
-      }));
-
-    logMutation.mutate({
-      program_id: program?.id,
-      date: new Date()
-        .toISOString()
-        .split('T')[0],
-      week_number: currentWeekNum,
-      day_name: day?.day_name,
-      exercises_completed:
-        exercisesCompleted,
-      duration_minutes: Math.round(
-        seconds / 60
+  const undoSet = setNumber => {
+    setCompletedSets(prev => ({
+      ...prev,
+      [exIndex]: (
+        prev[exIndex] || []
+      ).filter(
+        s => s !== setNumber
       ),
-    });
+    }));
 
-    toast.success(
-      'Workout done! Amazing work. 💪'
+    setSetIndex(
+      Math.min(
+        setNumber,
+        Math.max(
+          0,
+          totalSets - 1
+        )
+      )
     );
   };
 
-  if (!program || days.length === 0) {
-    return (
-      <div className="px-5 pt-12 pb-24 text-center">
-        <Dumbbell className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-30" />
+  const nextExercise = () => {
+    if (
+      exIndex <
+      exercises.length - 1
+    ) {
+      setExIndex(
+        exIndex + 1
+      );
 
-        <p className="text-muted-foreground text-sm">
-          No active program. Complete onboarding first.
+      setSetIndex(0);
+      setResting(false);
+      setRepsAchieved('');
+      setFeedback('');
+      setLastAdjustment('');
+    } else {
+      setRunning(false);
+    }
+  };
+
+  const previousExercise = () => {
+    if (exIndex > 0) {
+      setExIndex(
+        exIndex - 1
+      );
+
+      setSetIndex(0);
+      setResting(false);
+      setRepsAchieved('');
+      setFeedback('');
+      setLastAdjustment('');
+    }
+  };
+
+  const exerciseSummary =
+    exercises
+      .map(
+        (ex, index) => {
+          const setsDone =
+            (
+              completedSets[index] ||
+              []
+            ).length;
+
+          return `${index + 1}. ${
+            ex.name
+          } — ${
+            setsDone
+          }/${
+            ex.sets || 1
+          } sets completed`;
+        }
+      )
+      .join('\n');
+
+  const saveWorkoutLog = async (
+    checkin,
+    aiResponse,
+    updatedMicrocycles
+  ) => {
+    const existing =
+      workoutLogs.find(
+        log =>
+          log.program_id ===
+            program?.id &&
+          log.day_name ===
+            day?.day_name &&
+          log.week_number ===
+            currentWeekNum
+      );
+
+    const payload = {
+      program_id:
+        program?.id,
+      week_number:
+        currentWeekNum,
+      day_name:
+        day?.day_name,
+      training_type:
+        trainingType,
+      duration_seconds:
+        seconds,
+      completed_exercises:
+        exercises.map(
+          (ex, index) => ({
+            ...ex,
+            completed_sets:
+              (
+                completedSets[
+                  index
+                ] || []
+              ).length,
+          })
+        ),
+      checkin,
+      ai_response:
+        aiResponse,
+      updated_microcycles:
+        updatedMicrocycles,
+      completed_at:
+        new Date().toISOString(),
+    };
+
+    if (existing?.id) {
+      await supabaseApi.entities.WorkoutLog.update(
+        existing.id,
+        payload
+      );
+    } else {
+      await supabaseApi.entities.WorkoutLog.create(
+        payload
+      );
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ['workout-logs'],
+    });
+  };
+
+  const finishWorkout = async () => {
+    setRunning(false);
+
+    try {
+      const existing =
+        workoutLogs.find(
+          log =>
+            log.program_id ===
+              program?.id &&
+            log.day_name ===
+              day?.day_name &&
+            log.week_number ===
+              currentWeekNum
+        );
+
+      const payload = {
+        program_id:
+          program?.id,
+        week_number:
+          currentWeekNum,
+        day_name:
+          day?.day_name,
+        training_type:
+          trainingType,
+        duration_seconds:
+          seconds,
+        completed_exercises:
+          exercises.map(
+            (ex, index) => ({
+              ...ex,
+              completed_sets:
+                (
+                  completedSets[
+                    index
+                  ] || []
+                ).length,
+            })
+          ),
+        completed_at:
+          new Date().toISOString(),
+      };
+
+      if (existing?.id) {
+        await supabaseApi.entities.WorkoutLog.update(
+          existing.id,
+          payload
+        );
+      } else {
+        await supabaseApi.entities.WorkoutLog.create(
+          payload
+        );
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ['workout-logs'],
+      });
+
+      toast.success(
+        'Workout saved.'
+      );
+    } catch (error) {
+      console.error(
+        'Failed to save workout:',
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          'Could not save workout.'
+      );
+    }
+  };
+
+  if (
+    userLoading ||
+    programLoading
+  ) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">
+          Loading workout...
+        </p>
+      </div>
+    );
+  }
+
+  if (!program) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <Dumbbell className="w-10 h-10 text-muted-foreground mb-4" />
+
+        <h1 className="font-heading font-bold text-xl">
+          No active program
+        </h1>
+
+        <p className="text-muted-foreground text-sm mt-2 text-center max-w-md">
+          Create a program before starting a live workout.
         </p>
 
         <Button
-          className="mt-4"
+          className="mt-5"
           onClick={() =>
-            navigate('/onboarding')
+            navigate('/program')
           }
         >
-          Get Started
+          Go to Program
+        </Button>
+      </div>
+    );
+  }
+
+  if (!day) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <Dumbbell className="w-10 h-10 text-muted-foreground mb-4" />
+
+        <h1 className="font-heading font-bold text-xl">
+          No workout found
+        </h1>
+
+        <p className="text-muted-foreground text-sm mt-2 text-center max-w-md">
+          There is no workout programmed for this day.
+        </p>
+
+        <Button
+          className="mt-5"
+          onClick={() =>
+            navigate('/program')
+          }
+        >
+          Back to Program
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
-      {/* Header */}
-      <div className="px-5 safe-top pb-3 border-b border-border bg-card/50 backdrop-blur-sm flex-shrink-0 flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() =>
-            navigate('/program')
-          }
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </Button>
-
-        <div className="flex-1">
-          <h1 className="font-heading font-bold text-xl">
-            Live Workout
-          </h1>
-
-          <p className="text-xs text-muted-foreground">
-            Week {currentWeekNum} ·{' '}
-            {program.program_name}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-full">
-          <Timer className="w-3.5 h-3.5 text-primary" />
-
-          <span className="font-heading font-bold text-sm tabular-nums">
-            {fmt(seconds)}
-          </span>
-        </div>
-      </div>
-
-      <Tabs
-        defaultValue="workout"
-        className="flex-1 flex flex-col"
-      >
-        <TabsList className="mx-5 mt-3 bg-muted/50 flex-shrink-0">
-          <TabsTrigger
-            value="workout"
-            className="flex-1 font-heading"
+    <div className="min-h-screen bg-background">
+      <div className="max-w-4xl mx-auto px-4 py-5 md:py-8">
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              navigate(-1)
+            }
           >
-            Workout
-          </TabsTrigger>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
 
-          <TabsTrigger
-            value="baseline"
-            className="flex-1 font-heading"
-          >
-            My Maxes
-          </TabsTrigger>
-        </TabsList>
+          <div className="text-center min-w-0">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Week {currentWeekNum}
+            </p>
 
-        {/* ── WORKOUT TAB ── */}
-        <TabsContent
-          value="workout"
-          className="flex-1 px-5 py-4 space-y-4 overflow-y-auto safe-bottom"
-        >
-          {/* Day selector */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {days.map((d, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  if (!started) {
-                    setDayIndex(i);
-                    setExIndex(0);
-                    setSetIndex(0);
-                    setResting(false);
-                  }
-                }}
-                className={cn(
-                  'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex-shrink-0',
-                  i === dayIndex
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-card border-border text-muted-foreground'
-                )}
-              >
-                {d.day_name}
-              </button>
-            ))}
+            <h1 className="font-heading font-bold text-lg truncate">
+              {day.day_name ||
+                `Workout ${dayIndex + 1}`}
+            </h1>
           </div>
 
-          {/* Workout done */}
-          {workoutDone && (
-            <div className="space-y-4">
-              <Card className="p-4 text-center border-accent/30 bg-accent/5">
-                <p className="font-heading font-bold text-lg">
-                  Workout Complete! 🎉
-                </p>
+          <div className="w-10" />
+        </div>
 
-                <p className="text-sm text-muted-foreground mt-1">
-                  {fmt(seconds)} ·{' '}
-                  {exercises.length} exercises
-                </p>
-              </Card>
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <Card className="p-3 text-center">
+            <Timer className="w-4 h-4 mx-auto text-muted-foreground mb-1" />
 
-              {savedLog && (
-                <PostWorkoutCheckin
-                  log={savedLog}
-                  canAdjust={canAdjust}
-                  program={program}
-                  onProgramUpdated={() =>
-                    queryClient.invalidateQueries({
-                      queryKey: ['programs'],
-                    })
-                  }
-                  onSave={async (
-                    checkin,
-                    aiNote
-                  ) => {
-                    await updateLogMutation.mutateAsync(
-                      {
-                        id: savedLog.id,
-                        data: {
-                          post_workout_checkin:
-                            checkin,
-                          ai_adjustment_notes:
-                            aiNote,
-                        },
-                      }
-                    );
-                  }}
-                />
+            <p className="font-heading font-bold text-lg">
+              {fmt(seconds)}
+            </p>
+
+            <p className="text-[11px] text-muted-foreground">
+              Time
+            </p>
+          </Card>
+
+          <Card className="p-3 text-center">
+            <Dumbbell className="w-4 h-4 mx-auto text-muted-foreground mb-1" />
+
+            <p className="font-heading font-bold text-lg">
+              {exIndex + 1}/
+              {exercises.length}
+            </p>
+
+            <p className="text-[11px] text-muted-foreground">
+              Exercise
+            </p>
+          </Card>
+
+          <Card className="p-3 text-center">
+            <CheckCircle2 className="w-4 h-4 mx-auto text-muted-foreground mb-1" />
+
+            <p className="font-heading font-bold text-lg">
+              {exercises.reduce(
+                (sum, _, index) =>
+                  sum +
+                  (
+                    completedSets[
+                      index
+                    ] || []
+                  ).length,
+                0
               )}
-            </div>
+            </p>
+
+            <p className="text-[11px] text-muted-foreground">
+              Sets
+            </p>
+          </Card>
+        </div>
+
+        <div className="flex items-center justify-center gap-2 mb-5">
+          <Button
+            variant={
+              running
+                ? 'default'
+                : 'outline'
+            }
+            onClick={() =>
+              setRunning(
+                !running
+              )
+            }
+          >
+            <Timer className="w-4 h-4 mr-2" />
+
+            {running
+              ? 'Pause'
+              : 'Start Timer'}
+          </Button>
+
+          {running && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                setRunning(false)
+              }
+            >
+              Pause
+            </Button>
           )}
+        </div>
 
-          {/* Start card */}
-          {!started && !workoutDone && (
-            <Card className="p-6 text-center">
-              <Dumbbell className="w-10 h-10 mx-auto mb-3 text-primary" />
-
-              <h2 className="font-heading font-bold text-lg mb-1">
-                {day?.day_name}
-              </h2>
-
-              <p className="text-sm text-muted-foreground mb-1">
-                {day?.workout_type}
-              </p>
-
-              <p className="text-xs text-muted-foreground mb-2">
-                {exercises.length} exercises
-              </p>
-
-              {exercises
-                .slice(0, 3)
-                .map((ex, i) => (
-                  <p
-                    key={i}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {ex.name} — {ex.sets}×
-                    {ex.reps}
-                  </p>
-                ))}
-
-              {exercises.length > 3 && (
-                <p className="text-xs text-muted-foreground">
-                  +{exercises.length - 3} more
-                </p>
+        {days.length > 1 && (
+          <div className="mb-5">
+            <Tabs
+              value={String(
+                dayIndex
               )}
-
-              {canAdjust && (
-                <div className="flex items-center justify-center gap-1.5 mt-4 text-[10px] text-chart-4">
-                  <Zap className="w-3 h-3" />
-                  <span>
-                    Elite real-time adjustments enabled
-                  </span>
-                </div>
-              )}
-
-              <Button
-                className="w-full h-12 font-heading font-semibold mt-3"
-                onClick={() => {
-                  setStarted(true);
-                  setRunning(true);
-                }}
-              >
-                Start Workout
-              </Button>
-            </Card>
-          )}
-
-          {/* Active workout */}
-          {started &&
-            !workoutDone &&
-            exercise &&
-            !resting && (
-              <Card className="p-5 border-2 border-primary/30">
-                <div className="flex items-center justify-between mb-1">
-                  <Badge className="bg-primary/15 text-primary border-0 text-xs">
-                    Exercise {exIndex + 1} of{' '}
-                    {exercises.length}
-                  </Badge>
-
-                  <Badge className="bg-muted text-muted-foreground border-0 text-xs">
-                    Set {setIndex + 1} of{' '}
-                    {totalSets}
-                  </Badge>
-                </div>
-
-                <div className="flex items-start justify-between gap-3 mt-2">
-                  <h2 className="font-heading font-bold text-xl">
-                    {exercise.name}
-                  </h2>
-
-                  {adjustedExerciseIndexes[
-                    exIndex
-                  ] && (
-                    <Badge
-                      variant="outline"
-                      className="text-[9px] border-chart-4/30 text-chart-4 shrink-0"
+              onValueChange={value => {
+                setDayIndex(
+                  Number(value)
+                );
+              }}
+            >
+              <TabsList className="w-full overflow-x-auto justify-start">
+                {days.map(
+                  (d, index) => (
+                    <TabsTrigger
+                      key={`${d.day_name}-${index}`}
+                      value={String(
+                        index
+                      )}
                     >
-                      <Zap className="w-3 h-3 mr-1" />
-                      Adjusted
-                    </Badge>
-                  )}
-                </div>
-
-                <p className="text-sm text-muted-foreground mb-1">
-                  Target: {exercise.reps}{' '}
-                  reps · {restSecs}s rest
-                </p>
-
-                {exercise.notes && (
-                  <p className="text-xs text-muted-foreground italic mb-3">
-                    "{exercise.notes}"
-                  </p>
+                      {d.day_name ||
+                        `Day ${
+                          index + 1
+                        }`}
+                    </TabsTrigger>
+                  )
                 )}
+              </TabsList>
+            </Tabs>
+          </div>
+        )}
 
-                {exercise.activation_cue && (
-                  <div className="flex items-start gap-2 mb-3 p-3 bg-primary/5 border border-primary/20 rounded-xl">
-                    <Zap className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-
-                    <div>
-                      <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
-                        Activation Cue
-                      </p>
-
-                      <p className="text-xs text-foreground leading-relaxed">
-                        {exercise.activation_cue}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Actual reps input */}
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    Actual reps:
-                  </span>
-
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder={exercise.reps}
-                    className="h-9 text-sm w-24"
-                    value={
-                      repsAchieved[exIndex] ||
-                      ''
-                    }
-                    onChange={e =>
-                      setRepsAchieved(
-                        prev => ({
-                          ...prev,
-                          [exIndex]:
-                            e.target.value,
-                        })
-                      )
-                    }
-                  />
-                </div>
-
-                {/* Set indicators */}
-                <div className="flex gap-2 mb-5">
-                  {Array.from({
-                    length: totalSets,
-                  }).map((_, si) => {
-                    const key = `${exIndex}-${si}`;
-
-                    const done =
-                      !!completedSets[key];
-
-                    const current =
-                      si === setIndex;
-
-                    return (
-                      <div
-                        key={si}
-                        className={cn(
-                          'w-9 h-9 rounded-xl flex items-center justify-center border-2 text-xs font-bold transition-all',
-                          done
-                            ? 'bg-accent border-accent text-accent-foreground'
-                            : current
-                              ? 'border-primary text-primary'
-                              : 'border-border text-muted-foreground'
-                        )}
-                      >
-                        {done ? (
-                          <CheckCircle2 className="w-4 h-4" />
-                        ) : (
-                          si + 1
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <Button
-                  className="w-full h-12 font-heading font-semibold text-base"
-                  onClick={markSet}
-                >
-                  <CheckCircle2 className="w-5 h-5 mr-2" />
-                  Complete Set {setIndex + 1}
-                </Button>
-
-                {/* REAL-TIME ELITE ADJUSTMENT */}
-                {canAdjust && (
-                  <LiveAdjustmentPanel
-                    exercise={exercise}
-                    exerciseIndex={exIndex}
-                    setIndex={setIndex}
-                    totalSets={totalSets}
-                    repsAchieved={
-                      repsAchieved[exIndex]
-                    }
-                    completedSets={
-                      completedSets
-                    }
-                    trainingType={
-                      program?.training_type ||
-                      'calisthenics'
-                    }
-                    seconds={seconds}
-                    onApply={
-                      applyLiveAdjustment
-                    }
-                    disabled={
-                      resting ||
-                      workoutDone
-                    }
-                  />
-                )}
-
-                {/* Free users see the tracker but not the adjustment controls */}
-                {!canAdjust && (
-                  <div className="mt-4 flex items-center gap-2 p-3 rounded-xl border border-border bg-muted/30">
-                    <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Live workout tracking is free.
-                      Elite unlocks real-time Kael
-                      adjustments while you train.
-                    </p>
-                  </div>
-                )}
-              </Card>
-            )}
-
-          {started &&
-            !workoutDone &&
-            resting && (
-              <Card className="p-5">
-                <RestTimer
-                  seconds={restSecs}
-                  onDone={afterRest}
-                />
-              </Card>
-            )}
-
-          {/* Exercise list */}
-          {started && !workoutDone && (
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                All Exercises
-              </p>
-
-              {exercises.map((ex, i) => {
-                const allDone =
-                  Array.from({
-                    length: ex.sets || 1,
-                  }).every(
-                    (_, si) =>
-                      completedSets[
-                        `${i}-${si}`
-                      ]
+        {resting ? (
+          <Card className="mb-5">
+            <RestTimer
+              seconds={
+                restSecs
+              }
+              onDone={() =>
+                setResting(false)
+              }
+            />
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            <ExerciseCard
+              exercise={exercise}
+              index={exIndex}
+              completedSets={
+                currentCompleted
+              }
+              currentSet={
+                currentSet
+              }
+              onCompleteSet={
+                completeSet
+              }
+              onUndoSet={
+                undoSet
+              }
+              onRequestAdjustment={() => {
+                if (
+                  !canAdjust
+                ) {
+                  toast.error(
+                    'Live workout adjustments are an Elite feature.'
                   );
 
-                const wasAdjusted =
-                  !!adjustedExerciseIndexes[
-                    i
-                  ];
+                  return;
+                }
 
-                return (
-                  <div
-                    key={i}
-                    className={cn(
-                      'flex items-center gap-3 p-3 rounded-xl border transition-all',
-                      i === exIndex
-                        ? 'border-primary bg-primary/5'
-                        : allDone
-                          ? 'border-accent/30 bg-accent/5'
-                          : 'border-border bg-card'
-                    )}
-                  >
-                    {allDone ? (
-                      <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />
-                    ) : i === exIndex ? (
-                      <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 animate-pulse ml-1" />
-                    ) : (
-                      <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    )}
+                /*
+                 * The actual server-side function ALSO checks
+                 * the subscription. This frontend check is only
+                 * for UX and cannot be trusted as security.
+                 */
+              }}
+              canAdjust={
+                canAdjust
+              }
+              adjusted={
+                !!adjustedExerciseIndexes[
+                  exIndex
+                ]
+              }
+            />
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold truncate">
-                          {ex.name}
-                        </p>
+            {canAdjust && (
+              <LiveAdjustmentPanel
+                exercise={
+                  exercise
+                }
+                exerciseIndex={
+                  exIndex
+                }
+                setIndex={
+                  currentSet
+                }
+                totalSets={
+                  totalSets
+                }
+                completedCount={
+                  completedCount
+                }
+                repsAchieved={
+                  repsAchieved
+                }
+                seconds={
+                  seconds
+                }
+                trainingType={
+                  trainingType
+                }
+                feedback={
+                  feedback
+                }
+                setFeedback={
+                  setFeedback
+                }
+                loading={
+                  loadingAdjustment
+                }
+                setLoading={
+                  setLoadingAdjustment
+                }
+                lastAdjustment={
+                  lastAdjustment
+                }
+                setLastAdjustment={
+                  setLastAdjustment
+                }
+                applyAdjustment={
+                  applyLiveAdjustment
+                }
+                disabled={
+                  !canAdjust
+                }
+              />
+            )}
 
-                        {wasAdjusted && (
-                          <Zap className="w-3 h-3 text-chart-4 shrink-0" />
-                        )}
-                      </div>
-
-                      <p className="text-xs text-muted-foreground">
-                        {ex.sets}×{ex.reps}
-                      </p>
-
-                      {ex.activation_cue && (
-                        <p className="text-[10px] text-primary/70 truncate mt-0.5">
-                          {ex.activation_cue}
-                        </p>
-                      )}
-                    </div>
-
-                    {i === exIndex &&
-                      !allDone && (
-                        <SkipForward
-                          className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground"
-                          onClick={() => {
-                            setExIndex(
-                              i + 1 <
-                                exercises.length
-                                ? i + 1
-                                : i
-                            );
-
-                            setSetIndex(0);
-                            setResting(false);
-                          }}
-                        />
-                      )}
-                  </div>
-                );
-              })}
-
+            <div className="flex gap-2">
               <Button
                 variant="outline"
-                className="w-full mt-2"
-                onClick={finishWorkout}
+                className="flex-1"
+                onClick={
+                  previousExercise
+                }
+                disabled={
+                  exIndex === 0
+                }
               >
-                Finish Workout Early
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Previous
               </Button>
+
+              {exIndex <
+              exercises.length - 1 ? (
+                <Button
+                  className="flex-1"
+                  onClick={
+                    nextExercise
+                  }
+                >
+                  Next
+                  <SkipForward className="w-4 h-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  onClick={
+                    finishWorkout
+                  }
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Finish Workout
+                </Button>
+              )}
             </div>
-          )}
-        </TabsContent>
+          </div>
+        )}
 
-        {/* ── BASELINE TAB ── */}
-        <TabsContent
-          value="baseline"
-          className="flex-1 px-5 py-4 overflow-y-auto safe-bottom"
-        >
-          <h2 className="font-heading font-bold text-lg mb-1">
-            My Current Maxes
-          </h2>
-
-          <MovementBaseline
-            trainingType={
-              program?.training_type
+        <div className="mt-6">
+          <WorkoutCheckIn
+            log={{
+              day_name:
+                day.day_name,
+            }}
+            exerciseSummary={
+              exerciseSummary
+            }
+            program={program}
+            onSave={
+              saveWorkoutLog
             }
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+
+        <div className="mt-6">
+          <MovementBaseline
+            trainingType={
+              trainingType
+            }
+          />
+        </div>
+      </div>
     </div>
   );
 }
