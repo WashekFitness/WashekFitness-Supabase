@@ -92,9 +92,6 @@ async function getProfile(
     );
   }
 
-  /*
-   * A missing profile is not silently treated as a Free user.
-   */
   if (!data) {
     throw new Error(
       'Your Washek Fitness profile could not be found. Your login still exists, but your profile record is missing or inaccessible.'
@@ -516,34 +513,8 @@ function entity(
  * ------------------------------------------------------------
  * STORAGE
  * ------------------------------------------------------------
- *
- * The media bucket is private.
- *
- * Permanent database references should use `path`, NOT
- * `file_url`, because signed URLs expire.
- *
- * `file_url` is still returned by uploadFile for existing
- * upload flows. It is a temporary signed URL.
  */
 
-
-/*
- * Convert an existing media URL into its storage path.
- *
- * Supports:
- *
- * 1. Raw storage path:
- *    user-id/folder/file.jpg
- *
- * 2. Public Supabase URL:
- *    .../storage/v1/object/public/user-media/user-id/...
- *
- * 3. Signed Supabase URL:
- *    .../storage/v1/object/sign/user-media/user-id/...
- *
- * 4. Authenticated Supabase URL:
- *    .../storage/v1/object/authenticated/user-media/user-id/...
- */
 function getStoragePath(
   value
 ) {
@@ -559,7 +530,7 @@ function getStoragePath(
   }
 
   /*
-   * Already a storage path.
+   * Already a Storage path.
    */
   if (
     !raw.startsWith(
@@ -577,7 +548,7 @@ function getStoragePath(
       new URL(raw);
 
     const marker =
-      `/storage/v1/object/`;
+      '/storage/v1/object/';
 
     const markerIndex =
       url.pathname.indexOf(
@@ -642,9 +613,6 @@ function getStoragePath(
 }
 
 
-/*
- * Create a temporary signed URL for a user's media file.
- */
 async function createSignedUrl(
   value,
   expiresIn = 3600
@@ -663,9 +631,6 @@ async function createSignedUrl(
   const user =
     await requireUser();
 
-  /*
-   * Users may only access their own folder.
-   */
   const expectedPrefix =
     `${user.id}/`;
 
@@ -710,9 +675,6 @@ async function createSignedUrl(
 }
 
 
-/*
- * Create temporary signed URLs for multiple files.
- */
 async function createSignedUrls(
   values = [],
   expiresIn = 3600
@@ -793,9 +755,6 @@ async function createSignedUrls(
 }
 
 
-/*
- * Resolve a media value into a temporary secure URL.
- */
 async function resolveMediaUrl(
   value,
   expiresIn = 3600
@@ -824,9 +783,6 @@ async function resolveMediaUrl(
         raw
       );
 
-    /*
-     * Non-Supabase URLs are left untouched.
-     */
     if (!path) {
       return raw;
     }
@@ -845,20 +801,12 @@ async function resolveMediaUrl(
 
 
 /*
- * Upload a file and return:
+ * Upload a file.
  *
- * {
- *   file_url: temporary signed URL,
- *   path: permanent storage path
- * }
+ * `path` is the permanent Storage reference.
  *
- * IMPORTANT:
- *
- * There is intentionally NO Storage `.list()` verification
- * here. The upload operation itself confirms the object was
- * created. Listing is a separate permission-controlled
- * operation and can incorrectly report "object not found"
- * even when the object was successfully uploaded.
+ * `file_url` remains a signed URL so existing UI previews
+ * continue to work.
  */
 async function uploadFile(
   input,
@@ -923,10 +871,9 @@ async function uploadFile(
   }
 
   /*
-   * The upload succeeded.
-   *
-   * Now create the signed URL directly from the exact path
-   * that Storage just accepted.
+   * Keep returning a signed URL for the existing browser UI.
+   * The AI layer below converts this signed URL back into the
+   * permanent Storage path before invoking the Edge Function.
    */
   const fileUrl =
     await createSignedUrl(
@@ -958,11 +905,38 @@ async function invokeAI({
   type = 'general',
 } = {}) {
 
-  /*
-   * Make sure the browser has an authenticated session before
-   * invoking the Edge Function.
-   */
   await requireUser();
+
+
+  /*
+   * For private user media, send the permanent Storage path to
+   * the Edge Function instead of relying on an expiring signed
+   * URL.
+   *
+   * The Edge Function retrieves the object securely with its
+   * server-side Storage credentials.
+   *
+   * Non-Supabase/external URLs are left unchanged.
+   */
+  const aiFileUrls =
+    Array.isArray(
+      file_urls
+    )
+      ? file_urls.map(
+          value => {
+            const storagePath =
+              getStoragePath(
+                value
+              );
+
+            return (
+              storagePath ||
+              value
+            );
+          }
+        )
+      : [];
+
 
   const {
     data,
@@ -976,7 +950,8 @@ async function invokeAI({
           body: {
             type,
             prompt,
-            file_urls,
+            file_urls:
+              aiFileUrls,
             model,
             schema:
               schema ||
@@ -1137,12 +1112,6 @@ export const supabaseApi = {
       currentUser,
 
 
-    /*
-     * Only updates normal profile fields.
-     *
-     * Subscription fields remain controlled by the Stripe
-     * subscription system.
-     */
     updateMe:
       async (
         patch
@@ -1159,8 +1128,7 @@ export const supabaseApi = {
         delete safePatch.user_id;
 
         /*
-         * Never allow client profile updates to modify
-         * Stripe-controlled subscription state.
+         * Stripe controls these fields.
          */
         delete safePatch.subscription_plan;
         delete safePatch.subscription_status;
@@ -1277,9 +1245,13 @@ export const supabaseApi = {
 
   storage: {
     uploadFile,
+
     createSignedUrl,
+
     createSignedUrls,
+
     resolveMediaUrl,
+
     getStoragePath,
   },
 
