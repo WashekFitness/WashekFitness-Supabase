@@ -519,8 +519,383 @@ function entity(
  * ------------------------------------------------------------
  * STORAGE
  * ------------------------------------------------------------
+ *
+ * IMPORTANT:
+ *
+ * The media bucket will be private.
+ *
+ * Permanent database references should use `path`, NOT
+ * `file_url`, because signed URLs expire.
+ *
+ * `file_url` is still returned from uploadFile for backwards
+ * compatibility with existing upload flows. It is a temporary
+ * signed URL and should NOT be permanently stored in the DB.
  */
 
+
+/*
+ * Convert an existing media URL into its storage path.
+ *
+ * This supports:
+ *
+ * 1. A raw storage path:
+ *    user-id/folder/file.jpg
+ *
+ * 2. An old public Supabase storage URL:
+ *    .../storage/v1/object/public/user-media/user-id/...
+ *
+ * 3. A signed Supabase storage URL:
+ *    .../storage/v1/object/sign/user-media/user-id/...
+ *
+ * This is useful while existing database records are migrated
+ * from URLs to storage paths.
+ */
+function getStoragePath(
+  value
+) {
+  if (!value) {
+    return null;
+  }
+
+  const raw =
+    String(value).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  /*
+   * Already a storage path.
+   */
+  if (
+    !raw.startsWith(
+      'http://'
+    ) &&
+    !raw.startsWith(
+      'https://'
+    )
+  ) {
+    return raw;
+  }
+
+  try {
+    const url =
+      new URL(raw);
+
+    const marker =
+      `/storage/v1/object/`;
+
+    const markerIndex =
+      url.pathname.indexOf(
+        marker
+      );
+
+    if (
+      markerIndex ===
+      -1
+    ) {
+      return null;
+    }
+
+    const afterMarker =
+      url.pathname.slice(
+        markerIndex +
+        marker.length
+      );
+
+    /*
+     * Supported formats:
+     *
+     * public/<bucket>/<path>
+     * sign/<bucket>/<path>
+     * authenticated/<bucket>/<path>
+     */
+    const parts =
+      afterMarker
+        .split('/')
+        .filter(Boolean);
+
+    if (
+      parts.length <
+      3
+    ) {
+      return null;
+    }
+
+    const accessType =
+      parts.shift();
+
+    if (
+      accessType !==
+        'public' &&
+      accessType !==
+        'sign' &&
+      accessType !==
+        'authenticated'
+    ) {
+      return null;
+    }
+
+    const bucket =
+      parts.shift();
+
+    if (
+      bucket !==
+      MEDIA_BUCKET
+    ) {
+      return null;
+    }
+
+    return decodeURIComponent(
+      parts.join('/')
+    );
+  } catch {
+    return null;
+  }
+}
+
+
+/*
+ * Create a temporary signed URL for a user's media file.
+ *
+ * The caller should store the storage `path` permanently and
+ * request a fresh signed URL whenever the file needs to be
+ * displayed or sent to an external AI service.
+ */
+async function createSignedUrl(
+  value,
+  expiresIn = 3600
+) {
+  const path =
+    getStoragePath(
+      value
+    );
+
+  if (!path) {
+    throw new Error(
+      'A valid media storage path is required.'
+    );
+  }
+
+  const user =
+    await requireUser();
+
+  /*
+   * Never allow one authenticated user to request a signed
+   * URL for another user's folder.
+   */
+  const expectedPrefix =
+    `${user.id}/`;
+
+  if (
+    !path.startsWith(
+      expectedPrefix
+    )
+  ) {
+    throw new Error(
+      'You do not have permission to access this file.'
+    );
+  }
+
+  const {
+    data,
+    error
+  } =
+    await supabase
+      .storage
+      .from(
+        MEDIA_BUCKET
+      )
+      .createSignedUrl(
+        path,
+        expiresIn
+      );
+
+  if (error) {
+    throw errorFrom(
+      error,
+      'Unable to create a secure media URL.'
+    );
+  }
+
+  if (!data?.signedUrl) {
+    throw new Error(
+      'The media file exists, but a secure URL could not be created.'
+    );
+  }
+
+  return data.signedUrl;
+}
+
+
+/*
+ * Create temporary signed URLs for multiple files.
+ *
+ * Returns an array in the same order as the supplied values.
+ */
+async function createSignedUrls(
+  values = [],
+  expiresIn = 3600
+) {
+  if (
+    !Array.isArray(
+      values
+    ) ||
+    values.length ===
+      0
+  ) {
+    return [];
+  }
+
+  const paths =
+    values
+      .map(
+        getStoragePath
+      )
+      .filter(Boolean);
+
+  if (
+    paths.length ===
+    0
+  ) {
+    return [];
+  }
+
+  const user =
+    await requireUser();
+
+  const expectedPrefix =
+    `${user.id}/`;
+
+  for (
+    const path of paths
+  ) {
+    if (
+      !path.startsWith(
+        expectedPrefix
+      )
+    ) {
+      throw new Error(
+        'You do not have permission to access one of these files.'
+      );
+    }
+  }
+
+  const {
+    data,
+    error
+  } =
+    await supabase
+      .storage
+      .from(
+        MEDIA_BUCKET
+      )
+      .createSignedUrls(
+        paths,
+        expiresIn
+      );
+
+  if (error) {
+    throw errorFrom(
+      error,
+      'Unable to create secure media URLs.'
+    );
+  }
+
+  return (
+    data ||
+    []
+  ).map(
+    item =>
+      item?.signedUrl ||
+      null
+  );
+}
+
+
+/*
+ * Resolve a media value into a temporary secure URL.
+ *
+ * If the supplied value is already a valid signed URL, it is
+ * returned as-is. Otherwise it is treated as a storage path or
+ * old Supabase public URL and converted into a fresh signed URL.
+ *
+ * This provides backwards compatibility while the rest of the
+ * app is migrated from storing URLs to storing paths.
+ */
+async function resolveMediaUrl(
+  value,
+  expiresIn = 3600
+) {
+  if (!value) {
+    return null;
+  }
+
+  const raw =
+    String(value).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  /*
+   * A currently signed Supabase URL can be reused until it
+   * expires. This avoids unnecessary requests during the same
+   * operation.
+   */
+  if (
+    raw.startsWith(
+      'http://'
+    ) ||
+    raw.startsWith(
+      'https://'
+    )
+  ) {
+    const path =
+      getStoragePath(
+        raw
+      );
+
+    /*
+     * If this isn't a Supabase media URL, leave it alone.
+     * This keeps the helper safe for unrelated URLs.
+     */
+    if (!path) {
+      return raw;
+    }
+
+    /*
+     * Existing public URLs must NOT be returned because the
+     * bucket is being made private.
+     *
+     * Existing signed URLs are acceptable temporarily, but
+     * generating a fresh signed URL is safer and makes this
+     * helper deterministic.
+     */
+    return createSignedUrl(
+      path,
+      expiresIn
+    );
+  }
+
+  return createSignedUrl(
+    raw,
+    expiresIn
+  );
+}
+
+
+/*
+ * Upload a file and return both:
+ *
+ * - path: permanent storage identifier
+ * - file_url: temporary signed URL
+ *
+ * IMPORTANT:
+ *
+ * Consumers should persist `path` in their database rather
+ * than `file_url`.
+ */
 async function uploadFile(
   input,
   folder = 'uploads'
@@ -583,27 +958,20 @@ async function uploadFile(
     );
   }
 
-  const {
-    data
-  } =
-    supabase
-      .storage
-      .from(
-        MEDIA_BUCKET
-      )
-      .getPublicUrl(
-        path
-      );
-
-  if (!data?.publicUrl) {
-    throw new Error(
-      'The file uploaded, but no public URL was returned.'
+  /*
+   * The bucket will be private, so never use getPublicUrl().
+   *
+   * Return a temporary signed URL for existing upload flows.
+   */
+  const fileUrl =
+    await createSignedUrl(
+      path,
+      3600
     );
-  }
 
   return {
     file_url:
-      data.publicUrl,
+      fileUrl,
 
     path,
   };
@@ -946,6 +1314,10 @@ export const supabaseApi = {
 
   storage: {
     uploadFile,
+    createSignedUrl,
+    createSignedUrls,
+    resolveMediaUrl,
+    getStoragePath,
   },
 
 
