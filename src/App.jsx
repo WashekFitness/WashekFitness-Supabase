@@ -1,5 +1,11 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  Navigate,
+  useLocation,
+} from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { Toaster } from '@/components/ui/toaster';
@@ -8,6 +14,7 @@ import { AppSettingsProvider } from '@/lib/AppSettingsContext';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 
 import AppLayout from '@/components/layout/AppLayout';
+import ProgramWeekBootstrap from '@/components/program/ProgramWeekBootstrap';
 
 import PageNotFound from '@/lib/PageNotFound';
 
@@ -26,7 +33,9 @@ const ProgressPhotos = lazy(() => import('@/pages/ProgressPhotos'));
 const FormLab = lazy(() => import('@/pages/FormLab'));
 const ProgramDay = lazy(() => import('@/pages/ProgramDay'));
 const LiveWorkout = lazy(() => import('@/pages/LiveWorkout'));
-const SubscriptionReturn = lazy(() => import('@/pages/SubscriptionReturn'));
+const SubscriptionReturn = lazy(
+  () => import('@/pages/SubscriptionReturn')
+);
 
 function PageLoader() {
   return (
@@ -53,49 +62,53 @@ function AuthenticatedApp() {
   }
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+    <>
+      {isAuthenticated && <ProgramWeekBootstrap />}
 
-        <Route path="/onboarding" element={<Onboarding />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <Route path="/live-workout" element={<LiveWorkout />} />
+          <Route path="/onboarding" element={<Onboarding />} />
 
-        <Route
-          path="/subscription-return"
-          element={<SubscriptionReturn />}
-        />
-
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
-
-          <Route path="/program" element={<Program />} />
+          <Route path="/live-workout" element={<LiveWorkout />} />
 
           <Route
-            path="/program/day/:dayIndex"
-            element={<ProgramDay />}
+            path="/subscription-return"
+            element={<SubscriptionReturn />}
           />
 
-          <Route path="/nutrition" element={<Nutrition />} />
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<Dashboard />} />
 
-          <Route path="/progress" element={<Progress />} />
+            <Route path="/program" element={<Program />} />
 
-          <Route path="/profile" element={<Profile />} />
+            <Route
+              path="/program/day/:dayIndex"
+              element={<ProgramDay />}
+            />
 
-          <Route path="/kael" element={<Kael />} />
+            <Route path="/nutrition" element={<Nutrition />} />
 
-          <Route path="/photos" element={<ProgressPhotos />} />
+            <Route path="/progress" element={<Progress />} />
 
-          <Route path="/formlab" element={<FormLab />} />
+            <Route path="/profile" element={<Profile />} />
 
-          <Route path="/about" element={<About />} />
+            <Route path="/kael" element={<Kael />} />
 
-          <Route path="/contact" element={<Contact />} />
-        </Route>
+            <Route path="/photos" element={<ProgressPhotos />} />
 
-        <Route path="*" element={<PageNotFound />} />
-      </Routes>
-    </Suspense>
+            <Route path="/formlab" element={<FormLab />} />
+
+            <Route path="/about" element={<About />} />
+
+            <Route path="/contact" element={<Contact />} />
+          </Route>
+
+          <Route path="*" element={<PageNotFound />} />
+        </Routes>
+      </Suspense>
+    </>
   );
 }
 
