@@ -27,9 +27,8 @@ import {
 } from '@/lib/utils';
 
 import {
-  computeStats,
-  incrementMessageCount,
-  canSendMessage,
+  getServerMessageStats,
+  claimMessage,
 } from '@/lib/messageLimit';
 
 import {
@@ -256,13 +255,18 @@ export default function Kael() {
 
         setUser(u);
 
-        setStats(
-          computeStats(
-            u,
-            u?.subscription_plan ||
-              'free'
-          )
-        );
+        getServerMessageStats()
+          .then((serverStats) => {
+            if (active) {
+              setStats(serverStats);
+            }
+          })
+          .catch((statsError) => {
+            console.error(
+              '[KAEL] Failed to load server usage:',
+              statsError
+            );
+          });
       })
       .catch((error) => {
         console.error(
@@ -740,6 +744,26 @@ export default function Kael() {
           );
 
 
+        /*
+         * SERVER-SIDE QUOTA ENFORCEMENT
+         *
+         * The database atomically claims the slot before the AI
+         * request is allowed to run. The browser cannot reset or
+         * increase this count, and concurrent requests cannot both
+         * consume the same final slot.
+         */
+        const quota =
+          await claimMessage();
+
+        if (!quota?.allowed) {
+          setStats(quota);
+          throw new Error(
+            'You have reached your monthly Kael message limit.'
+          );
+        }
+
+        setStats(quota);
+
         const result =
           await supabaseApi.ai.invoke(
             {
@@ -808,25 +832,10 @@ export default function Kael() {
         }
 
 
-        try {
-          const nextStats =
-            await incrementMessageCount(
-              plan
-            );
-
-          setStats(
-            nextStats
-          );
-
-          setUser(
-            nextStats.user
-          );
-        } catch (countError) {
-          console.error(
-            '[KAEL] Failed to update message count:',
-            countError
-          );
-        }
+        /*
+         * The server quota was already claimed before the AI call.
+         * Do not increment usage from the browser.
+         */
 
       } catch (error) {
 
