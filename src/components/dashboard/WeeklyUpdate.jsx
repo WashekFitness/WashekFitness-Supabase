@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { supabaseApi } from '@/lib/supabaseApi';
+import { supabase } from '@/lib/supabase';
 import {
   Sparkles,
   ChevronDown,
@@ -278,7 +279,7 @@ export default function WeeklyUpdate({
 
       try {
         const { data, error: statusError } =
-          await supabaseApi.supabase.rpc(
+          await supabase.rpc(
             'get_weekly_update_status'
           );
 
@@ -1527,7 +1528,7 @@ Never diagnose a medical condition.
       const {
         data: claimResult,
         error: claimError,
-      } = await supabaseApi.supabase.rpc(
+      } = await supabase.rpc(
         'claim_weekly_update'
       );
 
