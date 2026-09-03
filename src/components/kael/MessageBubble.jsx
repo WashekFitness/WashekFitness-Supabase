@@ -1,8 +1,8 @@
-import { Zap, Pencil } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 
-export default function MessageBubble({ msg, isUser, onEdit, canEdit }) {
+export default function MessageBubble({ msg, isUser }) {
   return (
     <div className={cn('flex group', isUser ? 'justify-end' : 'justify-start')}>
       {!isUser && (
@@ -24,15 +24,6 @@ export default function MessageBubble({ msg, isUser, onEdit, canEdit }) {
           </ReactMarkdown>
         )}
       </div>
-      {isUser && canEdit && (
-        <button
-          onClick={() => onEdit(msg)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity self-center ml-1 p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
-          aria-label="Edit message"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
-      )}
     </div>
   );
 }
