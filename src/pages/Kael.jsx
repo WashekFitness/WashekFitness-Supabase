@@ -20,8 +20,6 @@ import {
   Send,
   Zap,
   Lock,
-  Pencil,
-  X,
 } from 'lucide-react';
 
 import {
@@ -218,11 +216,6 @@ export default function Kael() {
   ] = useState(null);
 
 
-  const [
-    editingMessage,
-    setEditingMessage,
-  ] = useState(null);
-
 
   const bottomRef =
     useRef(null);
@@ -412,7 +405,7 @@ export default function Kael() {
   useEffect(() => {
     if (
       !loading &&
-      !(atLimit && !editingMessage)
+      !atLimit
     ) {
       window.requestAnimationFrame(() => {
         inputRef.current?.focus();
@@ -421,7 +414,6 @@ export default function Kael() {
   }, [
     loading,
     atLimit,
-    editingMessage,
   ]);
 
 
@@ -682,10 +674,7 @@ export default function Kael() {
       if (
         !trimmed ||
         loading ||
-        (
-          atLimit &&
-          !editingMessage
-        )
+        atLimit
       ) {
         return;
       }
@@ -693,10 +682,6 @@ export default function Kael() {
 
       typingCancelledRef.current =
         true;
-
-
-      const isEditing =
-        !!editingMessage;
 
 
       const previousMessages =
@@ -731,92 +716,25 @@ export default function Kael() {
       };
 
 
-      if (
-        isEditing &&
-        editingMessage
-      ) {
-        const editedId =
-          editingMessage.id;
-
-
-        const editedIndex =
-          messages.findIndex(
-            (message) =>
-              message.id ===
-              editedId
-          );
-
-
-        if (
-          editedIndex >= 0
-        ) {
-          const updatedMessages =
-            messages.slice(
-              0,
-              editedIndex
-            );
-
-
-          updatedMessages.push(
-            userMessage
-          );
-
-
-          updatedMessages.push(
-            temporaryMessage
-          );
-
-
-          setMessages(
-            updatedMessages
-          );
-        } else {
-          setMessages(
-            [
-              ...messages,
-              userMessage,
-              temporaryMessage,
-            ]
-          );
-        }
-
-      } else {
-        setMessages(
-          [
-            ...messages,
-            userMessage,
-            temporaryMessage,
-          ]
-        );
-      }
+      setMessages(
+        [
+          ...messages,
+          userMessage,
+          temporaryMessage,
+        ]
+      );
 
 
       setInput('');
-      setEditingMessage(null);
       setLoading(true);
 
 
       try {
 
-        const historyForPrompt =
-          isEditing &&
-          editingMessage
-            ? previousMessages
-                .slice(
-                  0,
-                  previousMessages.findIndex(
-                    (message) =>
-                      message.id ===
-                      editingMessage.id
-                  )
-                )
-            : previousMessages;
-
-
         const prompt =
           buildPrompt(
             [
-              ...historyForPrompt,
+              ...previousMessages,
               userMessage,
             ]
           );
@@ -860,15 +778,6 @@ export default function Kael() {
           false;
 
 
-        /*
-         * Save the completed conversation.
-         *
-         * IMPORTANT:
-         * The database uses created_at. The generic Supabase
-         * entity layer automatically supplies user_id for the
-         * signed-in user.
-         */
-
         try {
           await supabaseApi.entities.KaelMessage.create(
             {
@@ -899,29 +808,24 @@ export default function Kael() {
         }
 
 
-        /*
-         * Editing an existing message does not consume a new
-         * monthly message.
-         */
-
-        if (
-          !isEditing
-        ) {
-          try {
-            const nextStats =
-              await incrementMessageCount(
-                plan
-              );
-
-            setStats(
-              nextStats
+        try {
+          const nextStats =
+            await incrementMessageCount(
+              plan
             );
-          } catch (countError) {
-            console.error(
-              '[KAEL] Failed to update message count:',
-              countError
-            );
-          }
+
+          setStats(
+            nextStats
+          );
+
+          setUser(
+            nextStats.user
+          );
+        } catch (countError) {
+          console.error(
+            '[KAEL] Failed to update message count:',
+            countError
+          );
         }
 
       } catch (error) {
@@ -969,62 +873,6 @@ export default function Kael() {
           inputRef.current?.focus();
         });
       }
-    };
-
-
-  /*
-   * ==========================================================
-   * EDIT MESSAGE
-   * ==========================================================
-   */
-
-  const handleEdit =
-    (message) => {
-
-      if (
-        loading ||
-        !message ||
-        message.role !==
-          'user'
-      ) {
-        return;
-      }
-
-
-      setEditingMessage(
-        message
-      );
-
-
-      setInput(
-        message.content ||
-          ''
-      );
-
-
-      window.requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
-    };
-
-
-  /*
-   * ==========================================================
-   * CANCEL EDIT
-   * ==========================================================
-   */
-
-  const cancelEdit =
-    () => {
-      setEditingMessage(
-        null
-      );
-
-      setInput('');
-
-      window.requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
     };
 
 
@@ -1219,9 +1067,6 @@ export default function Kael() {
               isUser={
                 false
               }
-              canEdit={
-                false
-              }
             />
           )}
 
@@ -1256,14 +1101,6 @@ export default function Kael() {
                   isUser={
                     message.role ===
                     'user'
-                  }
-                  onEdit={
-                    handleEdit
-                  }
-                  canEdit={
-                    !loading &&
-                    !editingMessage &&
-                    !isTypingMessage
                   }
                 />
 
@@ -1377,8 +1214,7 @@ export default function Kael() {
           LIMIT NOTICE
           ====================================================== */}
 
-      {atLimit &&
-        !editingMessage && (
+      {atLimit && (
           <div className="
             mx-4
             mb-2
@@ -1459,63 +1295,6 @@ export default function Kael() {
 
 
       {/* ======================================================
-          EDITING INDICATOR
-          ====================================================== */}
-
-      {editingMessage && (
-        <div className="
-          mx-4
-          mb-1
-          flex
-          items-center
-          gap-2
-          text-xs
-          text-primary
-          bg-primary/10
-          border
-          border-primary/20
-          rounded-lg
-          px-3
-          py-1.5
-        ">
-
-          <Pencil className="
-            w-3
-            h-3
-            shrink-0
-          " />
-
-
-          <span>
-            Editing message — resubmit won't count against your limit
-          </span>
-
-
-          <button
-            type="button"
-            onClick={
-              cancelEdit
-            }
-            className="
-              ml-auto
-              p-0.5
-              hover:text-foreground
-            "
-            aria-label="Cancel edit"
-          >
-
-            <X className="
-              w-3.5
-              h-3.5
-            " />
-
-          </button>
-
-        </div>
-      )}
-
-
-      {/* ======================================================
           INPUT
           ====================================================== */}
 
@@ -1554,16 +1333,12 @@ export default function Kael() {
               handleKeyDown
             }
             placeholder={
-              atLimit &&
-              !editingMessage
+              atLimit
                 ? 'Upgrade to keep chatting…'
                 : 'Ask Kael anything…'
             }
             disabled={
-              (
-                atLimit &&
-                !editingMessage
-              ) ||
+              atLimit ||
               loading
             }
             className="
@@ -1594,21 +1369,14 @@ export default function Kael() {
             disabled={
               !input.trim() ||
               loading ||
-              (
-                atLimit &&
-                !editingMessage
-              )
+              atLimit
             }
             onClick={
               sendMessage
             }
           >
 
-            {editingMessage ? (
-              <Pencil className="w-4 h-4" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
+            <Send className="w-4 h-4" />
 
           </Button>
 
