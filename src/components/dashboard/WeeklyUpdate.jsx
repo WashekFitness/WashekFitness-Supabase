@@ -221,6 +221,20 @@ export default function WeeklyUpdate({
   const [error, setError] = useState(null);
   const [generated, setGenerated] = useState(false);
 
+  // ----------------------------------------------------------
+  // SERVER-SIDE WEEKLY UPDATE STATE
+  //
+  // Weekly Update is free for every plan.
+  // The server only enforces one successful claim per
+  // Monday-Sunday cycle.
+  // ----------------------------------------------------------
+
+  const [weeklyUpdateAvailable, setWeeklyUpdateAvailable] =
+    useState(true);
+
+  const [checkingWeeklyUpdate, setCheckingWeeklyUpdate] =
+    useState(true);
+
   const monday = isMonday();
 
   const hasNutritionInsights = canAccess(
@@ -238,6 +252,82 @@ export default function WeeklyUpdate({
 
   const weekEnd =
     previousWeek.end;
+
+
+  // ============================================================
+  // CHECK SERVER-SIDE WEEKLY UPDATE STATUS
+  //
+  // This replaces localStorage as the source of truth for
+  // whether the current Monday cycle has already been used.
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWeeklyUpdateStatus() {
+      if (!user?.id || !monday) {
+        if (!cancelled) {
+          setWeeklyUpdateAvailable(true);
+          setCheckingWeeklyUpdate(false);
+        }
+
+        return;
+      }
+
+      setCheckingWeeklyUpdate(true);
+
+      try {
+        const { data, error: statusError } =
+          await supabaseApi.supabase.rpc(
+            'get_weekly_update_status'
+          );
+
+        if (statusError) {
+          throw statusError;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const alreadyClaimed =
+          Boolean(
+            data?.already_claimed
+          );
+
+        setWeeklyUpdateAvailable(
+          !alreadyClaimed
+        );
+      } catch (statusError) {
+        console.error(
+          '[KAEL WEEKLY UPDATE] Failed to check server status:',
+          statusError
+        );
+
+        /*
+         * Do not lock the feature if the status check itself
+         * fails. The actual claim RPC below remains the
+         * authoritative server-side protection.
+         */
+        if (!cancelled) {
+          setWeeklyUpdateAvailable(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingWeeklyUpdate(false);
+        }
+      }
+    }
+
+    loadWeeklyUpdateStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user?.id,
+    monday,
+  ]);
 
 
   // ============================================================
@@ -440,10 +530,8 @@ export default function WeeklyUpdate({
   // ============================================================
   // CACHE
   //
-  // One report per previous week.
-  //
-  // The cache key deliberately uses the week being reviewed,
-  // not the current date.
+  // LocalStorage is still used only as a display cache.
+  // It is NO LONGER the usage limit.
   // ============================================================
 
   const cacheKey =
@@ -713,6 +801,15 @@ export default function WeeklyUpdate({
 
 
     if (loading) {
+      return;
+    }
+
+
+    if (!weeklyUpdateAvailable) {
+      setError(
+        'You have already used your Weekly Update for this Monday cycle. Your next Weekly Update will be available next Monday.'
+      );
+
       return;
     }
 
@@ -1416,6 +1513,49 @@ Never diagnose a medical condition.
 
 
       // --------------------------------------------------------
+      // CLAIM THE SERVER-SIDE WEEKLY UPDATE SLOT
+        //
+        // IMPORTANT:
+        // This happens AFTER Kael successfully produced a valid
+        // report. Therefore a failed AI request does not consume
+        // the user's weekly update.
+        //
+        // The RPC is the authoritative protection against two
+        // simultaneous successful claims.
+        // --------------------------------------------------------
+
+      const {
+        data: claimResult,
+        error: claimError,
+      } = await supabaseApi.supabase.rpc(
+        'claim_weekly_update'
+      );
+
+
+      if (claimError) {
+        throw claimError;
+      }
+
+
+      if (
+        !claimResult?.allowed
+      ) {
+        setWeeklyUpdateAvailable(false);
+
+        throw new Error(
+          'You have already used your Weekly Update for this Monday cycle. Your next Weekly Update will be available next Monday.'
+        );
+      }
+
+
+      // --------------------------------------------------------
+      // SERVER CLAIM SUCCEEDED
+      // --------------------------------------------------------
+
+      setWeeklyUpdateAvailable(false);
+
+
+      // --------------------------------------------------------
       // APPLY NEXT WEEK ADJUSTMENT
       // --------------------------------------------------------
 
@@ -1830,6 +1970,49 @@ Never diagnose a medical condition.
 
 
           {/* ==================================================
+              SERVER LIMIT REACHED
+              ================================================== */}
+
+          {monday &&
+            !generated &&
+            !loading &&
+            !error &&
+            !checkingWeeklyUpdate &&
+            !weeklyUpdateAvailable && (
+
+              <div className="p-4 rounded-xl bg-muted/50 border border-border">
+
+                <div className="flex items-start gap-3">
+
+                  <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+
+                    <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
+
+                  </div>
+
+                  <div>
+
+                    <p className="text-sm font-semibold">
+                      Weekly Update already used
+                    </p>
+
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      You've already received your Weekly
+                      Update for this Monday cycle. Your next
+                      Weekly Update will be available next
+                      Monday.
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            )}
+
+
+          {/* ==================================================
               GENERATE BUTTON
               ================================================== */}
 
@@ -1837,8 +2020,9 @@ Never diagnose a medical condition.
             !generated &&
             !loading &&
             !error &&
+            !checkingWeeklyUpdate &&
+            weeklyUpdateAvailable &&
             stats.workoutCount > 0 && (
-
               <Button
                 className="w-full h-11 font-heading font-semibold"
                 onClick={generate}
