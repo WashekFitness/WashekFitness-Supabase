@@ -650,13 +650,48 @@ export function buildWeekPrompt(
     week_end: safeWeek,
   };
 
-  return buildMicrocyclePrompt(
+  const baseRules = buildProgramPrompt(
     trainingType,
     data,
-    mesocycleIndex,
-    mesocycle,
     adaptationHistory
-  );
+  )
+    .replace(OUTPUT_FORMAT, '')
+    .replace(SCHEMA_INSTRUCTION, '');
+
+  return `${baseRules}
+
+OUTPUT: Return ONLY a JSON object containing ONE weekly microcycle for week ${safeWeek}.
+The microcycle must use mesocycle_index ${mesocycleIndex} and week_type appropriate for the week.
+
+Each day has day_name, workout_type, and exercises array.
+Each exercise has name, sets (number), reps (string), rest_seconds (number), notes (coaching cue string), and activation_cue (concise activation and form cue string).
+
+Respond with exactly this structure:
+{
+  "microcycle": {
+    "week_number": ${safeWeek},
+    "mesocycle_index": ${mesocycleIndex},
+    "week_type": string,
+    "days": [
+      {
+        "day_name": string,
+        "workout_type": string,
+        "exercises": [
+          {
+            "name": string,
+            "sets": number,
+            "reps": string,
+            "rest_seconds": number,
+            "notes": string,
+            "activation_cue": string
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Do not return a microcycles array. Return the singular microcycle object shown above.`;
 }
 
 // ------------------------------------------------------------
