@@ -1,56 +1,80 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods":
-    "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+/*
+ * ============================================================
+ * WASHEK FITNESS — CANCEL SUBSCRIPTION
+ * ============================================================
+ *
+ * Safely cancels the authenticated user's Stripe subscription.
+ *
+ * Flow:
+ * 1. Authenticate the current Supabase user.
+ * 2. Load that user's profile.
+ * 3. Require the Stripe customer/subscription IDs stored on
+ *    that user's profile.
+ * 4. Retrieve the Stripe subscription.
+ * 5. Verify the subscription belongs to the stored customer.
+ * 6. Cancel the Stripe subscription immediately.
+ * 7. Change the Washek account to Free.
+ *
+ * IMPORTANT:
+ * Stripe remains the billing authority.
+ * The Stripe webhook is still responsible for normalizing
+ * subscription state after Stripe changes.
+ */
+
+/*
+ * ============================================================
+ * ENVIRONMENT
+ * ============================================================
+ */
 
 const SUPABASE_URL =
-  Deno.env.get("SUPABASE_URL") || "";
+  Deno.env.get('SUPABASE_URL') || '';
 
 const SERVICE_ROLE_KEY =
-  Deno.env.get("SERVICE_ROLE_KEY") || "";
-
-const SUPABASE_ANON_KEY =
-  Deno.env.get("SUPABASE_ANON_KEY") ||
-  "";
+  Deno.env.get('SERVICE_ROLE_KEY') || '';
 
 const STRIPE_SECRET_KEY =
-  Deno.env.get("STRIPE_SECRET_KEY") || "";
+  Deno.env.get('STRIPE_SECRET_KEY') || '';
 
-if (!SUPABASE_URL) {
-  throw new Error(
-    "Missing SUPABASE_URL"
-  );
-}
+/*
+ * ============================================================
+ * CORS
+ * ============================================================
+ */
 
-if (!SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SERVICE_ROLE_KEY"
-  );
-}
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
+  'Content-Type': 'application/json',
+};
 
-if (!STRIPE_SECRET_KEY) {
-  throw new Error(
-    "Missing STRIPE_SECRET_KEY"
-  );
-}
+/*
+ * ============================================================
+ * SUPABASE ADMIN CLIENT
+ * ============================================================
+ */
 
-const supabaseAdmin =
-  createClient(
-    SUPABASE_URL,
-    SERVICE_ROLE_KEY,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
-  );
+const supabaseAdmin = createClient(
+  SUPABASE_URL,
+  SERVICE_ROLE_KEY,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
+);
+
+/*
+ * ============================================================
+ * JSON RESPONSE
+ * ============================================================
+ */
 
 function json(
   body: unknown,
@@ -65,94 +89,49 @@ function json(
   );
 }
 
-async function getAuthenticatedUser(
-  req: Request
-) {
-  const authorization =
-    req.headers.get(
-      "Authorization"
-    );
-
-  if (!authorization) {
-    throw new Error(
-      "Missing Authorization header."
-    );
-  }
-
-  /*
-   * Use the user's JWT to determine
-   * who is requesting cancellation.
-   *
-   * Never trust a user_id supplied
-   * in the request body.
-   */
-  const supabaseUser =
-    createClient(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      {
-        global: {
-          headers: {
-            Authorization:
-              authorization,
-          },
-        },
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      }
-    );
-
-  const {
-    data,
-    error,
-  } =
-    await supabaseUser.auth.getUser();
-
-  if (
-    error ||
-    !data?.user
-  ) {
-    throw new Error(
-      error?.message ||
-        "Unable to authenticate user."
-    );
-  }
-
-  return data.user;
-}
+/*
+ * ============================================================
+ * STRIPE API
+ * ============================================================
+ */
 
 async function stripeRequest(
   path: string,
   options: RequestInit = {}
 ) {
-  const response =
-    await fetch(
-      `https://api.stripe.com/v1/${path}`,
-      {
-        ...options,
-        headers: {
-          Authorization:
-            `Bearer ${STRIPE_SECRET_KEY}`,
-          "Content-Type":
-            "application/x-www-form-urlencoded",
-          ...(options.headers || {}),
-        },
-      }
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error(
+      'STRIPE_SECRET_KEY is not configured in Supabase.'
     );
+  }
 
-  const text =
+  const response = await fetch(
+    `https://api.stripe.com/v1/${path}`,
+    {
+      ...options,
+
+      headers: {
+        Authorization:
+          `Bearer ${STRIPE_SECRET_KEY}`,
+
+        'Content-Type':
+          'application/x-www-form-urlencoded',
+
+        ...(options.headers || {}),
+      },
+    }
+  );
+
+  const rawText =
     await response.text();
 
   let data: any = {};
 
   try {
-    data =
-      JSON.parse(text);
+    data = JSON.parse(rawText);
   } catch {
     data = {
-      raw: text,
+      raw: rawText,
     };
   }
 
@@ -166,7 +145,110 @@ async function stripeRequest(
   return data;
 }
 
-async function getSubscription(
+/*
+ * ============================================================
+ * AUTHENTICATE CURRENT USER
+ * ============================================================
+ */
+
+async function authenticateUser(
+  req: Request
+) {
+  const authorization =
+    req.headers.get('Authorization');
+
+  if (!authorization) {
+    throw new Error(
+      'You must be signed in to cancel your subscription.'
+    );
+  }
+
+  if (
+    !SUPABASE_URL ||
+    !SERVICE_ROLE_KEY
+  ) {
+    throw new Error(
+      'Supabase server configuration is incomplete.'
+    );
+  }
+
+  const token =
+    authorization.replace(
+      /^Bearer\s+/i,
+      ''
+    );
+
+  if (!token) {
+    throw new Error(
+      'Your login session is missing.'
+    );
+  }
+
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin.auth.getUser(
+      token
+    );
+
+  if (error) {
+    throw new Error(
+      `Your login session is invalid: ${error.message}`
+    );
+  }
+
+  if (!data?.user) {
+    throw new Error(
+      'Your login session could not be verified.'
+    );
+  }
+
+  return data.user;
+}
+
+/*
+ * ============================================================
+ * LOAD PROFILE
+ * ============================================================
+ */
+
+async function getProfile(
+  userId: string
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .select(`
+        id,
+        stripe_customer_id,
+        stripe_subscription_id,
+        stripe_price_id,
+        subscription_plan,
+        subscription_status
+      `)
+      .eq('id', userId)
+      .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Unable to load your Washek profile: ${error.message}`
+    );
+  }
+
+  return data || null;
+}
+
+/*
+ * ============================================================
+ * GET STRIPE SUBSCRIPTION
+ * ============================================================
+ */
+
+async function getStripeSubscription(
   subscriptionId: string
 ) {
   return stripeRequest(
@@ -176,54 +258,130 @@ async function getSubscription(
   );
 }
 
-async function cancelSubscription(
+/*
+ * ============================================================
+ * CANCEL STRIPE SUBSCRIPTION
+ * ============================================================
+ */
+
+async function cancelStripeSubscription(
   subscriptionId: string
 ) {
   /*
-   * Cancel at the end of the current
-   * billing period instead of immediately
-   * removing the user's paid access.
+   * DELETE /v1/subscriptions/{id}
+   *
+   * This preserves the existing Washek behavior:
+   * cancellation is immediate.
    */
+
   return stripeRequest(
     `subscriptions/${encodeURIComponent(
       subscriptionId
     )}`,
     {
-      method: "POST",
-      body:
-        new URLSearchParams({
-          cancel_at_period_end:
-            "true",
-        }).toString(),
+      method: 'DELETE',
     }
   );
 }
 
+/*
+ * ============================================================
+ * CHANGE WASHEK PROFILE TO FREE
+ * ============================================================
+ */
+
+async function makeProfileFree(
+  userId: string,
+  customerId: string
+) {
+  const now =
+    new Date().toISOString();
+
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        subscription_plan:
+          'free',
+
+        subscription_status:
+          'canceled',
+
+        stripe_customer_id:
+          customerId,
+
+        stripe_subscription_id:
+          null,
+
+        stripe_price_id:
+          null,
+
+        subscription_cancelled_at:
+          now,
+
+        subscription_updated_at:
+          now,
+
+        updated_at:
+          now,
+      })
+      .eq('id', userId)
+      .select('*')
+      .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Stripe was canceled, but Washek could not update the profile: ${error.message}`
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      'Stripe was canceled, but the Washek profile was not found.'
+    );
+  }
+
+  return data;
+}
+
+/*
+ * ============================================================
+ * MAIN FUNCTION
+ * ============================================================
+ */
+
 Deno.serve(
   async (req) => {
-    if (
-      req.method ===
-      "OPTIONS"
-    ) {
+    /*
+     * --------------------------------------------------------
+     * CORS PREFLIGHT
+     * --------------------------------------------------------
+     */
+
+    if (req.method === 'OPTIONS') {
       return new Response(
-        "ok",
+        'ok',
         {
           status: 200,
-          headers:
-            corsHeaders,
+          headers: corsHeaders,
         }
       );
     }
 
-    if (
-      req.method !==
-      "POST"
-    ) {
+    /*
+     * --------------------------------------------------------
+     * POST ONLY
+     * --------------------------------------------------------
+     */
+
+    if (req.method !== 'POST') {
       return json(
         {
           success: false,
-          error:
-            "Method not allowed.",
+          error: 'Method not allowed.',
         },
         405
       );
@@ -231,193 +389,309 @@ Deno.serve(
 
     try {
       /*
-       * ------------------------------------------------------
-       * AUTHENTICATE
-       * ------------------------------------------------------
+       * ======================================================
+       * 1. AUTHENTICATE
+       * ======================================================
        */
 
       const user =
-        await getAuthenticatedUser(
-          req
-        );
+        await authenticateUser(req);
+
+      console.log(
+        '[CANCEL] Authenticated user:',
+        user.id
+      );
 
       /*
-       * ------------------------------------------------------
-       * GET USER'S SUBSCRIPTION FROM SUPABASE
-       * ------------------------------------------------------
-       *
-       * We identify the subscription using the authenticated
-       * user's own profile. The client cannot substitute
-       * another user's ID.
+       * ======================================================
+       * 2. LOAD PROFILE
+       * ======================================================
        */
 
-      const {
-        data: profile,
-        error: profileError,
-      } =
-        await supabaseAdmin
-          .from("profiles")
-          .select(
-            "id, email, stripe_subscription_id, subscription_plan, subscription_status"
-          )
-          .eq(
-            "id",
-            user.id
-          )
-          .maybeSingle();
-
-      if (profileError) {
-        throw new Error(
-          `Unable to load your subscription information: ${profileError.message}`
-        );
-      }
+      const profile =
+        await getProfile(user.id);
 
       if (!profile) {
         throw new Error(
-          "Your Washek Fitness profile could not be found."
+          'Your Washek profile could not be found.'
         );
       }
 
-      const subscriptionId =
-        profile.stripe_subscription_id;
+      /*
+       * ======================================================
+       * 3. REQUIRE STRIPE IDS
+       * ======================================================
+       */
 
-      if (
-        !subscriptionId
-      ) {
+      const customerId =
+        profile.stripe_customer_id ||
+        null;
+
+      const subscriptionId =
+        profile.stripe_subscription_id ||
+        null;
+
+      /*
+       * We intentionally do NOT search Stripe by email.
+       *
+       * Email-based lookup can select the wrong customer when
+       * an account has multiple Stripe customers or historical
+       * subscriptions.
+       */
+
+      if (!customerId) {
+        console.log(
+          '[CANCEL] No Stripe customer is stored for user:',
+          user.id
+        );
+
+        const updatedProfile =
+          await supabaseAdmin
+            .from('profiles')
+            .update({
+              subscription_plan:
+                'free',
+
+              subscription_status:
+                'canceled',
+
+              stripe_subscription_id:
+                null,
+
+              stripe_price_id:
+                null,
+
+              subscription_cancelled_at:
+                new Date().toISOString(),
+
+              subscription_updated_at:
+                new Date().toISOString(),
+
+              updated_at:
+                new Date().toISOString(),
+            })
+            .eq('id', user.id)
+            .select('*')
+            .maybeSingle();
+
+        if (updatedProfile.error) {
+          throw new Error(
+            `Unable to update your Washek profile: ${updatedProfile.error.message}`
+          );
+        }
+
         return json({
           success: true,
-          alreadyCanceled:
-            false,
+          alreadyCanceled: true,
+          plan: 'free',
           message:
-            "You do not currently have a Stripe subscription to cancel.",
+            'Your account is already on the Free Plan.',
+          user: updatedProfile.data,
         });
       }
 
       /*
-       * ------------------------------------------------------
-       * VERIFY THE STRIPE SUBSCRIPTION
-       * ------------------------------------------------------
-       *
-       * This prevents us from blindly modifying an arbitrary
-       * Stripe subscription ID stored in the profile.
+       * ======================================================
+       * 4. IF NO SUBSCRIPTION, ACCOUNT IS ALREADY FREE
+       * ======================================================
+       */
+
+      if (!subscriptionId) {
+        console.log(
+          '[CANCEL] No Stripe subscription stored for user:',
+          user.id
+        );
+
+        const updatedProfile =
+          await makeProfileFree(
+            user.id,
+            customerId
+          );
+
+        return json({
+          success: true,
+          alreadyCanceled: true,
+          plan: 'free',
+          message:
+            'Your account is already on the Free Plan.',
+          user: updatedProfile,
+        });
+      }
+
+      /*
+       * ======================================================
+       * 5. RETRIEVE SUBSCRIPTION
+       * ======================================================
        */
 
       const subscription =
-        await getSubscription(
+        await getStripeSubscription(
           subscriptionId
         );
 
-      const metadataUserId =
-        subscription
-          ?.metadata
-          ?.user_id;
+      /*
+       * ======================================================
+       * 6. VERIFY OWNERSHIP
+       * ======================================================
+       *
+       * This is the important security check.
+       *
+       * Never cancel a subscription merely because its ID is
+       * present in a request/profile. Verify that Stripe says
+       * the subscription belongs to this user's Stripe customer.
+       */
+
+      const stripeCustomerId =
+        typeof subscription?.customer ===
+        'string'
+          ? subscription.customer
+          : null;
 
       if (
-        metadataUserId &&
-        metadataUserId !==
-          user.id
+        !stripeCustomerId ||
+        stripeCustomerId !== customerId
       ) {
+        console.error(
+          '[CANCEL] Stripe ownership mismatch:',
+          {
+            userId: user.id,
+            profileCustomerId:
+              customerId,
+            stripeCustomerId,
+            subscriptionId,
+          }
+        );
+
         throw new Error(
-          "This Stripe subscription does not belong to the authenticated account."
+          'The Stripe subscription on this account could not be verified.'
         );
       }
 
       /*
-       * ------------------------------------------------------
-       * ALREADY CANCELING
-       * ------------------------------------------------------
+       * ======================================================
+       * 7. CHECK CURRENT STRIPE STATUS
+       * ======================================================
+       */
+
+      const currentStatus =
+        subscription?.status ||
+        null;
+
+      /*
+       * Stripe has already canceled this subscription.
+       * Do not attempt another DELETE.
        */
 
       if (
-        subscription
-          ?.cancel_at_period_end
+        currentStatus ===
+          'canceled' ||
+        currentStatus ===
+          'incomplete_expired'
       ) {
+        console.log(
+          '[CANCEL] Subscription already canceled:',
+          subscriptionId
+        );
+
+        const updatedProfile =
+          await makeProfileFree(
+            user.id,
+            customerId
+          );
+
         return json({
           success: true,
-
-          alreadyCanceled:
-            true,
-
-          cancel_at_period_end:
-            true,
-
-          current_period_end:
-            subscription
-              ?.current_period_end
-              ? new Date(
-                  subscription.current_period_end *
-                    1000
-                ).toISOString()
-              : null,
-
-          subscription_id:
-            subscription.id,
+          alreadyCanceled: true,
+          plan: 'free',
+          message:
+            'Your subscription is already canceled.',
+          user: updatedProfile,
         });
       }
 
       /*
-       * ------------------------------------------------------
-       * CANCEL AT PERIOD END
-       * ------------------------------------------------------
+       * ======================================================
+       * 8. CANCEL STRIPE IMMEDIATELY
+       * ======================================================
        */
 
+      console.log(
+        '[CANCEL] Canceling verified Stripe subscription:',
+        {
+          userId: user.id,
+          customerId,
+          subscriptionId,
+          stripeStatus:
+            currentStatus,
+        }
+      );
+
       const canceled =
-        await cancelSubscription(
+        await cancelStripeSubscription(
           subscriptionId
         );
 
       /*
-       * ------------------------------------------------------
-       * RETURN THE ACTUAL STRIPE STATE
-       * ------------------------------------------------------
-       *
-       * The Stripe webhook remains responsible for
-       * synchronizing the final subscription state back
-       * into Supabase.
+       * ======================================================
+       * 9. REVOKE WASHEK PAID ACCESS
+       * ======================================================
        */
+
+      const updatedProfile =
+        await makeProfileFree(
+          user.id,
+          customerId
+        );
+
+      /*
+       * ======================================================
+       * 10. SUCCESS
+       * ======================================================
+       */
+
+      console.log(
+        '[CANCEL] SUCCESS:',
+        {
+          userId: user.id,
+          customerId,
+          subscriptionId,
+          stripeStatus:
+            canceled?.status ||
+            'canceled',
+        }
+      );
 
       return json({
         success: true,
-
-        canceled: true,
-
-        cancel_at_period_end:
-          Boolean(
-            canceled
-              ?.cancel_at_period_end
-          ),
-
-        current_period_end:
-          canceled
-            ?.current_period_end
-            ? new Date(
-                canceled.current_period_end *
-                  1000
-              ).toISOString()
-            : null,
-
-        subscription_id:
-          canceled?.id ||
-          subscriptionId,
-
+        alreadyCanceled: false,
         message:
-          "Your subscription has been scheduled for cancellation at the end of the current billing period.",
+          'Your subscription has been canceled immediately. Your account is now on the Free Plan.',
+        stripe_status:
+          canceled?.status ||
+          'canceled',
+        subscription_id:
+          subscriptionId,
+        user: updatedProfile,
       });
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to cancel your subscription.';
+
       console.error(
-        "[CANCEL SUBSCRIPTION] Error:",
-        error
+        '[CANCEL] FAILED:',
+        {
+          message,
+          timestamp:
+            new Date().toISOString(),
+        }
       );
 
       return json(
         {
           success: false,
-
-          error:
-            error instanceof
-            Error
-              ? error.message
-              : "Unable to cancel your subscription.",
+          error: message,
         },
         400
       );
