@@ -1,3 +1,4 @@
+// name=supabase/functions/ai-generate/index.ts
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -125,12 +126,9 @@ function getErrorMessage(raw: any, fallback: string) {
   return raw?.error?.message || raw?.message || raw?.error || fallback;
 }
 
-/*
- * Configure a conservative fetch timeout (ms).
- * The Edge runtime observed an IDLE_TIMEOUT around ~150s in your logs.
- * Keep this below that timeout so we can return a controlled failure.
- */
-const OPENROUTER_FETCH_TIMEOUT_MS = Number(Deno.env.get('OPENROUTER_FETCH_TIMEOUT_MS') || '110000'); // 110s
+const DEFAULT_OPENROUTER_ATTEMPTS = Number(Deno.env.get('OPENROUTER_ATTEMPTS') || '3');
+const DEFAULT_OPENROUTER_ATTEMPT_TIMEOUT_MS = Number(Deno.env.get('OPENROUTER_ATTEMPT_TIMEOUT_MS') || '40000'); // 40s per attempt
+const OPENROUTER_BACKOFF_MS = Number(Deno.env.get('OPENROUTER_BACKOFF_MS') || '1200'); // base backoff
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -147,13 +145,10 @@ Deno.serve(async (req) => {
     const fileUrls = Array.isArray(body?.file_urls) ? body.file_urls : [];
 
     if (!ALLOWED_TYPES.has(type)) {
-      return json(
-        {
-          success: false,
-          error: `Unsupported AI request type: ${type}`,
-        },
-        400
-      );
+      return json({
+        success: false,
+        error: `Unsupported AI request type: ${type}`,
+      }, 400);
     }
 
     if (!prompt) {
@@ -162,42 +157,25 @@ Deno.serve(async (req) => {
 
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!apiKey) {
-      return json(
-        {
-          success: false,
-          error: 'OPENROUTER_API_KEY is not configured in Supabase.',
-        },
-        500
-      );
+      return json({
+        success: false,
+        error: 'OPENROUTER_API_KEY is not configured in Supabase.',
+      }, 500);
     }
 
-    // server-side model selection; keep free-first policy
     const configuredModel = Deno.env.get('OPENROUTER_MODEL') || DEFAULT_MODEL;
     const model = configuredModel === 'openrouter/free' ? configuredModel : DEFAULT_MODEL;
 
-    /*
-     * Lower max_tokens from the very large values used previously.
-     * Large token budgets increase response time and chance of hitting the Edge timeout.
-     * These are conservative defaults — feel free to tune smaller if you still see timeouts.
-     */
+    // Conservative token budget to reduce latency
     let maxTokens = 3000;
-    if (type === 'microcycle') {
-      maxTokens = 3000; // previously very large (6500); smaller reduces latency
-    } else if (type === 'structure') {
-      maxTokens = 1500;
-    } else if (type === 'general') {
-      maxTokens = 2000;
-    } else {
-      maxTokens = 2000;
-    }
+    if (type === 'microcycle') maxTokens = 3000;
+    else if (type === 'structure') maxTokens = 1500;
+    else if (type === 'general') maxTokens = 2000;
 
     const payload: Record<string, unknown> = {
       model,
       messages: [
-        {
-          role: 'user',
-          content: buildMessageContent(prompt, fileUrls),
-        },
+        { role: 'user', content: buildMessageContent(prompt, fileUrls) },
       ],
       stream: false,
       temperature: 0.2,
@@ -214,93 +192,98 @@ Deno.serve(async (req) => {
         },
       };
 
-      payload.provider = {
-        require_parameters: true,
-      };
-
-      // Helps repair harmless JSON formatting failures for non-streaming structured responses.
+      payload.provider = { require_parameters: true };
       payload.plugins = [{ id: 'response-healing' }];
     }
 
-    // Use AbortController to enforce a fetch timeout and fail fast instead of letting the Edge runtime idle-timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, OPENROUTER_FETCH_TIMEOUT_MS);
+    // Retry loop for transient OpenRouter failures
+    let finalRaw: any = null;
+    let finalResponseOk = false;
+    let attempt = 0;
 
-    let response: Response;
-    let raw: any = {};
-    try {
-      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': Deno.env.get('OPENROUTER_SITE_URL') || 'https://washekfitness.com',
-          'X-OpenRouter-Title': Deno.env.get('OPENROUTER_SITE_NAME') || 'Washek Fitness',
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      clearTimeout(timeoutId);
-      // If the fetch was aborted we return a specific timeout error so the caller can release claims/retry
-      if (err && (err.name === 'AbortError' || err?.message?.toLowerCase?.().includes('aborted'))) {
-        console.error('[AI] OpenRouter fetch aborted (timeout):', {
-          type,
-          userId: user?.id,
-          timeoutMs: OPENROUTER_FETCH_TIMEOUT_MS,
+    for (attempt = 1; attempt <= DEFAULT_OPENROUTER_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), DEFAULT_OPENROUTER_ATTEMPT_TIMEOUT_MS);
+
+      try {
+        console.log('[AI] OpenRouter attempt', attempt, { type, userId: user?.id });
+        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': Deno.env.get('OPENROUTER_SITE_URL') || 'https://washekfitness.com',
+            'X-OpenRouter-Title': Deno.env.get('OPENROUTER_SITE_NAME') || 'Washek Fitness',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
         });
 
-        return json(
-          {
+        clearTimeout(timeoutId);
+
+        try {
+          finalRaw = await resp.json().catch(() => ({ raw_text: 'non-json' }));
+        } catch (parseErr) {
+          finalRaw = { raw_parse_error: String(parseErr) };
+        }
+
+        if (resp.ok) {
+          finalResponseOk = true;
+          // success - break out
+          break;
+        }
+
+        // transient 5xx or 429 we should retry
+        if (resp.status >= 500 || resp.status === 429) {
+          console.warn('[AI] OpenRouter transient status, will retry', { status: resp.status, attempt, type, userId: user?.id });
+          // fallthrough to backoff then retry
+        } else {
+          // non-retryable client error - return to caller
+          console.error('[AI] OpenRouter returned non-retryable error', { status: resp.status, raw: finalRaw, type, userId: user?.id });
+          return json({
             success: false,
-            error: `OpenRouter request timed out after ${OPENROUTER_FETCH_TIMEOUT_MS}ms.`,
-            code: 'openrouter_timeout',
-            timeout_ms: OPENROUTER_FETCH_TIMEOUT_MS,
-          },
-          504
-        );
+            error: getErrorMessage(finalRaw, `OpenRouter returned status ${resp.status}.`),
+            status: resp.status,
+            attempt,
+          }, resp.status);
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        // abort (timeout) or network error
+        if (err && (err.name === 'AbortError' || String(err).toLowerCase().includes('aborted'))) {
+          console.warn('[AI] OpenRouter attempt aborted (timeout)', { attempt, timeoutMs: DEFAULT_OPENROUTER_ATTEMPT_TIMEOUT_MS, type, userId: user?.id });
+          // Treat abort as transient and retry
+        } else {
+          console.error('[AI] OpenRouter fetch error', { err: String(err), attempt, type, userId: user?.id });
+          // network errors are transient as well - retry
+        }
       }
 
-      console.error('[AI] OpenRouter fetch failed:', { err, type, userId: user?.id });
-      return json(
-        {
-          success: false,
-          error: 'Failed to contact OpenRouter.',
-        },
-        502
-      );
+      // backoff before next attempt
+      if (attempt < DEFAULT_OPENROUTER_ATTEMPTS) {
+        const backoff = OPENROUTER_BACKOFF_MS * Math.pow(2, attempt - 1);
+        await new Promise((res) => setTimeout(res, backoff));
+      }
+    } // end attempts
+
+    if (!finalResponseOk) {
+      console.error('[AI] OpenRouter failed after attempts', { attempts: attempt - 1, type, userId: user?.id, last_raw: finalRaw });
+      // Distinguish between timeout-like aborts and server errors
+      const isTimeoutLike = finalRaw?.raw_text === undefined && finalRaw?.raw_parse_error === undefined;
+      return json({
+        success: false,
+        error: 'OpenRouter did not produce a successful response after retries.',
+        code: 'openrouter_transient',
+        attempts: attempt - 1,
+        last_raw: typeof finalRaw === 'string' ? finalRaw : (finalRaw || null),
+      }, 502);
     }
 
-    try {
-      raw = await response.json().catch(() => ({}));
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!response.ok) {
-      console.error('[AI] OpenRouter error:', {
-        type,
-        status: response.status,
-        error: raw,
-        userId: user?.id,
-      });
-
-      return json(
-        {
-          success: false,
-          error: getErrorMessage(raw, `OpenRouter request failed with status ${response.status}.`),
-          status: response.status,
-        },
-        response.status
-      );
-    }
-
-    const outputText = extractText(raw);
+    // finalRaw contains the successful JSON-ish response
+    const outputText = extractText(finalRaw);
 
     if (!outputText) {
-      console.error('[AI] OpenRouter returned no assistant content:', { type, raw, userId: user?.id });
+      console.error('[AI] OpenRouter returned no assistant content (successful status but empty content)', { type, finalRaw, userId: user?.id });
       return json({
         success: false,
         error: 'OpenRouter returned no output.',
@@ -315,14 +298,14 @@ Deno.serve(async (req) => {
           success: true,
           result: parsed,
           type,
-          model: raw?.model || model,
-          usage: raw?.usage || null,
+          model: finalRaw?.model || model,
+          usage: finalRaw?.usage || null,
         });
       } catch (parseErr) {
-        console.error('[AI] Expected JSON but received:', {
+        console.error('[AI] Expected JSON but received invalid JSON for structured response', {
           type,
-          output: outputText.slice(0, 4000),
-          parseErr,
+          parseErr: String(parseErr),
+          outputSnippet: (outputText || '').slice(0, 4000),
           userId: user?.id,
         });
 
@@ -330,7 +313,7 @@ Deno.serve(async (req) => {
           success: false,
           error: 'OpenRouter returned invalid structured data.',
           raw_output: outputText.slice(0, 2000),
-          model: raw?.model || model,
+          model: finalRaw?.model || model,
         }, 502);
       }
     }
@@ -339,12 +322,11 @@ Deno.serve(async (req) => {
       success: true,
       result: outputText,
       type,
-      model: raw?.model || model,
-      usage: raw?.usage || null,
+      model: finalRaw?.model || model,
+      usage: finalRaw?.usage || null,
     });
   } catch (error) {
-    console.error('[AI] Edge function error:', error);
-
+    console.error('[AI] Edge function unhandled error:', error);
     return json({
       success: false,
       error: error instanceof Error ? error.message : 'AI request failed.',
