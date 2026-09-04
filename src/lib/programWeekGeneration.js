@@ -386,7 +386,7 @@ async function fetchProgram(
  * ============================================================
  */
 
-export async function getCalendarWeek(
+async function getCalendarWeek(
   programId
 ) {
   const {
@@ -564,6 +564,10 @@ async function failWeek(
  * ============================================================
  * GENERATE ONE WEEK
  * ============================================================
+ *
+ * Updated to add a client-side timeout and robust failure handling
+ * so claims are released and the UI can recover quickly when the
+ * AI or edge runtime is slow/timeouting.
  */
 
 async function generateOneWeek(
@@ -571,316 +575,189 @@ async function generateOneWeek(
   user,
   weekNumber
 ) {
-  const programId =
-    program.id;
+  const programId = program.id;
 
-  console.log(
-    `[ProgramWeekGeneration] Starting Week ${weekNumber}`
+  console.log(`[ProgramWeekGeneration] Starting Week ${weekNumber}`);
+
+  // Claim first to prevent concurrent generation
+  const claim = await claimWeek(programId, weekNumber);
+
+  if (claim?.allowed === false) {
+    console.log(`[ProgramWeekGeneration] Week ${weekNumber} was not claimed:`, claim);
+    return {
+      generated: false,
+      reason: claim?.reason || 'generation_in_progress',
+    };
+  }
+
+  // Refresh program after claim
+  let freshProgram = await fetchProgram(programId);
+
+  const existingMicrocycles = asArray(freshProgram.microcycles);
+  const existingWeek = existingMicrocycles.find(
+    week => Number(week?.week_number) === Number(weekNumber)
   );
 
-  /*
-   * Claim first.
-   *
-   * This prevents two browser tabs/devices from generating the
-   * same week simultaneously.
-   */
-
-  const claim =
-    await claimWeek(
-      programId,
-      weekNumber
-    );
-
-  if (
-    claim?.allowed === false
-  ) {
-    console.log(
-      `[ProgramWeekGeneration] Week ${weekNumber} was not claimed:`,
-      claim
-    );
-
+  if (existingWeek) {
     return {
       generated: false,
-      reason:
-        claim?.reason ||
-        'generation_in_progress',
+      reason: 'already_exists',
+      program: freshProgram,
     };
   }
 
-  /*
-   * Refresh program after the claim.
-   *
-   * Another process may have completed a week between our
-   * previous read and this point.
-   */
-
-  let freshProgram =
-    await fetchProgram(
-      programId
-    );
-
-  const existingMicrocycles =
-    asArray(
-      freshProgram.microcycles
-    );
-
-  const existingWeek =
-    existingMicrocycles.find(
-      week =>
-        Number(
-          week?.week_number
-        ) ===
-        Number(
-          weekNumber
-        )
-    );
-
-  if (
-    existingWeek
-  ) {
-    /*
-     * The week may have been created by another browser tab or
-     * device after our generation claim succeeded.
-     *
-     * Mark the generation record as completed instead of leaving
-     * it stuck in `generating`.
-     */
-    try {
-      await completeWeek(
-        programId,
-        weekNumber,
-        existingWeek
-      );
-    } catch (error) {
-      console.error(
-        `[ProgramWeekGeneration] Week ${weekNumber} already exists, but the generation record could not be marked completed:`,
-        error
-      );
-    }
-
-    return {
-      generated: false,
-      reason:
-        'already_exists',
-      program:
-        freshProgram,
-    };
-  }
-
-  /*
-   * Load the latest profile.
-   */
-
-  const {
-    data: profile,
-    error: profileError,
-  } =
-    await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+  // Load the latest profile
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
 
   if (profileError) {
-    await failWeek(
-      programId,
-      weekNumber
-    );
-
-    throw profileError;
+    // Mark failure and return so claim is not left dangling
+    await failWeek(programId, weekNumber);
+    console.error('[ProgramWeekGeneration] Profile load failed:', profileError);
+    return {
+      generated: false,
+      reason: 'profile_load_failed',
+      error: profileError.message || String(profileError),
+    };
   }
 
-  /*
-   * Find the immediately previous microcycle.
-   */
-
-  const previousMicrocycle =
-    existingMicrocycles.find(
-      week =>
-        Number(
-          week?.week_number
-        ) ===
-        Number(
-          weekNumber - 1
-        )
-    ) || null;
-
-  /*
-   * Load actual workout performance from the previous week.
-   *
-   * If logs cannot be loaded, generation can still continue from
-   * the program/profile. We don't want a missing optional log
-   * query to prevent a new training week from being created.
-   */
+  // previous microcycle and recent logs
+  const previousMicrocycle = existingMicrocycles.find(
+    week => Number(week?.week_number) === Number(weekNumber - 1)
+  ) || null;
 
   let recentLogs = [];
-
-  if (
-    weekNumber > 1
-  ) {
-    const {
-      data: logs,
-      error: logsError,
-    } =
-      await supabase
+  if (weekNumber > 1) {
+    try {
+      const { data: logs, error: logsError } = await supabase
         .from('workout_logs')
         .select('*')
-        .eq(
-          'program_id',
-          programId
-        )
-        .eq(
-          'week_number',
-          weekNumber - 1
-        )
-        .order(
-          'date',
-          {
-            ascending:
-              false,
-          }
-        )
+        .eq('program_id', programId)
+        .eq('week_number', weekNumber - 1)
+        .order('date', { ascending: false })
         .limit(30);
 
-    if (logsError) {
-      console.warn(
-        '[ProgramWeekGeneration] Could not load previous workout logs. Continuing without them:',
-        logsError
-      );
-    } else {
-      recentLogs =
-        logs || [];
+      if (logsError) {
+        console.warn('[ProgramWeekGeneration] Could not load previous workout logs. Continuing without them:', logsError);
+      } else {
+        recentLogs = logs || [];
+      }
+    } catch (err) {
+      console.warn('[ProgramWeekGeneration] Error loading previous logs, continuing:', err);
     }
   }
 
-  /*
-   * Adaptation history is already part of the existing program
-   * architecture.
-   */
+  const adaptationHistory = asArray(freshProgram.adaptation_history);
+  const trainingType = freshProgram.training_type || profile.training_type || 'calisthenics';
 
-  const adaptationHistory =
-    asArray(
-      freshProgram.adaptation_history
-    );
-
-  const trainingType =
-    freshProgram.training_type ||
-    profile.training_type ||
-    'calisthenics';
-
-  const promptData =
-    buildPromptData(
-      profile,
-      profile.training_requirements || '',
-      previousMicrocycle,
-      recentLogs
-    );
+  const promptData = buildPromptData(
+    profile,
+    profile.training_requirements || '',
+    previousMicrocycle,
+    recentLogs
+  );
 
   /*
    * Generate exactly ONE week.
-   *
-   * This uses the existing working AI path.
+   * Wrap AI invocation in a client-side timeout and robust error handling.
    */
+
+  // helper: promise timeout
+  function promiseTimeout(promise, ms) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const err = new Error(`AI invocation timed out after ${ms}ms`);
+        err.name = 'AIInvocationTimeout';
+        reject(err);
+      }, ms);
+    });
+
+    return Promise.race([promise.finally(() => clearTimeout(timeoutId)), timeoutPromise]);
+  }
+
+  // Choose a conservative client-side timeout shorter than edge function runtime limit.
+  const AI_INVOCATION_TIMEOUT_MS = 90 * 1000; // 90 seconds
 
   let parsed;
-
   try {
-    parsed =
-      await supabaseApi.ai.invoke({
+    parsed = await promiseTimeout(
+      supabaseApi.ai.invoke({
         type: 'microcycle',
-
-        prompt:
-          buildWeekPrompt(
-            trainingType,
-            promptData,
-            weekNumber,
-            adaptationHistory
-          ),
-
-        schema:
-          weekSchema,
-      });
+        prompt: buildWeekPrompt(trainingType, promptData, weekNumber, adaptationHistory),
+        schema: weekSchema,
+      }),
+      AI_INVOCATION_TIMEOUT_MS
+    );
   } catch (error) {
-    await failWeek(
-      programId,
-      weekNumber
-    );
+    // On any error (including timeout), mark generation as failed so claim is released.
+    try {
+      await failWeek(programId, weekNumber);
+    } catch (failErr) {
+      // If failWeek itself errors, log — but continue to return graceful failure.
+      console.error('[ProgramWeekGeneration] failWeek failed after AI error:', failErr);
+    }
 
-    throw error;
+    console.error(`[ProgramWeekGeneration] AI generation failed for Week ${weekNumber}:`, error);
+
+    // Return a clear, non-throwing result so callers can respond in the UI
+    return {
+      generated: false,
+      reason: error?.name === 'AIInvocationTimeout' ? 'timeout' : 'ai_error',
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
-  const microcycle =
-    parsed?.microcycle;
+  const microcycle = parsed?.microcycle;
 
-  if (
-    !microcycle ||
-    !Array.isArray(
-      microcycle.days
-    ) ||
-    microcycle.days.length === 0
-  ) {
-    await failWeek(
-      programId,
-      weekNumber
-    );
+  if (!microcycle || !Array.isArray(microcycle.days) || microcycle.days.length === 0) {
+    // Mark failure and release claim
+    await failWeek(programId, weekNumber);
 
-    throw new Error(
-      `AI returned no workouts for Week ${weekNumber}.`
-    );
+    console.error(`[ProgramWeekGeneration] AI returned no workouts for Week ${weekNumber}. Parsed:`, parsed);
+
+    return {
+      generated: false,
+      reason: 'ai_returned_no_workouts',
+      error: 'AI returned no workouts',
+    };
   }
 
-  /*
-   * Never trust the model to choose the correct week number.
-   */
-
+  // Ensure correct week_number etc
   const safeMicrocycle = {
     ...microcycle,
-
-    week_number:
-      weekNumber,
-
-    mesocycle_index:
-      getMesocycleIndex(
-        weekNumber
-      ),
-
-    week_type:
-      microcycle.week_type ||
-      'Progression',
+    week_number: weekNumber,
+    mesocycle_index: getMesocycleIndex(weekNumber),
+    week_type: microcycle.week_type || 'Progression',
   };
 
   try {
-    await completeWeek(
-      programId,
-      weekNumber,
-      safeMicrocycle
-    );
+    await completeWeek(programId, weekNumber, safeMicrocycle);
   } catch (error) {
-    await failWeek(
-      programId,
-      weekNumber
-    );
+    // If completion fails, mark failure and return
+    await failWeek(programId, weekNumber);
 
-    throw error;
+    console.error(`[ProgramWeekGeneration] completeWeek failed for Week ${weekNumber}:`, error);
+
+    return {
+      generated: false,
+      reason: 'complete_failed',
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
-  freshProgram =
-    await fetchProgram(
-      programId
-    );
+  // Refresh and return success
+  freshProgram = await fetchProgram(programId);
 
-  console.log(
-    `[ProgramWeekGeneration] Week ${weekNumber} generated successfully.`
-  );
+  console.log(`[ProgramWeekGeneration] Week ${weekNumber} generated successfully.`);
 
   return {
     generated: true,
-
-    reason:
-      'generated',
-
-    program:
-      freshProgram,
+    reason: 'generated',
+    program: freshProgram,
   };
 }
 
@@ -893,7 +770,7 @@ async function generateOneWeek(
  * This is the function the app calls whenever the user enters
  * the authenticated application.
  *
- * It advances the program by at most one week per check.
+ * It catches the program up one week at a time.
  */
 
 export async function ensureCurrentProgramWeek(
@@ -982,17 +859,16 @@ export async function ensureCurrentProgramWeek(
     false;
 
   /*
-   * Generate at most ONE missing week per bootstrap check.
+   * Generate missing weeks sequentially.
    *
-   * If an athlete has been away for several weeks, do not fire
-   * multiple AI generations back-to-back in one app load. Each
-   * generated week still depends on the immediately previous
-   * week, so we intentionally advance one week at a time.
+   * This is important: Week 4 should not be generated before
+   * Week 2 and Week 3 because each week's programming can use
+   * the previous week's information.
    */
 
-  if (
+  while (
     currentWeek <
-    cappedTargetWeek
+      cappedTargetWeek
   ) {
     const nextWeek =
       currentWeek + 1;
@@ -1013,52 +889,54 @@ export async function ensureCurrentProgramWeek(
       result.reason ===
       'generation_in_progress'
     ) {
-      program =
-        await fetchProgram(
-          program.id
-        );
-    } else {
-      /*
-       * Refresh regardless of whether the week already existed.
-       */
-
-      program =
-        result.program ||
-        await fetchProgram(
-          program.id
-        );
-
-      const microcycles =
-        asArray(
-          program.microcycles
-        );
-
-      const weekNowExists =
-        microcycles.some(
-          week =>
-            Number(
-              week?.week_number
-            ) ===
-            Number(
-              nextWeek
-            )
-        );
-
-      if (
-        weekNowExists
-      ) {
-        currentWeek =
-          Math.max(
-            currentWeek,
-            nextWeek
-          );
-
-        generatedAny =
-          Boolean(
-            result.generated
-          );
-      }
+      break;
     }
+
+    /*
+     * Refresh regardless of whether the week already existed.
+     */
+
+    program =
+      result.program ||
+      await fetchProgram(
+        program.id
+      );
+
+    const microcycles =
+      asArray(
+        program.microcycles
+      );
+
+    const weekNowExists =
+      microcycles.some(
+        week =>
+          Number(
+            week?.week_number
+          ) ===
+          Number(
+            nextWeek
+          )
+      );
+
+    if (
+      !weekNowExists
+    ) {
+      /*
+       * Generation did not complete, so do not advance past a
+       * missing week.
+       */
+      break;
+    }
+
+    currentWeek =
+      Math.max(
+        currentWeek,
+        nextWeek
+      );
+
+    generatedAny =
+      generatedAny ||
+      result.generated;
   }
 
   /*
