@@ -1,28 +1,11 @@
 /*
  * WASHEK FITNESS
  * Migration 014 — Fix automatic program calendar-week calculation
- *
- * Problem:
- * get_current_program_week() previously capped the calendar week by
- * workout_programs.current_week. That makes the function return the
- * already-generated week instead of the actual calendar week, so the
- * frontend never sees that a new week is due.
- *
- * Example:
- *   current_week = 1
- *   program created in week 1
- *   current calendar week = 3
- *
- * The old function could return 1, so automatic Week 2 generation
- * never started.
- *
- * Fix:
- * Return the calendar week based on the program's created_at timestamp.
- * current_week remains the "highest successfully generated/available"
- * week and is NOT used to calculate the calendar target.
  */
 
-create or replace function public.get_current_program_week(
+DROP FUNCTION IF EXISTS public.get_current_program_week(uuid);
+
+create function public.get_current_program_week(
   p_program_id uuid
 )
 returns integer
@@ -50,10 +33,10 @@ begin
 
   /*
    * Week 1 begins in the calendar week containing the program's
-   * creation timestamp. Each following Monday starts the next week.
+   * creation timestamp.
    *
-   * date_trunc('week', ...) uses PostgreSQL's Monday-based week
-   * boundary, which matches the app's weekly program model.
+   * PostgreSQL date_trunc('week', ...) uses Monday as the
+   * beginning of the week.
    */
   calendar_week :=
     greatest(
@@ -69,8 +52,7 @@ begin
     );
 
   /*
-   * Do not allow the calendar target to exceed the program duration.
-   * This prevents generation requests beyond the end of the program.
+   * Never generate beyond the program's configured duration.
    */
   calendar_week :=
     least(
