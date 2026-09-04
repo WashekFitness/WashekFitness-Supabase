@@ -4,20 +4,33 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
   'Content-Type': 'application/json',
 };
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
-const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') || '';
-const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') || '';
+const SUPABASE_URL =
+  Deno.env.get('SUPABASE_URL') || '';
+
+const SERVICE_ROLE_KEY =
+  Deno.env.get('SERVICE_ROLE_KEY') || '';
+
+const STRIPE_SECRET_KEY =
+  Deno.env.get('STRIPE_SECRET_KEY') || '';
+
 const APP_URL =
-  Deno.env.get('APP_URL') || 'https://washekfitness.com';
+  Deno.env.get('APP_URL') ||
+  'https://washekfitness.com';
 
 const PRICES = {
-  progress: 'price_1TTYrbRuQpZftYKRoSyLbQ0c',
-  performance: 'price_1TTYs8RuQpZftYKR8ZzpNg7x',
-  elite: 'price_1TTYsWRuQpZftYKRKIm8V10E',
+  progress:
+    'price_1TTYrbRuQpZftYKRoSyLbQ0c',
+
+  performance:
+    'price_1TTYs8RuQpZftYKR8ZzpNg7x',
+
+  elite:
+    'price_1TTYsWRuQpZftYKRKIm8V10E',
 };
 
 const VALID_PLANS = [
@@ -35,16 +48,17 @@ const ACTIVE_STATUSES = [
 
 const CHECKOUT_LOCK_MINUTES = 30;
 
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
+const supabaseAdmin =
+  createClient(
+    SUPABASE_URL,
+    SERVICE_ROLE_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
 
 function json(
   body: unknown,
@@ -58,6 +72,12 @@ function json(
     }
   );
 }
+
+/*
+ * ============================================================
+ * SUPABASE AUTHENTICATION
+ * ============================================================
+ */
 
 function getSupabaseKey() {
   const raw =
@@ -74,7 +94,7 @@ function getSupabaseKey() {
         return parsed.default;
       }
     } catch {
-      // Fall through.
+      // Fall through to legacy anon key.
     }
   }
 
@@ -125,6 +145,7 @@ async function getAuthenticatedUser(
               authorization,
           },
         },
+
         auth: {
           persistSession: false,
           autoRefreshToken: false,
@@ -155,6 +176,12 @@ async function getAuthenticatedUser(
   };
 }
 
+/*
+ * ============================================================
+ * STRIPE API
+ * ============================================================
+ */
+
 async function stripe(
   path: string,
   options: RequestInit = {}
@@ -170,12 +197,16 @@ async function stripe(
       `https://api.stripe.com/v1/${path}`,
       {
         ...options,
+
         headers: {
           Authorization:
             `Bearer ${STRIPE_SECRET_KEY}`,
+
           'Content-Type':
             'application/x-www-form-urlencoded',
-          ...(options.headers || {}),
+
+          ...(options.headers ||
+            {}),
         },
       }
     );
@@ -204,6 +235,12 @@ async function stripe(
   return data;
 }
 
+/*
+ * ============================================================
+ * PRICE / PLAN HELPERS
+ * ============================================================
+ */
+
 function getPriceId(
   plan: string
 ) {
@@ -220,6 +257,12 @@ function getPriceId(
 
   return priceId;
 }
+
+/*
+ * ============================================================
+ * EXISTING STRIPE CUSTOMERS
+ * ============================================================
+ */
 
 async function findAllCustomersByEmail(
   email: string
@@ -241,6 +284,12 @@ async function findAllCustomersByEmail(
     ? result.data
     : [];
 }
+
+/*
+ * ============================================================
+ * EXISTING STRIPE SUBSCRIPTIONS
+ * ============================================================
+ */
 
 async function getSubscriptionsForCustomer(
   customerId: string
@@ -279,8 +328,7 @@ function getSubscriptionPlan(
 ) {
   const metadataPlan =
     String(
-      subscription
-        ?.metadata
+      subscription?.metadata
         ?.plan ||
         ''
     )
@@ -311,6 +359,12 @@ function getSubscriptionPlan(
     )?.[0] || null
   );
 }
+
+/*
+ * ============================================================
+ * FIND EXISTING ACTIVE SUBSCRIPTION
+ * ============================================================
+ */
 
 async function findExistingActiveSubscription(
   userId: string,
@@ -360,6 +414,7 @@ async function findExistingActiveSubscription(
    * Prefer the exact Washek account
    * when metadata exists.
    */
+
   const exactUserMatch =
     allSubscriptions.find(
       ({
@@ -381,15 +436,21 @@ async function findExistingActiveSubscription(
   }
 
   /*
-   * Recover older subscriptions
-   * that were created before
-   * user_id metadata existed.
+   * Recover older subscriptions that
+   * were created before user_id metadata.
    */
+
   return (
     allSubscriptions[0] ||
     null
   );
 }
+
+/*
+ * ============================================================
+ * CHANGE EXISTING SUBSCRIPTION
+ * ============================================================
+ */
 
 async function changeExistingSubscription(
   subscription: any,
@@ -476,11 +537,16 @@ async function changeExistingSubscription(
       typeof subscription.customer ===
       'string'
         ? subscription.customer
-        : subscription.customer
-            ?.id ||
+        : subscription.customer?.id ||
           null,
   };
 }
+
+/*
+ * ============================================================
+ * CREATE NEW CHECKOUT SESSION
+ * ============================================================
+ */
 
 async function createCheckout(
   user: any,
@@ -569,16 +635,11 @@ async function createCheckout(
 }
 
 /*
- * ------------------------------------------------------------
- * CHECKOUT CONCURRENCY LOCK
- * ------------------------------------------------------------
- *
- * This calls the database RPC created by:
- *
- * 013_stripe_checkout_lock.sql
- *
- * The RPC atomically claims the user's checkout slot.
+ * ============================================================
+ * CHECKOUT LOCK
+ * ============================================================
  */
+
 async function claimCheckoutLock(
   userId: string,
   plan: string
@@ -616,10 +677,6 @@ async function claimCheckoutLock(
   return data || null;
 }
 
-/*
- * Store the Stripe Checkout Session
- * after it has successfully been created.
- */
 async function finishCheckoutLock(
   userId: string,
   plan: string,
@@ -669,10 +726,6 @@ async function finishCheckoutLock(
   }
 }
 
-/*
- * Release a lock when checkout did not
- * result in a reusable Stripe Session.
- */
 async function releaseCheckoutLock(
   userId: string
 ) {
@@ -697,6 +750,360 @@ async function releaseCheckoutLock(
   }
 }
 
+/*
+ * ============================================================
+ * CHECK EXISTING CHECKOUT SESSION
+ * ============================================================
+ *
+ * This is the important fix.
+ *
+ * A database checkout lock can survive after the Stripe
+ * Checkout Session has already been completed.
+ *
+ * We NEVER blindly trust checkout_url anymore.
+ *
+ * We retrieve the Stripe Checkout Session and verify:
+ *
+ * - it exists
+ * - it is still open
+ * - it belongs to the same requested plan
+ *
+ * If it is complete/expired/invalid, the stale lock is
+ * removed and a fresh Checkout Session can be created.
+ */
+
+async function getCheckoutSession(
+  sessionId: string
+) {
+  if (!sessionId) {
+    return null;
+  }
+
+  try {
+    return await stripe(
+      `checkout/sessions/${encodeURIComponent(
+        sessionId
+      )}`
+    );
+  } catch (error) {
+    console.warn(
+      '[CHECKOUT] Unable to retrieve stored Checkout Session:',
+      error
+    );
+
+    return null;
+  }
+}
+
+/*
+ * ============================================================
+ * EXPIRE OLD OPEN CHECKOUT SESSION
+ * ============================================================
+ *
+ * If an old session is still open but belongs to a different
+ * plan than the user currently requested, expire it before
+ * removing the stale lock.
+ *
+ * This prevents the old session from remaining usable.
+ */
+
+async function expireCheckoutSession(
+  sessionId: string
+) {
+  if (!sessionId) {
+    return;
+  }
+
+  try {
+    await stripe(
+      `checkout/sessions/${encodeURIComponent(
+        sessionId
+      )}/expire`,
+      {
+        method: 'POST',
+        body: '',
+      }
+    );
+
+    console.log(
+      '[CHECKOUT] Expired stale Checkout Session:',
+      sessionId
+    );
+  } catch (error) {
+    /*
+     * Expiration is cleanup.
+     *
+     * If Stripe says the session is already complete or expired,
+     * that is fine. The important part is that the database lock
+     * gets removed so a new checkout can be created.
+     */
+
+    console.warn(
+      '[CHECKOUT] Could not expire old Checkout Session:',
+      error
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * HANDLE EXISTING LOCK
+ * ============================================================
+ */
+
+async function resolveExistingCheckoutLock(
+  userId: string,
+  requestedPlan: string,
+  lock: any
+) {
+  if (!lock?.locked) {
+    return {
+      action:
+        'continue',
+    };
+  }
+
+  const lockedPlan =
+    String(
+      lock.plan ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const sessionId =
+    lock.stripe_session_id ||
+    '';
+
+  /*
+   * ----------------------------------------------------------
+   * LOCK EXISTS BUT NO SESSION YET
+   * ----------------------------------------------------------
+   *
+   * Another request is currently creating a Stripe session.
+   * Do not create a duplicate.
+   */
+
+  if (!sessionId) {
+    return {
+      action:
+        'in_progress',
+    };
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * VERIFY STORED STRIPE SESSION
+   * ----------------------------------------------------------
+   */
+
+  const session =
+    await getCheckoutSession(
+      sessionId
+    );
+
+  /*
+   * If Stripe no longer has the session,
+   * remove the stale database lock.
+   */
+
+  if (!session) {
+    console.log(
+      '[CHECKOUT] Removing stale lock because Stripe Checkout Session no longer exists:',
+      {
+        userId,
+        sessionId,
+      }
+    );
+
+    await releaseCheckoutLock(
+      userId
+    );
+
+    return {
+      action:
+        'retry',
+    };
+  }
+
+  const sessionStatus =
+    String(
+      session?.status ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const sessionPlan =
+    String(
+      session
+        ?.metadata
+        ?.plan ||
+        lockedPlan ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+
+  /*
+   * ----------------------------------------------------------
+   * SESSION IS ALREADY COMPLETE
+   * ----------------------------------------------------------
+   *
+   * This is exactly what happens after the previous checkout
+   * has already been successfully completed.
+   */
+
+  if (
+    sessionStatus ===
+    'complete'
+  ) {
+    console.log(
+      '[CHECKOUT] Removing completed Checkout Session lock:',
+      {
+        userId,
+        sessionId,
+        sessionPlan,
+        requestedPlan,
+      }
+    );
+
+    await releaseCheckoutLock(
+      userId
+    );
+
+    return {
+      action:
+        'retry',
+    };
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * SESSION IS EXPIRED
+   * ----------------------------------------------------------
+   */
+
+  if (
+    sessionStatus ===
+    'expired'
+  ) {
+    console.log(
+      '[CHECKOUT] Removing expired Checkout Session lock:',
+      {
+        userId,
+        sessionId,
+      }
+    );
+
+    await releaseCheckoutLock(
+      userId
+    );
+
+    return {
+      action:
+        'retry',
+    };
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * SESSION IS STILL OPEN
+   * ----------------------------------------------------------
+   */
+
+  if (
+    sessionStatus ===
+    'open'
+  ) {
+    /*
+     * Same plan:
+     *
+     * The old checkout session is still valid, so reusing it
+     * is safe and preserves duplicate-checkout protection.
+     */
+
+    if (
+      sessionPlan ===
+      requestedPlan
+    ) {
+      return {
+        action:
+          'reuse',
+
+        session,
+      };
+    }
+
+    /*
+     * Different plan:
+     *
+     * NEVER send the user to a Checkout Session for a different
+     * plan than the button they clicked.
+     *
+     * Expire the old session, remove the lock, and let this
+     * request create a new session for the requested plan.
+     */
+
+    console.log(
+      '[CHECKOUT] Existing open Checkout Session belongs to a different plan. Replacing it:',
+      {
+        userId,
+        sessionId,
+        lockedPlan,
+        sessionPlan,
+        requestedPlan,
+      }
+    );
+
+    await expireCheckoutSession(
+      sessionId
+    );
+
+    await releaseCheckoutLock(
+      userId
+    );
+
+    return {
+      action:
+        'retry',
+    };
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * UNKNOWN STATUS
+   * ----------------------------------------------------------
+   *
+   * Do not trust an unknown session state.
+   * Remove the lock and create a fresh session.
+   */
+
+  console.warn(
+    '[CHECKOUT] Unknown Checkout Session status. Removing lock:',
+    {
+      userId,
+      sessionId,
+      sessionStatus,
+    }
+  );
+
+  await releaseCheckoutLock(
+    userId
+  );
+
+  return {
+    action:
+      'retry',
+  };
+}
+
+/*
+ * ============================================================
+ * MAIN FUNCTION
+ * ============================================================
+ */
+
 Deno.serve(
   async (req) => {
     let checkoutLockUserId:
@@ -704,6 +1111,12 @@ Deno.serve(
 
     let checkoutLockOwned =
       false;
+
+    /*
+     * --------------------------------------------------------
+     * CORS PREFLIGHT
+     * --------------------------------------------------------
+     */
 
     if (
       req.method ===
@@ -719,13 +1132,21 @@ Deno.serve(
       );
     }
 
+    /*
+     * --------------------------------------------------------
+     * POST ONLY
+     * --------------------------------------------------------
+     */
+
     if (
       req.method !==
       'POST'
     ) {
       return json(
         {
-          success: false,
+          success:
+            false,
+
           error:
             'Method not allowed.',
         },
@@ -735,9 +1156,9 @@ Deno.serve(
 
     try {
       /*
-       * ------------------------------------------------------
-       * AUTHENTICATE USER
-       * ------------------------------------------------------
+       * ======================================================
+       * 1. AUTHENTICATE USER
+       * ======================================================
        */
 
       const {
@@ -748,9 +1169,9 @@ Deno.serve(
         );
 
       /*
-       * ------------------------------------------------------
-       * READ REQUEST
-       * ------------------------------------------------------
+       * ======================================================
+       * 2. READ REQUEST
+       * ======================================================
        */
 
       const body =
@@ -775,7 +1196,9 @@ Deno.serve(
       ) {
         return json(
           {
-            success: false,
+            success:
+              false,
+
             error:
               'Invalid subscription plan.',
           },
@@ -803,147 +1226,188 @@ Deno.serve(
       }
 
       /*
-       * ------------------------------------------------------
-       * CLAIM CHECKOUT LOCK
-       * ------------------------------------------------------
-       *
-       * This MUST happen before checking Stripe or creating
-       * a Checkout Session.
-       *
-       * Two simultaneous requests for the same user cannot
-       * both become the lock owner.
+       * ======================================================
+       * 3. CLAIM CHECKOUT LOCK
+       * ======================================================
        */
 
       checkoutLockUserId =
         user.id;
 
-      const lock =
+      let lock =
         await claimCheckoutLock(
           user.id,
           plan
         );
 
       /*
-       * ------------------------------------------------------
-       * EXISTING LOCK
-       * ------------------------------------------------------
-       *
-       * If another checkout is already being created for
-       * the SAME plan, it is safe to reuse it.
-       *
-       * If the existing checkout is for a DIFFERENT plan,
-       * NEVER return its URL. Doing so could send the user
-       * to the wrong Stripe product.
+       * ======================================================
+       * 4. HANDLE EXISTING LOCK
+       * ======================================================
        */
+
       if (
         lock?.locked
       ) {
-        const lockedPlan =
-          String(
-            lock?.plan ||
-              ''
-          )
-            .trim()
-            .toLowerCase();
+        const resolved =
+          await resolveExistingCheckoutLock(
+            user.id,
+            plan,
+            lock
+          );
 
         /*
-         * DIFFERENT PLAN:
-         *
-         * Do not reuse the existing checkout session.
-         * Tell the client that another checkout is currently
-         * in progress instead.
+         * ----------------------------------------------------
+         * REUSE VALID SAME-PLAN SESSION
+         * ----------------------------------------------------
          */
+
         if (
-          lockedPlan &&
-          lockedPlan !==
-            plan
+          resolved.action ===
+          'reuse'
+        ) {
+          const session =
+            resolved.session;
+
+          checkoutLockOwned =
+            false;
+
+          return json({
+            success:
+              true,
+
+            action:
+              'checkout',
+
+            plan,
+
+            price_id:
+              priceId,
+
+            url:
+              session.url,
+
+            session_id:
+              session.id ||
+              null,
+
+            reused:
+              true,
+          });
+        }
+
+        /*
+         * ----------------------------------------------------
+         * ANOTHER REQUEST IS CREATING A SESSION
+         * ----------------------------------------------------
+         */
+
+        if (
+          resolved.action ===
+          'in_progress'
         ) {
           return json(
             {
-              success: false,
+              success:
+                false,
 
               action:
                 'checkout_in_progress',
 
               error:
-                `A ${lockedPlan} checkout is already in progress. Please wait for it to finish before starting a ${plan} checkout.`,
-
-              requested_plan:
-                plan,
-
-              locked_plan:
-                lockedPlan,
+                'A checkout session is already being created. Please wait a moment and try again.',
             },
             409
           );
         }
 
         /*
-         * SAME PLAN:
+         * ----------------------------------------------------
+         * STALE LOCK WAS REMOVED
+         * ----------------------------------------------------
          *
-         * If the first request already created its Stripe
-         * Checkout Session, safely reuse that exact session.
+         * Claim a fresh lock.
          */
-        if (
-          lock.checkout_url
-        ) {
-          const reusablePlan =
-            lockedPlan ||
-            plan;
 
-          const reusablePriceId =
-            getPriceId(
-              reusablePlan
+        if (
+          resolved.action ===
+          'retry'
+        ) {
+          lock =
+            await claimCheckoutLock(
+              user.id,
+              plan
             );
 
-          return json({
-            success: true,
+          /*
+           * Another request may have claimed the slot between
+           * the stale-lock cleanup and this retry.
+           */
 
-            action:
-              'checkout',
+          if (
+            lock?.locked
+          ) {
+            const retryResolved =
+              await resolveExistingCheckoutLock(
+                user.id,
+                plan,
+                lock
+              );
 
-            plan:
-              reusablePlan,
+            if (
+              retryResolved.action ===
+              'reuse'
+            ) {
+              const session =
+                retryResolved.session;
 
-            price_id:
-              reusablePriceId,
+              return json({
+                success:
+                  true,
 
-            url:
-              lock.checkout_url,
+                action:
+                  'checkout',
 
-            session_id:
-              lock.stripe_session_id ||
-              null,
+                plan,
 
-            reused: true,
-          });
+                price_id:
+                  priceId,
+
+                url:
+                  session.url,
+
+                session_id:
+                  session.id ||
+                  null,
+
+                reused:
+                  true,
+              });
+            }
+
+            return json(
+              {
+                success:
+                  false,
+
+                action:
+                  'checkout_in_progress',
+
+                error:
+                  'A checkout session is already being created. Please wait a moment and try again.',
+              },
+              409
+            );
+          }
         }
-
-        /*
-         * The first request is still creating
-         * the Stripe session.
-         */
-        return json(
-          {
-            success: false,
-
-            action:
-              'checkout_in_progress',
-
-            error:
-              `A ${plan} checkout session is already being created. Please wait a moment and try again.`,
-
-            requested_plan:
-              plan,
-          },
-          409
-        );
       }
 
       /*
-       * This request successfully owns
-       * the checkout lock.
+       * ======================================================
+       * 5. THIS REQUEST NOW OWNS THE LOCK
+       * ======================================================
        */
+
       checkoutLockOwned =
         true;
 
@@ -963,9 +1427,9 @@ Deno.serve(
       );
 
       /*
-       * ------------------------------------------------------
-       * CHECK FOR EXISTING SUBSCRIPTION
-       * ------------------------------------------------------
+       * ======================================================
+       * 6. CHECK FOR EXISTING ACTIVE SUBSCRIPTION
+       * ======================================================
        */
 
       const existing =
@@ -987,15 +1451,15 @@ Deno.serve(
           subscription
             ?.items
             ?.data?.[0]
-            ?.price
-            ?.id ||
+            ?.price?.id ||
           null;
 
         /*
-         * SAME PLAN:
+         * SAME PLAN
          *
-         * Never create another Checkout Session.
+         * Never create a second Checkout Session.
          */
+
         if (
           currentPriceId ===
             priceId ||
@@ -1010,7 +1474,8 @@ Deno.serve(
             false;
 
           return json({
-            success: true,
+            success:
+              true,
 
             alreadyActive:
               true,
@@ -1035,11 +1500,12 @@ Deno.serve(
         }
 
         /*
-         * DIFFERENT PLAN:
+         * DIFFERENT PLAN
          *
-         * Change the existing subscription
-         * instead of creating another subscription.
+         * Change the existing Stripe subscription instead of
+         * creating a second subscription.
          */
+
         const changed =
           await changeExistingSubscription(
             subscription,
@@ -1056,7 +1522,8 @@ Deno.serve(
           false;
 
         return json({
-          success: true,
+          success:
+            true,
 
           action:
             'changed',
@@ -1075,13 +1542,24 @@ Deno.serve(
       }
 
       /*
-       * ------------------------------------------------------
-       * CREATE NEW CHECKOUT
-       * ------------------------------------------------------
+       * ======================================================
+       * 7. NO ACTIVE SUBSCRIPTION
+       * ======================================================
        *
-       * No active subscription exists, and this request
-       * owns the user's checkout lock.
+       * Create a completely new Stripe Checkout Session.
        */
+
+      console.log(
+        '[CHECKOUT] No active subscription found. Creating fresh Checkout Session:',
+        {
+          userId:
+            user.id,
+
+          plan,
+
+          priceId,
+        }
+      );
 
       const checkout =
         await createCheckout(
@@ -1100,24 +1578,31 @@ Deno.serve(
       }
 
       /*
-       * Save the newly created Checkout Session in the lock.
-       *
-       * A concurrent request arriving after this point can
-       * reuse this exact Stripe Checkout Session instead of
-       * creating another one.
+       * ======================================================
+       * 8. SAVE NEW CHECKOUT LOCK
+       * ======================================================
        */
+
       await finishCheckoutLock(
         user.id,
         plan,
-        checkout.id || '',
+        checkout.id ||
+          '',
         checkout.url
       );
 
       checkoutLockOwned =
         false;
 
+      /*
+       * ======================================================
+       * 9. RETURN CHECKOUT URL
+       * ======================================================
+       */
+
       return json({
-        success: true,
+        success:
+          true,
 
         action:
           'checkout',
@@ -1141,10 +1626,10 @@ Deno.serve(
       );
 
       /*
-       * If this request owned the lock and failed before
-       * creating a reusable Checkout Session, release it
-       * so the user can retry immediately.
+       * If this request claimed the lock but failed before
+       * producing a reusable Checkout Session, release it.
        */
+
       try {
         if (
           checkoutLockUserId &&
@@ -1165,11 +1650,11 @@ Deno.serve(
 
       return json(
         {
-          success: false,
+          success:
+            false,
 
           error:
-            error instanceof
-            Error
+            error instanceof Error
               ? error.message
               : 'Unable to start checkout.',
         },
