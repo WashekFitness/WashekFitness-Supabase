@@ -46,6 +46,10 @@ import {
 } from '@/lib/supabaseApi';
 
 import {
+  supabase,
+} from '@/lib/supabase';
+
+import {
   computeStats,
 } from '@/lib/messageLimit';
 
@@ -73,6 +77,9 @@ export default function Profile() {
     useState(null);
 
   const [regenerating, setRegenerating] =
+    useState(false);
+
+  const [deletingAccount, setDeletingAccount] =
     useState(false);
 
 
@@ -246,12 +253,49 @@ export default function Profile() {
 
 
   const handleDeleteAccount = async () => {
-    try {
-      await supabaseApi.auth.updateMe({
-        deleted: true,
-      });
+    if (deletingAccount) {
+      return;
+    }
 
+    setDeletingAccount(true);
+
+    try {
+      const {
+        data,
+        error,
+      } =
+        await supabase.functions.invoke(
+          'delete-account',
+          {
+            body: {},
+          }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.success) {
+        throw new Error(
+          data?.error ||
+            'Failed to delete your account.'
+        );
+      }
+
+      /*
+       * The Edge Function permanently deletes the Auth user.
+       * Sign out locally as well so the browser immediately
+       * clears its local session.
+       */
       await supabaseApi.auth.logout();
+
+      toast.success(
+        'Your account has been permanently deleted.'
+      );
+
+      navigate('/login', {
+        replace: true,
+      });
     } catch (error) {
       console.error(
         '[PROFILE] Account deletion failed:',
@@ -259,8 +303,11 @@ export default function Profile() {
       );
 
       toast.error(
-        'Failed to delete account. Please try again.'
+        error?.message ||
+          'Failed to delete your account. Please try again.'
       );
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -776,7 +823,8 @@ export default function Profile() {
             handleRegenerate
           }
           disabled={
-            regenerating
+            regenerating ||
+            deletingAccount
           }
         >
 
@@ -809,6 +857,9 @@ export default function Profile() {
           onClick={
             handleLogout
           }
+          disabled={
+            deletingAccount
+          }
         >
 
           <LogOut className="
@@ -838,6 +889,9 @@ export default function Profile() {
                 text-destructive/70
                 hover:text-destructive
               "
+              disabled={
+                deletingAccount
+              }
             >
 
               <Trash2 className="
@@ -873,7 +927,11 @@ export default function Profile() {
 
             <AlertDialogFooter>
 
-              <AlertDialogCancel>
+              <AlertDialogCancel
+                disabled={
+                  deletingAccount
+                }
+              >
                 Cancel
               </AlertDialogCancel>
 
@@ -887,8 +945,13 @@ export default function Profile() {
                 onClick={
                   handleDeleteAccount
                 }
+                disabled={
+                  deletingAccount
+                }
               >
-                Delete My Account
+                {deletingAccount
+                  ? 'Deleting...'
+                  : 'Delete My Account'}
               </AlertDialogAction>
 
             </AlertDialogFooter>
