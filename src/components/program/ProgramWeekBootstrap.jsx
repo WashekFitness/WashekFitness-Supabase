@@ -90,13 +90,9 @@ export default function ProgramWeekBootstrap() {
         }
 
         /*
-         * Use the program ID + current week as the identity of
-         * the check that was performed.
-         *
-         * IMPORTANT:
-         * We do not set this until the generation/check completes
-         * successfully. If generation fails, the next scheduled
-         * check is allowed to try again.
+         * Avoid repeatedly starting the same generation while
+         * the current app session is still sitting on the same
+         * program.
          */
 
         const runKey =
@@ -109,6 +105,9 @@ export default function ProgramWeekBootstrap() {
           return;
         }
 
+        lastRunRef.current =
+          runKey;
+
         console.log(
           '[ProgramWeekBootstrap] Checking calendar week...'
         );
@@ -120,47 +119,30 @@ export default function ProgramWeekBootstrap() {
           );
 
         if (
-          !mounted
-        ) {
-          return;
-        }
-
-        /*
-         * Mark this program/week as checked only after
-         * ensureCurrentProgramWeek() finishes successfully.
-         *
-         * This prevents a failed generation attempt from being
-         * permanently suppressed for the rest of the session.
-         */
-
-        lastRunRef.current =
-          runKey;
-
-        if (
           result?.generated
         ) {
           console.log(
             '[ProgramWeekBootstrap] New program week generated:',
             result.targetWeek
           );
-        } else {
-          console.log(
-            '[ProgramWeekBootstrap] Program week is up to date.'
-          );
         }
       } catch (error) {
         /*
          * Weekly generation must never prevent the rest of the
          * app from loading.
-         *
-         * Because lastRunRef is NOT updated when an error occurs,
-         * the next scheduled check can retry the generation.
          */
 
         console.error(
           '[ProgramWeekBootstrap] Weekly generation failed:',
           error
         );
+
+        /*
+         * Do not permanently suppress a failed generation.
+         * The next scheduled/visibility check can retry it.
+         */
+        lastRunRef.current =
+          null;
       } finally {
         runningRef.current =
           false;
@@ -176,16 +158,17 @@ export default function ProgramWeekBootstrap() {
      *
      * This catches the transition into a new calendar week
      * without requiring the athlete to close and reopen the app.
+     *
+     * The generation helper itself now allows only ONE missing
+     * week to be generated per check, preventing several AI
+     * generations from firing back-to-back after a long absence.
      */
 
     const interval =
       window.setInterval(
         () => {
           /*
-           * Allow another calendar-week check.
-           *
-           * The program is re-fetched before generation, so this
-           * also picks up changes made elsewhere in the app.
+           * Allow another check after the initial run.
            */
 
           lastRunRef.current =
