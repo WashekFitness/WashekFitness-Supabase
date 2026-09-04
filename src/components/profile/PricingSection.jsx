@@ -77,25 +77,55 @@ const plans = [
   },
 ];
 
-const PAID_PLANS = ['progress', 'performance', 'elite'];
-const ACTIVE_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+const PAID_PLANS = [
+  'progress',
+  'performance',
+  'elite',
+];
+
+const ACTIVE_STATUSES = [
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+];
 
 function normalizePlan(value) {
-  const plan = String(value || '').trim().toLowerCase();
-  return PAID_PLANS.includes(plan) ? plan : 'free';
+  const plan =
+    String(value || '')
+      .trim()
+      .toLowerCase();
+
+  return PAID_PLANS.includes(plan)
+    ? plan
+    : 'free';
 }
 
 function isActiveStatus(status) {
-  return ACTIVE_STATUSES.includes(String(status || '').toLowerCase());
+  return ACTIVE_STATUSES.includes(
+    String(status || '').toLowerCase()
+  );
 }
 
 export default function PricingSection() {
-  const [loadingPlan, setLoadingPlan] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState('free');
-  const [subscription, setSubscription] = useState(null);
-  const [error, setError] = useState('');
-  const [loadingSubscription, setLoadingSubscription] = useState(true);
+  const [loadingPlan, setLoadingPlan] =
+    useState(null);
+
+  const [cancelling, setCancelling] =
+    useState(false);
+
+  const [currentPlan, setCurrentPlan] =
+    useState('free');
+
+  const [subscription, setSubscription] =
+    useState(null);
+
+  const [error, setError] =
+    useState('');
+
+  const [loadingSubscription, setLoadingSubscription] =
+    useState(true);
+
 
   const loadSubscription = async () => {
     setLoadingSubscription(true);
@@ -103,7 +133,8 @@ export default function PricingSection() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
         setCurrentPlan('free');
@@ -111,104 +142,116 @@ export default function PricingSection() {
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select(
-          'subscription_plan, subscription_status, stripe_subscription_id, stripe_price_id'
-        )
-        .eq('id', user.id)
-        .maybeSingle();
+      /*
+       * The profiles table is the single source of truth
+       * for the user's current subscription entitlement.
+       *
+       * Stripe webhooks update these fields after billing
+       * events occur.
+       *
+       * We intentionally do NOT query the legacy
+       * stripe_subscriptions table here.
+       */
+
+      const {
+        data: profile,
+        error: profileError,
+      } =
+        await supabase
+          .from('profiles')
+          .select(
+            'subscription_plan, subscription_status, stripe_subscription_id, stripe_price_id'
+          )
+          .eq('id', user.id)
+          .maybeSingle();
 
       if (profileError) {
         console.error(
           '[PricingSection] Profile subscription lookup failed:',
           profileError
         );
+
+        throw profileError;
       }
 
-      const profilePlan = normalizePlan(profile?.subscription_plan);
-      const profileStatus = String(
-        profile?.subscription_status || ''
-      ).toLowerCase();
-      const profileIsActive = isActiveStatus(profileStatus);
-
-      let stripeSubscription = null;
-      let stripeLookupFailed = false;
-
-      const { data: subscriptionRows, error: subscriptionError } =
-        await supabase
-          .from('stripe_subscriptions')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-      if (subscriptionError) {
-        stripeLookupFailed = true;
-
-        console.error(
-          '[PricingSection] Stripe subscription lookup failed:',
-          subscriptionError
+      const profilePlan =
+        normalizePlan(
+          profile?.subscription_plan
         );
-      } else if (Array.isArray(subscriptionRows)) {
-        stripeSubscription =
-          subscriptionRows.find((row) =>
-            isActiveStatus(row?.status)
-          ) ||
-          subscriptionRows[0] ||
-          null;
-      }
 
-      const stripePlan = normalizePlan(
-        stripeSubscription?.plan || stripeSubscription?.plan_key
-      );
+      const profileStatus =
+        String(
+          profile?.subscription_status || ''
+        ).toLowerCase();
 
-      const stripeIsActive = isActiveStatus(
-        stripeSubscription?.status
-      );
+      const profileIsActive =
+        isActiveStatus(
+          profileStatus
+        );
 
-      let resolvedPlan = 'free';
+      /*
+       * A paid plan only counts as the current plan when
+       * its subscription status is active.
+       *
+       * Otherwise the user is treated as free.
+       */
 
-      if (profileIsActive && profilePlan !== 'free') {
-        resolvedPlan = profilePlan;
-      } else if (stripeIsActive && stripePlan !== 'free') {
-        resolvedPlan = stripePlan;
-      }
+      const resolvedPlan =
+        profileIsActive &&
+        profilePlan !== 'free'
+          ? profilePlan
+          : 'free';
 
-      if (stripeIsActive && stripeSubscription) {
-        setSubscription(stripeSubscription);
-      } else if (
-        profile?.stripe_subscription_id &&
-        profileIsActive
+      /*
+       * Keep the subscription object available for the UI
+       * and any future logic that needs the Stripe IDs.
+       */
+
+      if (
+        profileIsActive &&
+        profile?.stripe_subscription_id
       ) {
         setSubscription({
-          id: profile.stripe_subscription_id,
-          plan: profilePlan,
-          plan_key: profilePlan,
-          status: profileStatus,
-          stripe_price_id: profile.stripe_price_id,
+          id:
+            profile.stripe_subscription_id,
+
+          plan:
+            profilePlan,
+
+          plan_key:
+            profilePlan,
+
+          status:
+            profileStatus,
+
+          stripe_price_id:
+            profile.stripe_price_id,
         });
       } else {
         setSubscription(null);
       }
 
-      setCurrentPlan(resolvedPlan);
-
-      if (!profileIsActive && !stripeIsActive) {
-        setCurrentPlan('free');
-      }
-
-      if (stripeLookupFailed && profileIsActive) {
-        setCurrentPlan(profilePlan);
-      }
+      setCurrentPlan(
+        resolvedPlan
+      );
     } catch (loadError) {
       console.error(
         '[PricingSection] Failed to load subscription:',
         loadError
       );
+
+      /*
+       * Do not accidentally grant paid access when the
+       * subscription lookup itself fails.
+       */
+
+      setCurrentPlan('free');
+      setSubscription(null);
     } finally {
       setLoadingSubscription(false);
     }
   };
+
 
   useEffect(() => {
     let active = true;
@@ -221,7 +264,9 @@ export default function PricingSection() {
 
     run();
 
-    const { data: authListener } =
+    const {
+      data: authListener,
+    } =
       supabase.auth.onAuthStateChange(() => {
         if (active) {
           loadSubscription();
@@ -230,29 +275,41 @@ export default function PricingSection() {
 
     return () => {
       active = false;
+
       authListener?.subscription?.unsubscribe();
     };
   }, []);
 
+
   const handleCheckout = async (plan) => {
-    if (!plan?.planKey || loadingPlan) {
+    if (
+      !plan?.planKey ||
+      loadingPlan
+    ) {
       return;
     }
 
-    if (currentPlan === plan.planKey) {
+    if (
+      currentPlan ===
+      plan.planKey
+    ) {
       setError(
         `You already have an active ${plan.name} subscription.`
       );
+
       return;
     }
 
     setError('');
-    setLoadingPlan(plan.planKey);
+    setLoadingPlan(
+      plan.planKey
+    );
 
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
         throw new Error(
@@ -260,27 +317,48 @@ export default function PricingSection() {
         );
       }
 
-      const { data: freshProfile } = await supabase
-        .from('profiles')
-        .select(
-          'subscription_plan, subscription_status'
-        )
-        .eq('id', user.id)
-        .maybeSingle();
+      /*
+       * Re-check the profile immediately before starting
+       * checkout. This prevents an already-active plan from
+       * being purchased again if the UI was stale.
+       */
 
-      const freshPlan = normalizePlan(
-        freshProfile?.subscription_plan
-      );
+      const {
+        data: freshProfile,
+        error: freshProfileError,
+      } =
+        await supabase
+          .from('profiles')
+          .select(
+            'subscription_plan, subscription_status'
+          )
+          .eq('id', user.id)
+          .maybeSingle();
 
-      const freshStatus = String(
-        freshProfile?.subscription_status || ''
-      ).toLowerCase();
+      if (freshProfileError) {
+        throw freshProfileError;
+      }
+
+      const freshPlan =
+        normalizePlan(
+          freshProfile?.subscription_plan
+        );
+
+      const freshStatus =
+        String(
+          freshProfile?.subscription_status || ''
+        ).toLowerCase();
 
       if (
-        freshPlan === plan.planKey &&
-        isActiveStatus(freshStatus)
+        freshPlan ===
+          plan.planKey &&
+        isActiveStatus(
+          freshStatus
+        )
       ) {
-        setCurrentPlan(freshPlan);
+        setCurrentPlan(
+          freshPlan
+        );
 
         setError(
           `You already have an active ${plan.name} subscription.`
@@ -292,14 +370,16 @@ export default function PricingSection() {
       const {
         data,
         error: functionError,
-      } = await supabase.functions.invoke(
-        'create-checkout-session',
-        {
-          body: {
-            plan: plan.planKey,
-          },
-        }
-      );
+      } =
+        await supabase.functions.invoke(
+          'create-checkout-session',
+          {
+            body: {
+              plan:
+                plan.planKey,
+            },
+          }
+        );
 
       if (functionError) {
         throw functionError;
@@ -307,33 +387,40 @@ export default function PricingSection() {
 
       if (
         data?.alreadyActive ||
-        data?.action === 'already_active'
+        data?.action ===
+          'already_active'
       ) {
         setCurrentPlan(
-          data.plan || plan.planKey
+          normalizePlan(
+            data.plan ||
+              plan.planKey
+          )
         );
 
-        setSubscription((previous) =>
-          previous
-            ? {
-                ...previous,
-                plan:
-                  data.plan ||
-                  plan.planKey,
-                plan_key:
-                  data.plan ||
-                  plan.planKey,
-                status: 'active',
-              }
-            : {
-                plan:
-                  data.plan ||
-                  plan.planKey,
-                plan_key:
-                  data.plan ||
-                  plan.planKey,
-                status: 'active',
-              }
+        setSubscription(
+          (previous) =>
+            previous
+              ? {
+                  ...previous,
+                  plan:
+                    data.plan ||
+                    plan.planKey,
+                  plan_key:
+                    data.plan ||
+                    plan.planKey,
+                  status:
+                    'active',
+                }
+              : {
+                  plan:
+                    data.plan ||
+                    plan.planKey,
+                  plan_key:
+                    data.plan ||
+                    plan.planKey,
+                  status:
+                    'active',
+                }
         );
 
         setError(
@@ -344,39 +431,48 @@ export default function PricingSection() {
       }
 
       if (data?.url) {
-        window.location.href = data.url;
+        window.location.href =
+          data.url;
+
         return;
       }
 
       if (
         data?.success &&
-        data?.action === 'changed'
+        data?.action ===
+          'changed'
       ) {
         setCurrentPlan(
-          data.plan || plan.planKey
+          normalizePlan(
+            data.plan ||
+              plan.planKey
+          )
         );
 
-        setSubscription((previous) =>
-          previous
-            ? {
-                ...previous,
-                plan:
-                  data.plan ||
-                  plan.planKey,
-                plan_key:
-                  data.plan ||
-                  plan.planKey,
-                status: 'active',
-              }
-            : {
-                plan:
-                  data.plan ||
-                  plan.planKey,
-                plan_key:
-                  data.plan ||
-                  plan.planKey,
-                status: 'active',
-              }
+        setSubscription(
+          (previous) =>
+            previous
+              ? {
+                  ...previous,
+                  plan:
+                    data.plan ||
+                    plan.planKey,
+                  plan_key:
+                    data.plan ||
+                    plan.planKey,
+                  status:
+                    'active',
+                }
+              : {
+                  plan:
+                    data.plan ||
+                    plan.planKey,
+                  plan_key:
+                    data.plan ||
+                    plan.planKey,
+                  status:
+                    'active',
+                }
         );
 
         return;
@@ -386,7 +482,9 @@ export default function PricingSection() {
         data?.error ||
           'Unable to start checkout.'
       );
-    } catch (checkoutError) {
+    } catch (
+      checkoutError
+    ) {
       console.error(
         '[PricingSection] Checkout failed:',
         checkoutError
@@ -401,17 +499,20 @@ export default function PricingSection() {
     }
   };
 
+
   const handleCancel = async () => {
     if (
       cancelling ||
-      currentPlan === 'free'
+      currentPlan ===
+        'free'
     ) {
       return;
     }
 
-    const confirmed = window.confirm(
-      'Cancel your current subscription? Your paid access will end immediately, and you can subscribe again at any time.'
-    );
+    const confirmed =
+      window.confirm(
+        'Cancel your current subscription? Your paid access will end immediately, and you can subscribe again at any time.'
+      );
 
     if (!confirmed) {
       return;
@@ -424,31 +525,36 @@ export default function PricingSection() {
       const {
         data,
         error: functionError,
-      } = await supabase.functions.invoke(
-        'cancel-subscription',
-        {
-          body: {},
-        }
-      );
+      } =
+        await supabase.functions.invoke(
+          'cancel-subscription',
+          {
+            body: {},
+          }
+        );
 
       if (functionError) {
         throw functionError;
       }
 
       if (data?.error) {
-        throw new Error(data.error);
+        throw new Error(
+          data.error
+        );
       }
 
       /*
        * The cancellation succeeded.
        *
-       * Reload immediately instead of only changing React state.
-       * This forces the entire application to reinitialize and
-       * re-check the user's subscription before they can continue
-       * using paid features.
+       * Reload immediately instead of only changing React
+       * state. This forces the entire application to
+       * reinitialize and re-check the user's subscription.
        */
+
       window.location.reload();
-    } catch (cancelError) {
+    } catch (
+      cancelError
+    ) {
       console.error(
         '[PricingSection] Cancellation failed:',
         cancelError
@@ -463,12 +569,16 @@ export default function PricingSection() {
     }
   };
 
+
   return (
     <div className="space-y-4">
       {error && (
         <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <span>{error}</span>
+
+          <span>
+            {error}
+          </span>
         </div>
       )}
 
@@ -487,9 +597,12 @@ export default function PricingSection() {
       </p>
 
       {plans.map((plan) => {
-        const Icon = plan.icon;
+        const Icon =
+          plan.icon;
+
         const isCurrent =
-          currentPlan === plan.planKey;
+          currentPlan ===
+          plan.planKey;
 
         return (
           <Card
@@ -527,16 +640,20 @@ export default function PricingSection() {
             </div>
 
             <ul className="space-y-1.5 mb-3">
-              {plan.features.map((feature) => (
-                <li
-                  key={feature}
-                  className="flex items-start gap-2 text-sm"
-                >
-                  <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+              {plan.features.map(
+                (feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-start gap-2 text-sm"
+                  >
+                    <Check className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
 
-                  <span>{feature}</span>
-                </li>
-              ))}
+                    <span>
+                      {feature}
+                    </span>
+                  </li>
+                )
+              )}
             </ul>
 
             {plan.disclaimer && (
@@ -558,7 +675,9 @@ export default function PricingSection() {
                 className="w-full h-10 font-heading font-semibold"
                 variant="outline"
                 onClick={() =>
-                  handleCheckout(plan)
+                  handleCheckout(
+                    plan
+                  )
                 }
                 disabled={
                   !!loadingPlan ||
@@ -580,15 +699,20 @@ export default function PricingSection() {
         );
       })}
 
-      {currentPlan !== 'free' &&
+      {currentPlan !==
+        'free' &&
         !loadingSubscription && (
           <div className="pt-2">
             <Button
               type="button"
               variant="ghost"
               className="w-full text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/5"
-              onClick={handleCancel}
-              disabled={cancelling}
+              onClick={
+                handleCancel
+              }
+              disabled={
+                cancelling
+              }
             >
               {cancelling ? (
                 <>
