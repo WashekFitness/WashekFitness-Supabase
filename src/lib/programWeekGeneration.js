@@ -638,6 +638,26 @@ async function generateOneWeek(
   if (
     existingWeek
   ) {
+    /*
+     * The week may have been created by another browser tab or
+     * device after our generation claim succeeded.
+     *
+     * Mark the generation record as completed instead of leaving
+     * it stuck in `generating`.
+     */
+    try {
+      await completeWeek(
+        programId,
+        weekNumber,
+        existingWeek
+      );
+    } catch (error) {
+      console.error(
+        `[ProgramWeekGeneration] Week ${weekNumber} already exists, but the generation record could not be marked completed:`,
+        error
+      );
+    }
+
     return {
       generated: false,
       reason:
@@ -967,9 +987,7 @@ export async function ensureCurrentProgramWeek(
    * If an athlete has been away for several weeks, do not fire
    * multiple AI generations back-to-back in one app load. Each
    * generated week still depends on the immediately previous
-   * week, so we intentionally advance one week at a time. The
-   * next scheduled/visibility check can continue the progression
-   * later if more weeks are still missing.
+   * week, so we intentionally advance one week at a time.
    */
 
   if (
