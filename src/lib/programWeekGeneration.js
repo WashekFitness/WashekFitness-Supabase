@@ -386,7 +386,7 @@ async function fetchProgram(
  * ============================================================
  */
 
-async function getCalendarWeek(
+export async function getCalendarWeek(
   programId
 ) {
   const {
@@ -873,7 +873,7 @@ async function generateOneWeek(
  * This is the function the app calls whenever the user enters
  * the authenticated application.
  *
- * It catches the program up one week at a time.
+ * It advances the program by at most one week per check.
  */
 
 export async function ensureCurrentProgramWeek(
@@ -962,16 +962,19 @@ export async function ensureCurrentProgramWeek(
     false;
 
   /*
-   * Generate missing weeks sequentially.
+   * Generate at most ONE missing week per bootstrap check.
    *
-   * This is important: Week 4 should not be generated before
-   * Week 2 and Week 3 because each week's programming can use
-   * the previous week's information.
+   * If an athlete has been away for several weeks, do not fire
+   * multiple AI generations back-to-back in one app load. Each
+   * generated week still depends on the immediately previous
+   * week, so we intentionally advance one week at a time. The
+   * next scheduled/visibility check can continue the progression
+   * later if more weeks are still missing.
    */
 
-  while (
+  if (
     currentWeek <
-      cappedTargetWeek
+    cappedTargetWeek
   ) {
     const nextWeek =
       currentWeek + 1;
@@ -992,54 +995,52 @@ export async function ensureCurrentProgramWeek(
       result.reason ===
       'generation_in_progress'
     ) {
-      break;
-    }
-
-    /*
-     * Refresh regardless of whether the week already existed.
-     */
-
-    program =
-      result.program ||
-      await fetchProgram(
-        program.id
-      );
-
-    const microcycles =
-      asArray(
-        program.microcycles
-      );
-
-    const weekNowExists =
-      microcycles.some(
-        week =>
-          Number(
-            week?.week_number
-          ) ===
-          Number(
-            nextWeek
-          )
-      );
-
-    if (
-      !weekNowExists
-    ) {
+      program =
+        await fetchProgram(
+          program.id
+        );
+    } else {
       /*
-       * Generation did not complete, so do not advance past a
-       * missing week.
+       * Refresh regardless of whether the week already existed.
        */
-      break;
+
+      program =
+        result.program ||
+        await fetchProgram(
+          program.id
+        );
+
+      const microcycles =
+        asArray(
+          program.microcycles
+        );
+
+      const weekNowExists =
+        microcycles.some(
+          week =>
+            Number(
+              week?.week_number
+            ) ===
+            Number(
+              nextWeek
+            )
+        );
+
+      if (
+        weekNowExists
+      ) {
+        currentWeek =
+          Math.max(
+            currentWeek,
+            nextWeek
+          );
+
+        generatedAny =
+          Boolean(
+            result.generated
+          );
+      }
     }
-
-    currentWeek =
-      Math.max(
-        currentWeek,
-        nextWeek
-      );
-
-    generatedAny =
-      generatedAny ||
-      result.generated;
   }
 
   /*
