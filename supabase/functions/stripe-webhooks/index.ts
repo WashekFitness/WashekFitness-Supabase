@@ -36,9 +36,9 @@ const STRIPE_WEBHOOK_SECRET =
 const SUPABASE_URL =
   Deno.env.get('SUPABASE_URL') || '';
 
-const SUPABASE_SERVICE_ROLE_KEY =
+const SERVICE_ROLE_KEY =
   Deno.env.get(
-    'SUPABASE_SERVICE_ROLE_KEY'
+    'SERVICE_ROLE_KEY'
   ) || '';
 
 /*
@@ -86,7 +86,7 @@ const NON_PAID_STATUSES = [
 const supabaseAdmin =
   createClient(
     SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY,
+    SERVICE_ROLE_KEY,
     {
       auth: {
         persistSession:
@@ -1040,12 +1040,206 @@ async function handleInvoicePaymentFailed(
 
 /*
  * ============================================================
+ * STRIPE WEBHOOK IDEMPOTENCY
+ * ============================================================
+ */
+
+/*
+ * Extract the Stripe subscription ID from every event type
+ * handled by this webhook.
+ *
+ * This lets subscription-related events participate in the
+ * ordering protection without changing the existing handlers.
+ */
+function getEventSubscriptionId(
+  event: any
+) {
+  if (
+    event?.type ===
+      'customer.subscription.created' ||
+    event?.type ===
+      'customer.subscription.updated' ||
+    event?.type ===
+      'customer.subscription.deleted'
+  ) {
+    return (
+      typeof event?.data
+        ?.object?.id ===
+      'string'
+        ? event.data.object.id
+        : null
+    );
+  }
+
+  if (
+    event?.type ===
+      'checkout.session.completed' ||
+    event?.type ===
+      'checkout.session.async_payment_succeeded'
+  ) {
+    return (
+      typeof event?.data
+        ?.object?.subscription ===
+      'string'
+        ? event.data.object.subscription
+        : null
+    );
+  }
+
+  if (
+    event?.type ===
+      'invoice.paid' ||
+    event?.type ===
+      'invoice.payment_failed'
+  ) {
+    return (
+      typeof event?.data
+        ?.object?.subscription ===
+      'string'
+        ? event.data.object.subscription
+        : null
+    );
+  }
+
+  return null;
+}
+
+/*
+ * Claim a Stripe event using the existing idempotency function.
+ *
+ * This remains the fallback for events that do not have a
+ * subscription ID.
+ */
+async function claimWebhookEvent(
+  eventId: string,
+  eventType: string,
+  eventCreated: number
+) {
+  const { data, error } =
+    await supabaseAdmin.rpc(
+      'claim_stripe_webhook_event',
+      {
+        p_event_id:
+          eventId,
+
+        p_event_type:
+          eventType,
+
+        p_event_created:
+          eventCreated,
+      }
+    );
+
+  if (
+    error
+  ) {
+    throw new Error(
+      `Unable to claim Stripe webhook event: ${error.message}`
+    );
+  }
+
+  return data === true;
+}
+
+/*
+ * Claim a subscription event with ordering protection.
+ *
+ * This rejects an event if an event with a newer Stripe
+ * creation timestamp has already been recorded for the same
+ * subscription.
+ */
+async function claimOrderedWebhookEvent(
+  eventId: string,
+  eventType: string,
+  subscriptionId: string,
+  eventCreated: number
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabaseAdmin.rpc(
+      'claim_stripe_subscription_event',
+      {
+        p_event_id:
+          eventId,
+
+        p_event_type:
+          eventType,
+
+        p_subscription_id:
+          subscriptionId,
+
+        p_event_created:
+          eventCreated,
+      }
+    );
+
+  if (
+    error
+  ) {
+    throw new Error(
+      `Unable to claim ordered Stripe webhook event: ${error.message}`
+    );
+  }
+
+  return data === true;
+}
+
+/*
+ * Mark an event as successfully or unsuccessfully processed.
+ */
+async function markWebhookEvent(
+  eventId: string,
+  status: 'succeeded' | 'failed',
+  errorMessage: string | null = null
+) {
+  const {
+    error,
+  } =
+    await supabaseAdmin
+      .from('stripe_webhook_events')
+      .update({
+        status,
+
+        last_error:
+          errorMessage,
+
+        processed_at:
+          status === 'succeeded'
+            ? new Date().toISOString()
+            : null,
+
+        locked_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        'event_id',
+        eventId
+      );
+
+  if (
+    error
+  ) {
+    console.error(
+      '[WEBHOOK] Failed to update webhook event state:',
+      error
+    );
+  }
+}
+
+/*
+ * ============================================================
  * EDGE FUNCTION
  * ============================================================
  */
 
 Deno.serve(
   async (req) => {
+    let eventId:
+      string | null =
+      null;
+
     if (
       req.method !==
       'POST'
@@ -1094,10 +1288,121 @@ Deno.serve(
           payload
         );
 
+      eventId =
+        typeof event?.id ===
+        'string'
+          ? event.id
+          : null;
+
+      if (
+        !eventId
+      ) {
+        throw new Error(
+          'Stripe webhook event is missing its event ID.'
+        );
+      }
+
+      const eventType =
+        String(
+          event?.type ||
+            'unknown'
+        );
+
+      const eventCreated =
+        Number(
+          event?.created ||
+            0
+        );
+
+      const subscriptionId =
+        getEventSubscriptionId(
+          event
+        );
+
+      /*
+       * --------------------------------------------------------
+       * IDEMPOTENCY + EVENT ORDERING
+       * --------------------------------------------------------
+       *
+       * Subscription events use the new ordering-aware RPC.
+       *
+       * Events without a subscription ID use the existing
+       * idempotency protection.
+       */
+      let claimed =
+        false;
+
+      if (
+        subscriptionId
+      ) {
+        claimed =
+          await claimOrderedWebhookEvent(
+            eventId,
+            eventType,
+            subscriptionId,
+            eventCreated
+          );
+      } else {
+        claimed =
+          await claimWebhookEvent(
+            eventId,
+            eventType,
+            eventCreated
+          );
+      }
+
+      if (
+        !claimed
+      ) {
+        console.log(
+          '[WEBHOOK] Event already processed, currently being processed, or older than a newer event:',
+          {
+            eventId,
+
+            eventType,
+
+            subscriptionId,
+          }
+        );
+
+        return new Response(
+          JSON.stringify({
+            received:
+              true,
+
+            duplicate:
+              true,
+          }),
+          {
+            status:
+              200,
+
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+          }
+        );
+      }
+
       console.log(
         '[WEBHOOK] Stripe event received:',
-        event.type
+        {
+          type:
+            eventType,
+
+          id:
+            eventId,
+
+          subscriptionId,
+        }
       );
+
+      /*
+       * --------------------------------------------------------
+       * PROCESS EVENT
+       * --------------------------------------------------------
+       */
 
       switch (
         event.type
@@ -1151,6 +1456,17 @@ Deno.serve(
           );
       }
 
+      /*
+       * --------------------------------------------------------
+       * MARK SUCCESS
+       * --------------------------------------------------------
+       */
+
+      await markWebhookEvent(
+        eventId,
+        'succeeded'
+      );
+
       return new Response(
         JSON.stringify({
           received:
@@ -1177,12 +1493,25 @@ Deno.serve(
       console.error(
         '[WEBHOOK] FAILED:',
         {
+          eventId:
+            eventId,
+
           message,
 
           timestamp:
             new Date().toISOString(),
         }
       );
+
+      if (
+        eventId
+      ) {
+        await markWebhookEvent(
+          eventId,
+          'failed',
+          message
+        );
+      }
 
       return new Response(
         JSON.stringify({
