@@ -824,34 +824,97 @@ Deno.serve(
         );
 
       /*
-       * Another request already owns
-       * the checkout slot.
+       * ------------------------------------------------------
+       * EXISTING LOCK
+       * ------------------------------------------------------
+       *
+       * If another checkout is already being created for
+       * the SAME plan, it is safe to reuse it.
+       *
+       * If the existing checkout is for a DIFFERENT plan,
+       * NEVER return its URL. Doing so could send the user
+       * to the wrong Stripe product.
        */
       if (
         lock?.locked
       ) {
+        const lockedPlan =
+          String(
+            lock?.plan ||
+              ''
+          )
+            .trim()
+            .toLowerCase();
+
         /*
-         * If the first request already created
-         * its Checkout Session, reuse it rather
-         * than creating another one.
+         * DIFFERENT PLAN:
+         *
+         * Do not reuse the existing checkout session.
+         * Tell the client that another checkout is currently
+         * in progress instead.
+         */
+        if (
+          lockedPlan &&
+          lockedPlan !==
+            plan
+        ) {
+          return json(
+            {
+              success: false,
+
+              action:
+                'checkout_in_progress',
+
+              error:
+                `A ${lockedPlan} checkout is already in progress. Please wait for it to finish before starting a ${plan} checkout.`,
+
+              requested_plan:
+                plan,
+
+              locked_plan:
+                lockedPlan,
+            },
+            409
+          );
+        }
+
+        /*
+         * SAME PLAN:
+         *
+         * If the first request already created its Stripe
+         * Checkout Session, safely reuse that exact session.
          */
         if (
           lock.checkout_url
         ) {
+          const reusablePlan =
+            lockedPlan ||
+            plan;
+
+          const reusablePriceId =
+            getPriceId(
+              reusablePlan
+            );
+
           return json({
             success: true,
+
             action:
               'checkout',
+
             plan:
-              lock.plan ||
-              plan,
+              reusablePlan,
+
             price_id:
-              priceId,
+              reusablePriceId,
+
             url:
               lock.checkout_url,
+
             session_id:
               lock.stripe_session_id ||
               null,
+
             reused: true,
           });
         }
@@ -863,10 +926,15 @@ Deno.serve(
         return json(
           {
             success: false,
+
             action:
               'checkout_in_progress',
+
             error:
-              'A checkout session is already being created. Please wait a moment and try again.',
+              `A ${plan} checkout session is already being created. Please wait a moment and try again.`,
+
+            requested_plan:
+              plan,
           },
           409
         );
