@@ -67,9 +67,21 @@ const PAID_PLANS = [
   'elite',
 ];
 
+/*
+ * These are the same subscription states recognized by the
+ * AI entitlement system.
+ *
+ * active   = currently active
+ * trialing = active trial
+ * past_due = Stripe is attempting to recover payment
+ * unpaid   = subscription still exists but payment remains
+ *           unresolved
+ */
 const PAID_STATUSES = [
   'active',
   'trialing',
+  'past_due',
+  'unpaid',
 ];
 
 const NON_PAID_STATUSES = [
@@ -811,7 +823,7 @@ async function handleSubscription(
 
   /*
    * ----------------------------------------------------------
-   * ACTIVE / TRIALING
+   * ACTIVE / TRIALING / PAST_DUE / UNPAID
    * ----------------------------------------------------------
    */
 
@@ -848,7 +860,7 @@ async function handleSubscription(
     );
 
     console.log(
-      '[WEBHOOK] Subscription active:',
+      '[WEBHOOK] Subscription entitlement retained:',
       {
         profileId:
           profile.id,
@@ -869,7 +881,7 @@ async function handleSubscription(
 
   /*
    * ----------------------------------------------------------
-   * NON-ACTIVE / UNUSABLE PAID STATE
+   * NO ENTITLEMENT
    * ----------------------------------------------------------
    */
 
@@ -1040,16 +1052,15 @@ async function handleInvoicePaymentFailed(
 
 /*
  * ============================================================
- * STRIPE WEBHOOK IDEMPOTENCY
+ * STRIPE WEBHOOK IDEMPOTENCY + ORDERING
  * ============================================================
  */
 
 /*
- * Extract the Stripe subscription ID from every event type
- * handled by this webhook.
+ * Extract the Stripe subscription ID from the event.
  *
- * This lets subscription-related events participate in the
- * ordering protection without changing the existing handlers.
+ * Subscription lifecycle events use the subscription object's
+ * own ID. Other events can carry a subscription ID as well.
  */
 function getEventSubscriptionId(
   event: any
@@ -1105,17 +1116,20 @@ function getEventSubscriptionId(
 }
 
 /*
- * Claim a Stripe event using the existing idempotency function.
+ * Existing idempotency protection.
  *
- * This remains the fallback for events that do not have a
- * subscription ID.
+ * Used for events that do not participate in subscription
+ * ordering.
  */
 async function claimWebhookEvent(
   eventId: string,
   eventType: string,
   eventCreated: number
 ) {
-  const { data, error } =
+  const {
+    data,
+    error,
+  } =
     await supabaseAdmin.rpc(
       'claim_stripe_webhook_event',
       {
@@ -1142,11 +1156,17 @@ async function claimWebhookEvent(
 }
 
 /*
- * Claim a subscription event with ordering protection.
+ * Ordering-aware claim.
  *
- * This rejects an event if an event with a newer Stripe
- * creation timestamp has already been recorded for the same
- * subscription.
+ * This uses the SQL function we just added in Supabase.
+ *
+ * If Stripe sends:
+ *
+ *   newer event
+ *   older event
+ *
+ * the older event is rejected instead of being allowed to
+ * overwrite the newer subscription state.
  */
 async function claimOrderedWebhookEvent(
   eventId: string,
@@ -1187,8 +1207,11 @@ async function claimOrderedWebhookEvent(
 }
 
 /*
- * Mark an event as successfully or unsuccessfully processed.
+ * ============================================================
+ * MARK WEBHOOK EVENT
+ * ============================================================
  */
+
 async function markWebhookEvent(
   eventId: string,
   status: 'succeeded' | 'failed',
@@ -1256,6 +1279,7 @@ Deno.serve(
     try {
       /*
        * Read the RAW request body.
+       *
        * Stripe signature verification requires the raw payload.
        */
       const payload =
@@ -1321,13 +1345,16 @@ Deno.serve(
 
       /*
        * --------------------------------------------------------
-       * IDEMPOTENCY + EVENT ORDERING
+       * CLAIM EVENT
        * --------------------------------------------------------
        *
-       * Subscription events use the new ordering-aware RPC.
+       * Subscription events get both:
+       *
+       *   1. duplicate protection
+       *   2. chronological ordering protection
        *
        * Events without a subscription ID use the existing
-       * idempotency protection.
+       * idempotency system.
        */
       let claimed =
         false;
