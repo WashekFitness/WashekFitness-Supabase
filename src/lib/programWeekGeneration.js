@@ -3,279 +3,98 @@ import { supabaseApi } from '@/lib/supabaseApi';
 import { buildWeekPrompt } from '@/lib/trainingTypes';
 
 /*
- * ============================================================
- * WEEK SCHEMA
- * ============================================================
- *
- * This intentionally matches the schema already used by
- * Onboarding for Week 1.
- *
- * DO NOT change the AI backend for this.
- * This uses the existing supabaseApi.ai.invoke() path.
+ * Week schema (used for structured AI responses)
  */
-
 const weekSchema = {
   type: 'object',
   additionalProperties: false,
-
   properties: {
     microcycle: {
       type: 'object',
       additionalProperties: false,
-
       properties: {
-        week_number: {
-          type: 'number',
-        },
-
-        mesocycle_index: {
-          type: 'number',
-        },
-
-        week_type: {
-          type: 'string',
-        },
-
+        week_number: { type: 'number' },
+        mesocycle_index: { type: 'number' },
+        week_type: { type: 'string' },
         days: {
           type: 'array',
-
           items: {
             type: 'object',
             additionalProperties: false,
-
             properties: {
-              day_name: {
-                type: 'string',
-              },
-
-              workout_type: {
-                type: 'string',
-              },
-
+              day_name: { type: 'string' },
+              workout_type: { type: 'string' },
               exercises: {
                 type: 'array',
-
                 items: {
                   type: 'object',
                   additionalProperties: false,
-
                   properties: {
-                    name: {
-                      type: 'string',
-                    },
-
-                    sets: {
-                      type: 'number',
-                    },
-
-                    reps: {
-                      type: 'string',
-                    },
-
-                    rest_seconds: {
-                      type: 'number',
-                    },
-
-                    notes: {
-                      type: 'string',
-                    },
-
-                    activation_cue: {
-                      type: 'string',
-                    },
+                    name: { type: 'string' },
+                    sets: { type: 'number' },
+                    reps: { type: 'string' },
+                    rest_seconds: { type: 'number' },
+                    notes: { type: 'string' },
+                    activation_cue: { type: 'string' },
                   },
-
-                  required: [
-                    'name',
-                    'sets',
-                    'reps',
-                    'rest_seconds',
-                    'notes',
-                    'activation_cue',
-                  ],
+                  required: ['name', 'sets', 'reps', 'rest_seconds', 'notes', 'activation_cue'],
                 },
               },
             },
-
-            required: [
-              'day_name',
-              'workout_type',
-              'exercises',
-            ],
+            required: ['day_name', 'workout_type', 'exercises'],
           },
         },
       },
-
-      required: [
-        'week_number',
-        'mesocycle_index',
-        'week_type',
-        'days',
-      ],
+      required: ['week_number', 'mesocycle_index', 'week_type', 'days'],
     },
   },
-
-  required: [
-    'microcycle',
-  ],
+  required: ['microcycle'],
 };
 
-
-/*
- * ============================================================
- * SAFE HELPERS
- * ============================================================
- */
-
+/* Safe helpers */
 function parseMaybeJson(value, fallback) {
-  if (
-    value === null ||
-    value === undefined
-  ) {
-    return fallback;
-  }
-
-  if (
-    typeof value !== 'string'
-  ) {
-    return value;
-  }
-
-  const trimmed =
-    value.trim();
-
-  if (!trimmed) {
-    return fallback;
-  }
-
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
   try {
     return JSON.parse(trimmed);
   } catch {
     return fallback;
   }
 }
-
-
 function asArray(value) {
-  const parsed =
-    parseMaybeJson(value, []);
-
-  if (Array.isArray(parsed)) {
-    return parsed;
-  }
-
-  return [];
+  const parsed = parseMaybeJson(value, []);
+  return Array.isArray(parsed) ? parsed : [];
 }
-
-
 function asObject(value) {
-  const parsed =
-    parseMaybeJson(value, {});
-
-  if (
-    parsed &&
-    typeof parsed === 'object' &&
-    !Array.isArray(parsed)
-  ) {
-    return parsed;
-  }
-
+  const parsed = parseMaybeJson(value, {});
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
   return {};
 }
-
-
 function rpcObject(data) {
-  if (
-    Array.isArray(data)
-  ) {
-    return data[0] || {};
-  }
-
+  if (Array.isArray(data)) return data[0] || {};
   return data || {};
 }
 
-
-/*
- * ============================================================
- * PROFILE → AI PROMPT DATA
- * ============================================================
- */
-
-function buildPromptData(
-  profile,
-  originalRequirements,
-  previousMicrocycle,
-  recentLogs
-) {
-  const fitnessGoals =
-    asArray(
-      profile?.fitness_goals
-    );
-
-  const weightGoals =
-    asArray(
-      profile?.weight_goals
-    );
-
-  const heightInches =
-    Number(
-      profile?.height_inches
-    );
+/* Build prompt data for AI */
+function buildPromptData(profile, originalRequirements, previousMicrocycle, recentLogs) {
+  const fitnessGoals = asArray(profile?.fitness_goals);
+  const weightGoals = asArray(profile?.weight_goals);
+  const heightInches = Number(profile?.height_inches);
 
   let heightFt = '';
   let heightIn = '';
-
-  if (
-    Number.isFinite(
-      heightInches
-    ) &&
-    heightInches > 0
-  ) {
-    heightFt =
-      Math.floor(
-        heightInches / 12
-      );
-
-    heightIn =
-      heightInches % 12;
+  if (Number.isFinite(heightInches) && heightInches > 0) {
+    heightFt = Math.floor(heightInches / 12);
+    heightIn = heightInches % 12;
   }
 
-  /*
-   * Give the next week's AI useful information about what
-   * actually happened in the previous week.
-   *
-   * Keep this bounded so we don't unnecessarily inflate the
-   * OpenRouter request.
-   */
+  const previousWeekSummary = previousMicrocycle ? JSON.stringify(previousMicrocycle).slice(0, 12000) : '';
+  const workoutLogSummary = Array.isArray(recentLogs) && recentLogs.length ? JSON.stringify(recentLogs).slice(0, 12000) : '';
 
-  const previousWeekSummary =
-    previousMicrocycle
-      ? JSON.stringify(
-          previousMicrocycle
-        ).slice(
-          0,
-          12000
-        )
-      : '';
-
-  const workoutLogSummary =
-    Array.isArray(
-      recentLogs
-    ) && recentLogs.length
-      ? JSON.stringify(
-          recentLogs
-        ).slice(
-          0,
-          12000
-        )
-      : '';
-
-  let requirements =
-    originalRequirements || '';
-
-  if (
-    previousWeekSummary
-  ) {
+  let requirements = originalRequirements || '';
+  if (previousWeekSummary) {
     requirements += `
 
 PREVIOUS PROGRAMMED WEEK:
@@ -285,9 +104,7 @@ ${previousWeekSummary}
 Use this to create appropriate progression. Do not simply duplicate the previous week.`;
   }
 
-  if (
-    workoutLogSummary
-  ) {
+  if (workoutLogSummary) {
     requirements += `
 
 RECENT WORKOUT PERFORMANCE:
@@ -298,336 +115,145 @@ Use these logs as performance feedback when deciding progression, recovery, volu
   }
 
   return {
-    gender:
-      profile?.gender,
-
-    level:
-      profile?.fitness_level,
-
-    age:
-      profile?.age,
-
-    weightLbs:
-      profile?.weight_lbs,
-
+    gender: profile?.gender,
+    level: profile?.fitness_level,
+    age: profile?.age,
+    weightLbs: profile?.weight_lbs,
     heightFt,
-
     heightIn,
-
-    unit:
-      profile?.unit || 'imperial',
-
-    currentSkills:
-      profile?.current_skills || '',
-
-    goalDescription:
-      profile?.primary_goal || '',
-
-    timeframe:
-      profile?.goal_timeframe || '',
-
-    equipment:
-      profile?.available_equipment || '',
-
+    unit: profile?.unit || 'imperial',
+    currentSkills: profile?.current_skills || '',
+    goalDescription: profile?.primary_goal || '',
+    timeframe: profile?.goal_timeframe || '',
+    equipment: profile?.available_equipment || '',
     requirements,
-
     fitnessGoals,
-
     weightGoals,
   };
 }
 
-
-/*
- * ============================================================
- * MESOCYCLE INFORMATION
- * ============================================================
- */
-
-function getMesocycleIndex(
-  weekNumber
-) {
-  return Math.floor(
-    (weekNumber - 1) / 4
-  );
+/* Utility helpers */
+function getMesocycleIndex(weekNumber) {
+  return Math.floor((weekNumber - 1) / 4);
 }
 
-
-/*
- * ============================================================
- * FETCH FRESH PROGRAM
- * ============================================================
- */
-
-async function fetchProgram(
-  programId
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabase
-      .from('workout_programs')
-      .select('*')
-      .eq('id', programId)
-      .single();
-
-  if (error) {
-    throw error;
-  }
-
+async function fetchProgram(programId) {
+  const { data, error } = await supabase.from('workout_programs').select('*').eq('id', programId).single();
+  if (error) throw error;
   return data;
 }
 
+async function getCalendarWeek(programId) {
+  const { data, error } = await supabase.rpc('get_current_program_week', { p_program_id: programId });
+  if (error) throw error;
 
-/*
- * ============================================================
- * GET SERVER-AUTHORITATIVE CURRENT CALENDAR WEEK
- * ============================================================
- */
-
-async function getCalendarWeek(
-  programId
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabase.rpc(
-      'get_current_program_week',
-      {
-        p_program_id:
-          programId,
-      }
-    );
-
-  if (error) {
-    throw error;
+  if (typeof data === 'number') return data;
+  if (typeof data === 'string') {
+    const number = Number(data);
+    if (Number.isFinite(number)) return number;
   }
 
-  /*
-   * The SQL function returns an integer, but accepting an
-   * object here makes this tolerant of a future RPC shape.
-   */
-
-  if (
-    typeof data === 'number'
-  ) {
-    return data;
+  const result = rpcObject(data);
+  const candidates = [result.current_week, result.week_number, result.get_current_program_week];
+  for (const candidate of candidates) {
+    const number = Number(candidate);
+    if (Number.isFinite(number)) return number;
   }
+  throw new Error('Could not determine the current program calendar week.');
+}
 
-  if (
-    typeof data === 'string'
-  ) {
-    const number =
-      Number(data);
+async function claimWeek(programId, weekNumber) {
+  const { data, error } = await supabase.rpc('claim_program_week_generation', { p_program_id: programId, p_week_number: weekNumber });
+  if (error) throw error;
+  return rpcObject(data);
+}
 
-    if (
-      Number.isFinite(number)
-    ) {
-      return number;
-    }
-  }
+async function completeWeek(programId, weekNumber, microcycle) {
+  const { data, error } = await supabase.rpc('complete_program_week_generation', { p_program_id: programId, p_week_number: weekNumber, p_microcycle: microcycle });
+  if (error) throw error;
+  return rpcObject(data);
+}
 
-  const result =
-    rpcObject(data);
+async function failWeek(programId, weekNumber) {
+  const { error } = await supabase.rpc('fail_program_week_generation', { p_program_id: programId, p_week_number: weekNumber });
+  if (error) console.error('[ProgramWeekGeneration] Failed to mark generation as failed:', error);
+}
 
-  const candidates = [
-    result.current_week,
-    result.week_number,
-    result.get_current_program_week,
+/* Fallback microcycle generator */
+function createFallbackMicrocycle(profile, weekNumber) {
+  const level = (profile?.fitness_level || '').toLowerCase();
+  let sets = 3, reps = '8-12', rest = 90;
+  if (level.includes('beginner') || level.includes('novice')) { sets = 2; reps = '8-12'; rest = 90; }
+  else if (level.includes('intermediate')) { sets = 3; reps = '8-12'; rest = 75; }
+  else if (level.includes('advanced')) { sets = 4; reps = '6-10'; rest = 60; }
+
+  const workouts = [
+    {
+      day_name: 'Workout A',
+      workout_type: 'Strength',
+      exercises: [
+        { name: 'Push-up', sets, reps, rest_seconds: rest, notes: 'Maintain a straight body. Scale as needed.', activation_cue: 'Scapular protraction and a strong core.' },
+        { name: 'Bodyweight Squat', sets, reps, rest_seconds: rest, notes: 'Depth comfortable to athlete.', activation_cue: 'Knees tracking over toes, engage glutes.' },
+        { name: 'Plank', sets: 3, reps: '30-60s', rest_seconds: 60, notes: 'Neutral spine.', activation_cue: 'Brace through the core.' },
+      ],
+    },
+    {
+      day_name: 'Workout B',
+      workout_type: 'Strength',
+      exercises: [
+        { name: 'Inverted Row or Band Row', sets, reps, rest_seconds: rest, notes: 'Use available equipment.', activation_cue: 'Squeeze shoulder blades together.' },
+        { name: 'Reverse Lunge (each leg)', sets, reps: '8-12 per leg', rest_seconds: rest, notes: 'Step back, keep torso upright.', activation_cue: 'Drive through front heel.' },
+        { name: 'Glute Bridge', sets, reps, rest_seconds: rest, notes: 'Squeeze at top.', activation_cue: 'Engage glutes.' },
+      ],
+    },
+    {
+      day_name: 'Workout C',
+      workout_type: 'Hybrid',
+      exercises: [
+        { name: 'Overhead Press (dumbbell or band)', sets, reps, rest_seconds: rest, notes: 'Control through full range.', activation_cue: 'Engage lats and core.' },
+        { name: 'Romanian Deadlift (hinge pattern)', sets, reps, rest_seconds: rest, notes: 'Neutral spine, hinge from hips.', activation_cue: 'Soft knee, push hips back.' },
+        { name: 'Farmer Carry or Suitcase Carry', sets: 3, reps: '30-60s', rest_seconds: 60, notes: 'Grip and core stability.', activation_cue: 'Tall posture, core braced.' },
+      ],
+    },
   ];
 
-  for (
-    const candidate of candidates
-  ) {
-    const number =
-      Number(candidate);
-
-    if (
-      Number.isFinite(number)
-    ) {
-      return number;
-    }
-  }
-
-  throw new Error(
-    'Could not determine the current program calendar week.'
-  );
+  return {
+    week_number: weekNumber,
+    mesocycle_index: getMesocycleIndex(weekNumber),
+    week_type: 'Fallback',
+    days: workouts,
+  };
 }
 
-
-/*
- * ============================================================
- * CLAIM A WEEK
- * ============================================================
- */
-
-async function claimWeek(
-  programId,
-  weekNumber
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabase.rpc(
-      'claim_program_week_generation',
-      {
-        p_program_id:
-          programId,
-
-        p_week_number:
-          weekNumber,
-      }
-    );
-
-  if (error) {
-    throw error;
-  }
-
-  return rpcObject(data);
-}
-
-
-/*
- * ============================================================
- * COMPLETE A WEEK
- * ============================================================
- */
-
-async function completeWeek(
-  programId,
-  weekNumber,
-  microcycle
-) {
-  const {
-    data,
-    error,
-  } =
-    await supabase.rpc(
-      'complete_program_week_generation',
-      {
-        p_program_id:
-          programId,
-
-        p_week_number:
-          weekNumber,
-
-        p_microcycle:
-          microcycle,
-      }
-    );
-
-  if (error) {
-    throw error;
-  }
-
-  return rpcObject(data);
-}
-
-
-/*
- * ============================================================
- * MARK GENERATION FAILED
- * ============================================================
- */
-
-async function failWeek(
-  programId,
-  weekNumber
-) {
-  const {
-    error,
-  } =
-    await supabase.rpc(
-      'fail_program_week_generation',
-      {
-        p_program_id:
-          programId,
-
-        p_week_number:
-          weekNumber,
-      }
-    );
-
-  if (error) {
-    console.error(
-      '[ProgramWeekGeneration] Failed to mark generation as failed:',
-      error
-    );
-  }
-}
-
-
-/*
- * ============================================================
- * GENERATE ONE WEEK
- * ============================================================
- *
- * Updated to add a client-side timeout and robust failure handling
- * so claims are released and the UI can recover quickly when the
- * AI or edge runtime is slow/timeouting.
- */
-
-async function generateOneWeek(
-  program,
-  user,
-  weekNumber
-) {
+/* generateOneWeek with robust fallback behavior */
+async function generateOneWeek(program, user, weekNumber) {
   const programId = program.id;
+  console.log(`[ProgramWeekGeneration] Starting Week ${weekNumber} for program=${programId} user=${user?.id}`);
 
-  console.log(`[ProgramWeekGeneration] Starting Week ${weekNumber}`);
-
-  // Claim first to prevent concurrent generation
-  const claim = await claimWeek(programId, weekNumber);
+  const claim = await claimWeek(programId, weekNumber).catch((err) => {
+    console.error('[ProgramWeekGeneration] claimWeek error:', err);
+    throw err;
+  });
 
   if (claim?.allowed === false) {
     console.log(`[ProgramWeekGeneration] Week ${weekNumber} was not claimed:`, claim);
-    return {
-      generated: false,
-      reason: claim?.reason || 'generation_in_progress',
-    };
+    return { generated: false, reason: claim?.reason || 'generation_in_progress' };
   }
 
-  // Refresh program after claim
   let freshProgram = await fetchProgram(programId);
-
   const existingMicrocycles = asArray(freshProgram.microcycles);
-  const existingWeek = existingMicrocycles.find(
-    week => Number(week?.week_number) === Number(weekNumber)
-  );
-
+  const existingWeek = existingMicrocycles.find((w) => Number(w?.week_number) === Number(weekNumber));
   if (existingWeek) {
-    return {
-      generated: false,
-      reason: 'already_exists',
-      program: freshProgram,
-    };
+    return { generated: false, reason: 'already_exists', program: freshProgram };
   }
 
-  // Load the latest profile
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
   if (profileError) {
-    // Mark failure and return so claim is not left dangling
     await failWeek(programId, weekNumber);
-    console.error('[ProgramWeekGeneration] Profile load failed:', profileError);
-    return {
-      generated: false,
-      reason: 'profile_load_failed',
-      error: profileError.message || String(profileError),
-    };
+    throw profileError;
   }
 
-  // previous microcycle and recent logs
-  const previousMicrocycle = existingMicrocycles.find(
-    week => Number(week?.week_number) === Number(weekNumber - 1)
-  ) || null;
+  const previousMicrocycle = existingMicrocycles.find((w) => Number(w?.week_number) === Number(weekNumber - 1)) || null;
 
   let recentLogs = [];
   if (weekNumber > 1) {
@@ -640,11 +266,8 @@ async function generateOneWeek(
         .order('date', { ascending: false })
         .limit(30);
 
-      if (logsError) {
-        console.warn('[ProgramWeekGeneration] Could not load previous workout logs. Continuing without them:', logsError);
-      } else {
-        recentLogs = logs || [];
-      }
+      if (logsError) console.warn('[ProgramWeekGeneration] Could not load previous workout logs.', logsError);
+      else recentLogs = logs || [];
     } catch (err) {
       console.warn('[ProgramWeekGeneration] Error loading previous logs, continuing:', err);
     }
@@ -652,309 +275,119 @@ async function generateOneWeek(
 
   const adaptationHistory = asArray(freshProgram.adaptation_history);
   const trainingType = freshProgram.training_type || profile.training_type || 'calisthenics';
+  const promptData = buildPromptData(profile, profile.training_requirements || '', previousMicrocycle, recentLogs);
 
-  const promptData = buildPromptData(
-    profile,
-    profile.training_requirements || '',
-    previousMicrocycle,
-    recentLogs
-  );
-
-  /*
-   * Generate exactly ONE week.
-   * Wrap AI invocation in a client-side timeout and robust error handling.
-   */
-
-  // helper: promise timeout
-  function promiseTimeout(promise, ms) {
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        const err = new Error(`AI invocation timed out after ${ms}ms`);
-        err.name = 'AIInvocationTimeout';
-        reject(err);
-      }, ms);
-    });
-
-    return Promise.race([promise.finally(() => clearTimeout(timeoutId)), timeoutPromise]);
-  }
-
-  // Choose a conservative client-side timeout shorter than edge function runtime limit.
-  const AI_INVOCATION_TIMEOUT_MS = 90 * 1000; // 90 seconds
-
-  let parsed;
+  // call AI
+  let aiResult;
   try {
-    parsed = await promiseTimeout(
-      supabaseApi.ai.invoke({
-        type: 'microcycle',
-        prompt: buildWeekPrompt(trainingType, promptData, weekNumber, adaptationHistory),
-        schema: weekSchema,
-      }),
-      AI_INVOCATION_TIMEOUT_MS
-    );
-  } catch (error) {
-    // On any error (including timeout), mark generation as failed so claim is released.
+    aiResult = await supabaseApi.ai.invoke({
+      type: 'microcycle',
+      prompt: buildWeekPrompt(trainingType, promptData, weekNumber, adaptationHistory),
+      schema: weekSchema,
+    });
+  } catch (err) {
+    aiResult = { __ai_error: true, message: err?.message || String(err) };
+  }
+
+  // If invokeAI returned a structured error object, fallback
+  if (aiResult && aiResult.__ai_error) {
+    console.warn(`[ProgramWeekGeneration] AI failed for Week ${weekNumber}, using fallback:`, aiResult);
+    const fallbackMicrocycle = createFallbackMicrocycle(profile, weekNumber);
     try {
+      await completeWeek(programId, weekNumber, fallbackMicrocycle);
+      freshProgram = await fetchProgram(programId);
+      console.log(`[ProgramWeekGeneration] Week ${weekNumber} completed using fallback.`);
+      return { generated: true, reason: 'fallback_generated', program: freshProgram };
+    } catch (completeErr) {
       await failWeek(programId, weekNumber);
-    } catch (failErr) {
-      // If failWeek itself errors, log — but continue to return graceful failure.
-      console.error('[ProgramWeekGeneration] failWeek failed after AI error:', failErr);
+      console.error('[ProgramWeekGeneration] Failed to complete fallback week:', completeErr);
+      throw completeErr;
     }
-
-    console.error(`[ProgramWeekGeneration] AI generation failed for Week ${weekNumber}:`, error);
-
-    // Return a clear, non-throwing result so callers can respond in the UI
-    return {
-      generated: false,
-      reason: error?.name === 'AIInvocationTimeout' ? 'timeout' : 'ai_error',
-      error: error instanceof Error ? error.message : String(error),
-    };
   }
 
-  const microcycle = parsed?.microcycle;
+  // Expect parsed object with microcycle
+  let parsedMicrocycle = aiResult?.microcycle || null;
 
-  if (!microcycle || !Array.isArray(microcycle.days) || microcycle.days.length === 0) {
-    // Mark failure and release claim
-    await failWeek(programId, weekNumber);
-
-    console.error(`[ProgramWeekGeneration] AI returned no workouts for Week ${weekNumber}. Parsed:`, parsed);
-
-    return {
-      generated: false,
-      reason: 'ai_returned_no_workouts',
-      error: 'AI returned no workouts',
-    };
+  // If raw string returned, attempt to parse
+  if (!parsedMicrocycle && typeof aiResult === 'string') {
+    try {
+      const candidate = JSON.parse(aiResult);
+      parsedMicrocycle = candidate?.microcycle || candidate;
+    } catch {
+      parsedMicrocycle = null;
+    }
   }
 
-  // Ensure correct week_number etc
+  if (!parsedMicrocycle || !Array.isArray(parsedMicrocycle.days) || parsedMicrocycle.days.length === 0) {
+    console.warn(`[ProgramWeekGeneration] AI returned invalid microcycle for Week ${weekNumber}. Using fallback.`);
+    const fallbackMicrocycle = createFallbackMicrocycle(profile, weekNumber);
+    try {
+      await completeWeek(programId, weekNumber, fallbackMicrocycle);
+      freshProgram = await fetchProgram(programId);
+      console.log(`[ProgramWeekGeneration] Week ${weekNumber} completed using fallback (AI invalid).`);
+      return { generated: true, reason: 'fallback_generated', program: freshProgram };
+    } catch (completeErr) {
+      await failWeek(programId, weekNumber);
+      console.error('[ProgramWeekGeneration] Failed to complete fallback week after invalid AI output:', completeErr);
+      throw completeErr;
+    }
+  }
+
   const safeMicrocycle = {
-    ...microcycle,
+    ...parsedMicrocycle,
     week_number: weekNumber,
     mesocycle_index: getMesocycleIndex(weekNumber),
-    week_type: microcycle.week_type || 'Progression',
+    week_type: parsedMicrocycle.week_type || 'Progression',
   };
 
   try {
     await completeWeek(programId, weekNumber, safeMicrocycle);
   } catch (error) {
-    // If completion fails, mark failure and return
     await failWeek(programId, weekNumber);
-
     console.error(`[ProgramWeekGeneration] completeWeek failed for Week ${weekNumber}:`, error);
-
-    return {
-      generated: false,
-      reason: 'complete_failed',
-      error: error instanceof Error ? error.message : String(error),
-    };
+    throw error;
   }
 
-  // Refresh and return success
   freshProgram = await fetchProgram(programId);
+  console.log(`[ProgramWeekGeneration] Week ${weekNumber} generated successfully (AI).`);
 
-  console.log(`[ProgramWeekGeneration] Week ${weekNumber} generated successfully.`);
-
-  return {
-    generated: true,
-    reason: 'generated',
-    program: freshProgram,
-  };
+  return { generated: true, reason: 'generated', program: freshProgram };
 }
 
-
-/*
- * ============================================================
- * MAIN BOOTSTRAP
- * ============================================================
- *
- * This is the function the app calls whenever the user enters
- * the authenticated application.
- *
- * It catches the program up one week at a time.
- */
-
-export async function ensureCurrentProgramWeek(
-  initialProgram,
-  user
-) {
-  if (
-    !initialProgram?.id ||
-    !user?.id
-  ) {
-    return {
-      program:
-        initialProgram,
-
-      targetWeek:
-        initialProgram?.current_week ||
-        1,
-
-      generated:
-        false,
-    };
+/* main bootstrap */
+export async function ensureCurrentProgramWeek(initialProgram, user) {
+  if (!initialProgram?.id || !user?.id) {
+    return { program: initialProgram, targetWeek: initialProgram?.current_week || 1, generated: false };
   }
 
-  /*
-   * Never touch a non-active program.
-   */
-
-  if (
-    initialProgram.status &&
-    initialProgram.status !== 'active'
-  ) {
-    return {
-      program:
-        initialProgram,
-
-      targetWeek:
-        initialProgram.current_week ||
-        1,
-
-      generated:
-        false,
-    };
+  if (initialProgram.status && initialProgram.status !== 'active') {
+    return { program: initialProgram, targetWeek: initialProgram.current_week || 1, generated: false };
   }
 
-  let program =
-    await fetchProgram(
-      initialProgram.id
-    );
+  let program = await fetchProgram(initialProgram.id);
+  const targetWeek = await getCalendarWeek(program.id);
 
-  /*
-   * Ask the database what calendar week the athlete is actually
-   * in. This is independent of how many workouts they completed.
-   */
+  const durationWeeks = Math.min(Number(program.duration_weeks) || 12, 12);
+  const cappedTargetWeek = Math.min(Math.max(1, Number(targetWeek) || 1), durationWeeks);
 
-  const targetWeek =
-    await getCalendarWeek(
-      program.id
-    );
+  let currentWeek = Math.max(1, Number(program.current_week) || 1);
+  let generatedAny = false;
 
-  const durationWeeks =
-    Math.min(
-      Number(
-        program.duration_weeks
-      ) || 12,
-      12
-    );
+  while (currentWeek < cappedTargetWeek) {
+    const nextWeek = currentWeek + 1;
+    const result = await generateOneWeek(program, user, nextWeek);
 
-  const cappedTargetWeek =
-    Math.min(
-      Math.max(
-        1,
-        Number(targetWeek) || 1
-      ),
-      durationWeeks
-    );
+    if (result.reason === 'generation_in_progress') break;
 
-  let currentWeek =
-    Math.max(
-      1,
-      Number(
-        program.current_week
-      ) || 1
-    );
+    program = result.program || (await fetchProgram(program.id));
+    const microcycles = asArray(program.microcycles);
+    const weekNowExists = microcycles.some((w) => Number(w?.week_number) === Number(nextWeek));
+    if (!weekNowExists) break;
 
-  let generatedAny =
-    false;
-
-  /*
-   * Generate missing weeks sequentially.
-   *
-   * This is important: Week 4 should not be generated before
-   * Week 2 and Week 3 because each week's programming can use
-   * the previous week's information.
-   */
-
-  while (
-    currentWeek <
-      cappedTargetWeek
-  ) {
-    const nextWeek =
-      currentWeek + 1;
-
-    const result =
-      await generateOneWeek(
-        program,
-        user,
-        nextWeek
-      );
-
-    /*
-     * If another tab/device is currently generating the week,
-     * stop here. That other process owns the generation.
-     */
-
-    if (
-      result.reason ===
-      'generation_in_progress'
-    ) {
-      break;
-    }
-
-    /*
-     * Refresh regardless of whether the week already existed.
-     */
-
-    program =
-      result.program ||
-      await fetchProgram(
-        program.id
-      );
-
-    const microcycles =
-      asArray(
-        program.microcycles
-      );
-
-    const weekNowExists =
-      microcycles.some(
-        week =>
-          Number(
-            week?.week_number
-          ) ===
-          Number(
-            nextWeek
-          )
-      );
-
-    if (
-      !weekNowExists
-    ) {
-      /*
-       * Generation did not complete, so do not advance past a
-       * missing week.
-       */
-      break;
-    }
-
-    currentWeek =
-      Math.max(
-        currentWeek,
-        nextWeek
-      );
-
-    generatedAny =
-      generatedAny ||
-      result.generated;
+    currentWeek = Math.max(currentWeek, nextWeek);
+    generatedAny = generatedAny || result.generated;
   }
 
-  /*
-   * Always return the freshest program.
-   */
-
-  program =
-    await fetchProgram(
-      program.id
-    );
-
-  return {
-    program,
-
-    targetWeek:
-      cappedTargetWeek,
-
-    generated:
-      generatedAny,
-  };
+  program = await fetchProgram(program.id);
+  return { program, targetWeek: cappedTargetWeek, generated: generatedAny };
 }
