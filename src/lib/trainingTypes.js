@@ -26,7 +26,7 @@ export const TRAINING_TYPES = [
     iconName: 'Trophy',
     desc: 'Traditional gym training with free weights, cables, and machines. Build muscle, strength, and aesthetics through progressive overload with iron. No skill work — pure hypertrophy and strength.',
     hasSkills: false,
-    hasLevel: false,
+    hasLevel: true,
     hasTimeframe: false,
     hasWeightGoals: true,
   },
@@ -106,6 +106,8 @@ function buildGenderRules(gender) {
 
 function buildContext(data = {}) {
   const {
+    trainingType,
+    level,
     currentSkills,
     goalDescription,
     timeframe,
@@ -117,8 +119,39 @@ function buildContext(data = {}) {
 
   const parts = [buildAthleteProfile(data)];
 
+  // IMPORTANT:
+  // "Beginner", "Intermediate", etc. must be interpreted according
+  // to the selected training type. A beginner in weight training
+  // should not be treated as a beginner/advanced calisthenics athlete,
+  // and vice versa.
+  if (level) {
+    if (trainingType === 'weights') {
+      parts.push(
+        `WEIGHT TRAINING EXPERIENCE LEVEL: ${level}. This level refers specifically to resistance-training experience and must determine the starting exercise complexity, loading approach, exercise selection, and progression rate. A weight-training beginner is new or relatively new to resistance training even if they may have experience in other sports or activities. Do not prescribe advanced lifting variations, excessive volume, or advanced intensity techniques simply because the athlete selected a goal such as muscle growth or strength.`
+      );
+    } else if (trainingType === 'hybrid') {
+      parts.push(
+        `OVERALL TRAINING EXPERIENCE LEVEL: ${level}. Use this to determine appropriate starting difficulty for both resistance training and calisthenics. Do not assume advanced skill ability solely from experience with one modality.`
+      );
+    } else if (
+      trainingType === 'weighted_calisthenics'
+    ) {
+      parts.push(
+        `CALISTHENICS EXPERIENCE LEVEL: ${level}. This level refers primarily to the athlete's calisthenics ability and experience. Use it to determine appropriate bodyweight skill difficulty, weighted calisthenics progressions, exercise selection, and loading. Do not assume advanced calisthenics skill ability solely because the athlete can handle external weight.`
+      );
+    } else {
+      parts.push(
+        `CALISTHENICS EXPERIENCE LEVEL: ${level}. Use this to determine appropriate starting exercise difficulty, progressions, and skill demands.`
+      );
+    }
+  }
+
   if (currentSkills) {
-    parts.push(`CURRENT SKILLS: ${currentSkills}`);
+    parts.push(
+      trainingType === 'weights'
+        ? `CURRENT WEIGHT TRAINING EXPERIENCE: ${currentSkills}`
+        : `CURRENT SKILLS: ${currentSkills}`
+    );
   }
 
   if (fitnessGoals?.length) {
@@ -288,14 +321,18 @@ function getTrainingTypeRules(trainingType) {
 - Prioritize free weights, cables, machines, and other available resistance equipment.
 - Program progressive overload for strength and/or hypertrophy according to the athlete's goals.
 - Use appropriate exercise selection, volume, intensity, rest periods, and movement patterns.
-- Do not randomly insert calisthenics skill work unless the athlete specifically wants it.`;
+- Do not randomly insert calisthenics skill work unless the athlete specifically wants it.
+- The athlete's WEIGHT TRAINING EXPERIENCE LEVEL is authoritative for determining starting exercise complexity, loading, volume, intensity techniques, and progression speed.
+- For beginners, prioritize stable exercises, fundamental movement patterns, technique, controlled progression, and manageable training volume before advanced variations or intensity techniques.
+- Do not confuse an athlete's general athletic experience with experience under resistance training.`;
 
     case 'hybrid':
       return `TRAINING TYPE: HYBRID
 - Combine calisthenics skill/strength work with weight training.
 - Place technically demanding calisthenics skill work earlier in sessions when appropriate.
 - Use weight training to strengthen muscles and patterns that support the athlete's calisthenics goals.
-- Balance fatigue carefully so weight training does not undermine skill quality.`;
+- Balance fatigue carefully so weight training does not undermine skill quality.
+- Use the athlete's overall training experience level to determine the starting difficulty of BOTH modalities. Do not assume advanced calisthenics skills or advanced lifting ability without supporting information.`;
 
     default:
       return `TRAINING TYPE: GENERAL FITNESS
@@ -415,6 +452,8 @@ ${buildAdaptationRules(adaptationHistory)}
 16. Rest must be expressed in seconds.
 17. Keep exercise notes concise but useful.
 18. Make the program realistic for the athlete's stated schedule and experience.
+19. For weight-training beginners, favor foundational resistance-training movements and conservative starting volume/loading over advanced techniques.
+20. Never infer advanced resistance-training ability merely from the athlete's age, physique, athletic background, or goals.
 
 ${OUTPUT_FORMAT}
 
