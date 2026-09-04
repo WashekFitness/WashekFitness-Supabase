@@ -1,3 +1,7 @@
+// src/lib/programWeekGeneration.js
+// TEMPORARY HOTFIX: Force a safe fallback microcycle for Week 1 so onboarding never stalls.
+// Keep this in place until ai-generate is consistently reliable or you move generation to a background job.
+
 import { supabase } from '@/lib/supabase';
 import { supabaseApi } from '@/lib/supabaseApi';
 import { buildWeekPrompt } from '@/lib/trainingTypes';
@@ -225,7 +229,7 @@ function createFallbackMicrocycle(profile, weekNumber) {
   };
 }
 
-/* generateOneWeek with robust fallback behavior */
+/* generateOneWeek with robust fallback behavior and HOTFIX for Week 1 */
 async function generateOneWeek(program, user, weekNumber) {
   const programId = program.id;
   console.log(`[ProgramWeekGeneration] Starting Week ${weekNumber} for program=${programId} user=${user?.id}`);
@@ -247,12 +251,31 @@ async function generateOneWeek(program, user, weekNumber) {
     return { generated: false, reason: 'already_exists', program: freshProgram };
   }
 
+  // Load profile early (needed for fallback creation)
   const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
   if (profileError) {
     await failWeek(programId, weekNumber);
+    console.error('[ProgramWeekGeneration] Profile load failed:', profileError);
     throw profileError;
   }
 
+  // HOTFIX: Force fallback for Week 1 to guarantee onboarding completes.
+  if (Number(weekNumber) === 1) {
+    console.log(`[ProgramWeekGeneration] HOTFIX: Forcing fallback microcycle for Week 1 for program=${programId}`);
+    const fallbackMicrocycle = createFallbackMicrocycle(profile, weekNumber);
+    try {
+      await completeWeek(programId, weekNumber, fallbackMicrocycle);
+      freshProgram = await fetchProgram(programId);
+      console.log(`[ProgramWeekGeneration] Week ${weekNumber} completed using HOTFIX fallback.`);
+      return { generated: true, reason: 'fallback_forced', program: freshProgram };
+    } catch (completeErr) {
+      await failWeek(programId, weekNumber);
+      console.error('[ProgramWeekGeneration] Failed to complete HOTFIX fallback week:', completeErr);
+      throw completeErr;
+    }
+  }
+
+  // previous microcycle and logs
   const previousMicrocycle = existingMicrocycles.find((w) => Number(w?.week_number) === Number(weekNumber - 1)) || null;
 
   let recentLogs = [];
@@ -266,8 +289,11 @@ async function generateOneWeek(program, user, weekNumber) {
         .order('date', { ascending: false })
         .limit(30);
 
-      if (logsError) console.warn('[ProgramWeekGeneration] Could not load previous workout logs.', logsError);
-      else recentLogs = logs || [];
+      if (logsError) {
+        console.warn('[ProgramWeekGeneration] Could not load previous workout logs. Continuing without them:', logsError);
+      } else {
+        recentLogs = logs || [];
+      }
     } catch (err) {
       console.warn('[ProgramWeekGeneration] Error loading previous logs, continuing:', err);
     }
@@ -277,7 +303,7 @@ async function generateOneWeek(program, user, weekNumber) {
   const trainingType = freshProgram.training_type || profile.training_type || 'calisthenics';
   const promptData = buildPromptData(profile, profile.training_requirements || '', previousMicrocycle, recentLogs);
 
-  // call AI
+  // AI invocation
   let aiResult;
   try {
     aiResult = await supabaseApi.ai.invoke({
