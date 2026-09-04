@@ -1,288 +1,426 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods":
+    "POST, OPTIONS",
+  "Content-Type": "application/json",
 };
 
-const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') || '';
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const SUPABASE_URL =
+  Deno.env.get("SUPABASE_URL") || "";
 
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
+const SERVICE_ROLE_KEY =
+  Deno.env.get("SERVICE_ROLE_KEY") || "";
 
-const ACTIVE_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+const SUPABASE_ANON_KEY =
+  Deno.env.get("SUPABASE_ANON_KEY") ||
+  "";
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: corsHeaders,
-  });
+const STRIPE_SECRET_KEY =
+  Deno.env.get("STRIPE_SECRET_KEY") || "";
+
+if (!SUPABASE_URL) {
+  throw new Error(
+    "Missing SUPABASE_URL"
+  );
 }
 
-async function stripe(path: string, options: RequestInit = {}) {
-  if (!STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY is not configured in Supabase.');
+if (!SERVICE_ROLE_KEY) {
+  throw new Error(
+    "Missing SERVICE_ROLE_KEY"
+  );
+}
+
+if (!STRIPE_SECRET_KEY) {
+  throw new Error(
+    "Missing STRIPE_SECRET_KEY"
+  );
+}
+
+const supabaseAdmin =
+  createClient(
+    SUPABASE_URL,
+    SERVICE_ROLE_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+
+function json(
+  body: unknown,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: corsHeaders,
+    }
+  );
+}
+
+async function getAuthenticatedUser(
+  req: Request
+) {
+  const authorization =
+    req.headers.get(
+      "Authorization"
+    );
+
+  if (!authorization) {
+    throw new Error(
+      "Missing Authorization header."
+    );
   }
 
-  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      ...(options.headers || {}),
-    },
-  });
+  /*
+   * Use the user's JWT to determine
+   * who is requesting cancellation.
+   *
+   * Never trust a user_id supplied
+   * in the request body.
+   */
+  const supabaseUser =
+    createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization:
+              authorization,
+          },
+        },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
 
-  const text = await response.text();
+  const {
+    data,
+    error,
+  } =
+    await supabaseUser.auth.getUser();
+
+  if (
+    error ||
+    !data?.user
+  ) {
+    throw new Error(
+      error?.message ||
+        "Unable to authenticate user."
+    );
+  }
+
+  return data.user;
+}
+
+async function stripeRequest(
+  path: string,
+  options: RequestInit = {}
+) {
+  const response =
+    await fetch(
+      `https://api.stripe.com/v1/${path}`,
+      {
+        ...options,
+        headers: {
+          Authorization:
+            `Bearer ${STRIPE_SECRET_KEY}`,
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+          ...(options.headers || {}),
+        },
+      }
+    );
+
+  const text =
+    await response.text();
+
   let data: any = {};
 
   try {
-    data = JSON.parse(text);
+    data =
+      JSON.parse(text);
   } catch {
-    data = { raw: text };
+    data = {
+      raw: text,
+    };
   }
 
   if (!response.ok) {
     throw new Error(
-      data?.error?.message || `Stripe returned HTTP ${response.status}.`
+      data?.error?.message ||
+        `Stripe returned HTTP ${response.status}.`
     );
   }
 
   return data;
 }
 
-function isActive(subscription: any) {
-  return ACTIVE_STATUSES.includes(
-    String(subscription?.status || '').toLowerCase()
+async function getSubscription(
+  subscriptionId: string
+) {
+  return stripeRequest(
+    `subscriptions/${encodeURIComponent(
+      subscriptionId
+    )}`
   );
 }
 
-async function subscriptionsForCustomer(customerId: string) {
-  const result = await stripe(
-    `subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=100`
+async function cancelSubscription(
+  subscriptionId: string
+) {
+  /*
+   * Cancel at the end of the current
+   * billing period instead of immediately
+   * removing the user's paid access.
+   */
+  return stripeRequest(
+    `subscriptions/${encodeURIComponent(
+      subscriptionId
+    )}`,
+    {
+      method: "POST",
+      body:
+        new URLSearchParams({
+          cancel_at_period_end:
+            "true",
+        }).toString(),
+    }
   );
-
-  return Array.isArray(result?.data) ? result.data : [];
 }
 
-async function findSubscription(profile: any, user: any) {
-  /* First use the exact subscription ID saved on the Washek profile. */
-  if (profile?.stripe_subscription_id) {
+Deno.serve(
+  async (req) => {
+    if (
+      req.method ===
+      "OPTIONS"
+    ) {
+      return new Response(
+        "ok",
+        {
+          status: 200,
+          headers:
+            corsHeaders,
+        }
+      );
+    }
+
+    if (
+      req.method !==
+      "POST"
+    ) {
+      return json(
+        {
+          success: false,
+          error:
+            "Method not allowed.",
+        },
+        405
+      );
+    }
+
     try {
-      const saved = await stripe(
-        `subscriptions/${encodeURIComponent(profile.stripe_subscription_id)}`
-      );
+      /*
+       * ------------------------------------------------------
+       * AUTHENTICATE
+       * ------------------------------------------------------
+       */
 
-      if (isActive(saved)) {
-        return saved;
+      const user =
+        await getAuthenticatedUser(
+          req
+        );
+
+      /*
+       * ------------------------------------------------------
+       * GET USER'S SUBSCRIPTION FROM SUPABASE
+       * ------------------------------------------------------
+       *
+       * We identify the subscription using the authenticated
+       * user's own profile. The client cannot substitute
+       * another user's ID.
+       */
+
+      const {
+        data: profile,
+        error: profileError,
+      } =
+        await supabaseAdmin
+          .from("profiles")
+          .select(
+            "id, email, stripe_subscription_id, subscription_plan, subscription_status"
+          )
+          .eq(
+            "id",
+            user.id
+          )
+          .maybeSingle();
+
+      if (profileError) {
+        throw new Error(
+          `Unable to load your subscription information: ${profileError.message}`
+        );
       }
-    } catch {
-      // Continue recovery below.
-    }
-  }
 
-  const email = String(profile?.email || user?.email || '').trim().toLowerCase();
-
-  if (!email) {
-    return null;
-  }
-
-  const customerResult = await stripe(
-    `customers?email=${encodeURIComponent(email)}&limit=100`
-  );
-
-  const customers = Array.isArray(customerResult?.data)
-    ? customerResult.data
-    : [];
-
-  const matches: Array<{ customer: any; subscription: any }> = [];
-
-  for (const customer of customers) {
-    const subscriptions = await subscriptionsForCustomer(customer.id);
-
-    for (const subscription of subscriptions) {
-      if (isActive(subscription)) {
-        matches.push({ customer, subscription });
+      if (!profile) {
+        throw new Error(
+          "Your Washek Fitness profile could not be found."
+        );
       }
-    }
-  }
 
-  /* Prefer metadata tied to this exact Washek user. */
-  const exact = matches.find(
-    ({ customer, subscription }) =>
-      customer?.metadata?.user_id === user.id ||
-      subscription?.metadata?.user_id === user.id
-  );
+      const subscriptionId =
+        profile.stripe_subscription_id;
 
-  if (exact) {
-    return exact.subscription;
-  }
-
-  /* Older subscriptions may have no user_id metadata. */
-  return matches[0]?.subscription || null;
-}
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
-
-  if (req.method !== 'POST') {
-    return json(
-      {
-        success: false,
-        error: 'Method not allowed.',
-      },
-      405
-    );
-  }
-
-  try {
-    const authHeader = req.headers.get('Authorization');
-
-    if (!authHeader) {
-      return json(
-        {
-          success: false,
-          error: 'You must be signed in.',
-        },
-        401
-      );
-    }
-
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-
-    const {
-      data: authData,
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (authError || !authData?.user) {
-      return json(
-        {
-          success: false,
-          error: 'Your login session is invalid or expired.',
-        },
-        401
-      );
-    }
-
-    const user = authData.user;
-
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError) {
-      throw new Error(
-        'Unable to load your Washek Fitness profile.'
-      );
-    }
-
-    const subscription = await findSubscription(profile, user);
-
-    /* No live Stripe subscription: clean stale paid access. */
-    if (!subscription) {
-      const { data: updated, error: updateError } = await supabaseAdmin
-        .from('profiles')
-        .update({
-          subscription_plan: 'free',
-          subscription_status: 'canceled',
-          stripe_subscription_id: null,
-          stripe_price_id: null,
-          subscription_updated_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        throw updateError;
+      if (
+        !subscriptionId
+      ) {
+        return json({
+          success: true,
+          alreadyCanceled:
+            false,
+          message:
+            "You do not currently have a Stripe subscription to cancel.",
+        });
       }
+
+      /*
+       * ------------------------------------------------------
+       * VERIFY THE STRIPE SUBSCRIPTION
+       * ------------------------------------------------------
+       *
+       * This prevents us from blindly modifying an arbitrary
+       * Stripe subscription ID stored in the profile.
+       */
+
+      const subscription =
+        await getSubscription(
+          subscriptionId
+        );
+
+      const metadataUserId =
+        subscription
+          ?.metadata
+          ?.user_id;
+
+      if (
+        metadataUserId &&
+        metadataUserId !==
+          user.id
+      ) {
+        throw new Error(
+          "This Stripe subscription does not belong to the authenticated account."
+        );
+      }
+
+      /*
+       * ------------------------------------------------------
+       * ALREADY CANCELING
+       * ------------------------------------------------------
+       */
+
+      if (
+        subscription
+          ?.cancel_at_period_end
+      ) {
+        return json({
+          success: true,
+
+          alreadyCanceled:
+            true,
+
+          cancel_at_period_end:
+            true,
+
+          current_period_end:
+            subscription
+              ?.current_period_end
+              ? new Date(
+                  subscription.current_period_end *
+                    1000
+                ).toISOString()
+              : null,
+
+          subscription_id:
+            subscription.id,
+        });
+      }
+
+      /*
+       * ------------------------------------------------------
+       * CANCEL AT PERIOD END
+       * ------------------------------------------------------
+       */
+
+      const canceled =
+        await cancelSubscription(
+          subscriptionId
+        );
+
+      /*
+       * ------------------------------------------------------
+       * RETURN THE ACTUAL STRIPE STATE
+       * ------------------------------------------------------
+       *
+       * The Stripe webhook remains responsible for
+       * synchronizing the final subscription state back
+       * into Supabase.
+       */
 
       return json({
         success: true,
-        alreadyCanceled: true,
-        user: updated,
+
+        canceled: true,
+
+        cancel_at_period_end:
+          Boolean(
+            canceled
+              ?.cancel_at_period_end
+          ),
+
+        current_period_end:
+          canceled
+            ?.current_period_end
+            ? new Date(
+                canceled.current_period_end *
+                  1000
+              ).toISOString()
+            : null,
+
+        subscription_id:
+          canceled?.id ||
+          subscriptionId,
+
+        message:
+          "Your subscription has been scheduled for cancellation at the end of the current billing period.",
       });
+    } catch (error) {
+      console.error(
+        "[CANCEL SUBSCRIPTION] Error:",
+        error
+      );
+
+      return json(
+        {
+          success: false,
+
+          error:
+            error instanceof
+            Error
+              ? error.message
+              : "Unable to cancel your subscription.",
+        },
+        400
+      );
     }
-
-    /* Immediately cancel the real Stripe subscription. */
-    const canceled = await stripe(
-      `subscriptions/${encodeURIComponent(subscription.id)}`,
-      {
-        method: 'DELETE',
-      }
-    );
-
-    const customerId =
-      typeof subscription.customer === 'string'
-        ? subscription.customer
-        : subscription.customer?.id || profile?.stripe_customer_id || null;
-
-    /* Remove paid access immediately in Washek. */
-    const {
-      data: updated,
-      error: updateError,
-    } = await supabaseAdmin
-      .from('profiles')
-      .update({
-        subscription_plan: 'free',
-        subscription_status: 'canceled',
-        stripe_customer_id: customerId,
-        stripe_subscription_id: null,
-        stripe_price_id: null,
-        subscription_updated_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .select()
-      .single();
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return json({
-      success: true,
-      message: 'Your subscription has been cancelled immediately.',
-      stripe_status: canceled?.status || 'canceled',
-      subscription_id: subscription.id,
-      user: updated,
-    });
-  } catch (error) {
-    console.error('cancel-subscription error:', error);
-
-    return json(
-      {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unable to cancel your subscription.',
-      },
-      400
-    );
   }
-});
+);
