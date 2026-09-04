@@ -72,7 +72,7 @@ const VISUAL_TYPES = new Set([
  */
 const SERVER_FEATURE_PLANS: Record<string, string> = {
   form_analysis: 'elite',
-  progress_photo: 'progress',
+  progress_photo: 'performance',
   food_scan: 'progress',
   food_barcode: 'progress',
 };
