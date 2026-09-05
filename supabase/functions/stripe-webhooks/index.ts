@@ -1,60 +1,114 @@
-import Stripe from "npm:stripe@17.7.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from 'npm:stripe@17.7.0';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, stripe-signature",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, stripe-signature',
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
 };
 
-const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-const supabaseUrl = Deno.env.get("SUPABASE_URL");
-const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
+const stripeSecretKey =
+  Deno.env.get(
+    'STRIPE_SECRET_KEY'
+  );
+
+const webhookSecret =
+  Deno.env.get(
+    'STRIPE_WEBHOOK_SECRET'
+  );
+
+const supabaseUrl =
+  Deno.env.get(
+    'SUPABASE_URL'
+  );
+
+const serviceRoleKey =
+  Deno.env.get(
+    'SERVICE_ROLE_KEY'
+  );
 
 if (!stripeSecretKey) {
-  throw new Error("Missing STRIPE_SECRET_KEY");
+  throw new Error(
+    'Missing STRIPE_SECRET_KEY'
+  );
 }
 
 if (!webhookSecret) {
-  throw new Error("Missing STRIPE_WEBHOOK_SECRET");
+  throw new Error(
+    'Missing STRIPE_WEBHOOK_SECRET'
+  );
 }
 
 if (!supabaseUrl) {
-  throw new Error("Missing SUPABASE_URL");
+  throw new Error(
+    'Missing SUPABASE_URL'
+  );
 }
 
 if (!serviceRoleKey) {
-  throw new Error("Missing SERVICE_ROLE_KEY");
+  throw new Error(
+    'Missing SERVICE_ROLE_KEY'
+  );
 }
 
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: "2024-12-18.acacia",
-});
+const stripe =
+  new Stripe(
+    stripeSecretKey,
+    {
+      apiVersion:
+        '2024-12-18.acacia',
+    }
+  );
 
-const supabase = createClient(
-  supabaseUrl,
-  serviceRoleKey,
-);
+const supabase =
+  createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        persistSession:
+          false,
+
+        autoRefreshToken:
+          false,
+      },
+    }
+  );
 
 /*
  * ============================================================
- * WASHEK FITNESS PLAN CONFIGURATION
+ * SUBSCRIPTION STATUS
  * ============================================================
  */
 
-const PAID_STATUSES = new Set([
-  "active",
-  "trialing",
-  "past_due",
-  "unpaid",
-]);
+const PAID_STATUSES =
+  new Set([
+    'active',
+    'trialing',
+    'past_due',
+    'unpaid',
+  ]);
 
-const PLAN_BY_PRICE_ID: Record<string, string> = {
-  "price_1TTYrbRuQpZftYKRoSyLbQ0c": "progress",
-  "price_1TTYs8RuQpZftYKR8ZzpNg7x": "performance",
-  "price_1TTYsWRuQpZftYKRKIm8V10E": "elite",
+/*
+ * ============================================================
+ * PRICE -> PLAN
+ * ============================================================
+ */
+
+const PLAN_BY_PRICE_ID: Record<
+  string,
+  string
+> = {
+  'price_1TTYrbRuQpZftYKRoSyLbQ0c':
+    'progress',
+
+  'price_1TTYs8RuQpZftYKR8ZzpNg7x':
+    'performance',
+
+  'price_1TTYsWRuQpZftYKRKIm8V10E':
+    'elite',
 };
 
 /*
@@ -65,80 +119,41 @@ const PLAN_BY_PRICE_ID: Record<string, string> = {
 
 function jsonResponse(
   body: Record<string, unknown>,
-  status = 200,
-): Response {
+  status = 200
+) {
   return new Response(
     JSON.stringify(body),
     {
       status,
+
       headers: {
         ...corsHeaders,
-        "Content-Type": "application/json",
+
+        'Content-Type':
+          'application/json',
       },
-    },
+    }
   );
 }
 
 /*
  * ============================================================
- * STRIPE HELPERS
+ * METADATA HELPERS
  * ============================================================
  */
 
-function getSubscriptionIdFromEvent(
-  event: Stripe.Event,
-): string | null {
-  const object =
-    event.data.object as Record<string, unknown>;
-
-  /*
-   * Invoice events.
-   */
-  if (
-    typeof object.subscription === "string"
-  ) {
-    return object.subscription;
-  }
-
-  if (
-    object.subscription &&
-    typeof object.subscription === "object" &&
-    "id" in object.subscription &&
-    typeof object.subscription.id === "string"
-  ) {
-    return object.subscription.id;
-  }
-
-  /*
-   * Subscription events.
-   */
-  if (
-    typeof object.id === "string" &&
-    event.type.startsWith(
-      "customer.subscription.",
-    )
-  ) {
-    return object.id;
-  }
-
-  return null;
-}
-
-function getUserIdFromMetadata(
+function getMetadataUserId(
   metadata:
     | Stripe.Metadata
-    | Record<string, string>
     | null
-    | undefined,
-): string | null {
-  if (!metadata) {
-    return null;
-  }
-
-  const userId = metadata.user_id;
+    | undefined
+) {
+  const userId =
+    metadata?.user_id;
 
   if (
-    typeof userId === "string" &&
+    typeof userId ===
+      'string' &&
     userId.trim()
   ) {
     return userId.trim();
@@ -147,23 +162,27 @@ function getUserIdFromMetadata(
   return null;
 }
 
-function getPlanFromMetadata(
+function getMetadataPlan(
   metadata:
     | Stripe.Metadata
-    | Record<string, string>
     | null
-    | undefined,
-): string | null {
-  if (!metadata) {
-    return null;
-  }
-
-  const plan = metadata.plan;
+    | undefined
+) {
+  const plan =
+    String(
+      metadata?.plan ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
 
   if (
-    plan === "progress" ||
-    plan === "performance" ||
-    plan === "elite"
+    plan ===
+      'progress' ||
+    plan ===
+      'performance' ||
+    plan ===
+      'elite'
   ) {
     return plan;
   }
@@ -172,230 +191,419 @@ function getPlanFromMetadata(
 }
 
 function getPlanFromPriceId(
-  priceId: string | null | undefined,
-): string | null {
+  priceId:
+    | string
+    | null
+    | undefined
+) {
   if (!priceId) {
     return null;
   }
 
-  return PLAN_BY_PRICE_ID[priceId] ?? null;
+  return (
+    PLAN_BY_PRICE_ID[
+      priceId
+    ] ||
+    null
+  );
 }
 
-function getPlanFromSubscription(
-  subscription: Stripe.Subscription,
-): string | null {
+function getSubscriptionPlan(
+  subscription: Stripe.Subscription
+) {
   /*
-   * Metadata is the primary source of truth.
+   * Metadata is authoritative.
    */
+
   const metadataPlan =
-    getPlanFromMetadata(
-      subscription.metadata,
+    getMetadataPlan(
+      subscription.metadata
     );
 
-  if (metadataPlan) {
+  if (
+    metadataPlan
+  ) {
     return metadataPlan;
   }
 
   /*
-   * Price ID is the fallback.
+   * Price ID fallback.
    */
+
   const priceId =
-    subscription.items.data[0]?.price?.id;
+    subscription
+      .items
+      .data[0]
+      ?.price
+      ?.id;
 
-  return getPlanFromPriceId(priceId);
-}
-
-function getUserIdFromSubscription(
-  subscription: Stripe.Subscription,
-): string | null {
-  return getUserIdFromMetadata(
-    subscription.metadata,
+  return getPlanFromPriceId(
+    priceId
   );
 }
 
 /*
  * ============================================================
- * PROFILE SYNC
+ * USER ID FROM SUBSCRIPTION
  * ============================================================
- *
- * THIS is the important part.
- *
- * Stripe is the billing source of truth.
- * Supabase profiles receives the resulting subscription state.
+ */
+
+function getSubscriptionUserId(
+  subscription: Stripe.Subscription
+) {
+  return getMetadataUserId(
+    subscription.metadata
+  );
+}
+
+/*
+ * ============================================================
+ * STRIPE SUBSCRIPTION -> PROFILE
+ * ============================================================
  */
 
 async function syncSubscriptionToProfile(
   subscription: Stripe.Subscription,
-  explicitUserId?: string | null,
-): Promise<void> {
+  explicitUserId:
+    | string
+    | null = null
+) {
   const userId =
     explicitUserId ||
-    getUserIdFromSubscription(
-      subscription,
+    getSubscriptionUserId(
+      subscription
     );
 
   if (!userId) {
     throw new Error(
-      `Subscription ${subscription.id} is missing metadata.user_id`,
+      `Stripe subscription ${subscription.id} is missing metadata.user_id`
     );
   }
 
   const plan =
-    getPlanFromSubscription(
-      subscription,
+    getSubscriptionPlan(
+      subscription
     );
 
   if (!plan) {
     throw new Error(
-      `Unable to determine Washek Fitness plan for subscription ${subscription.id}`,
+      `Unable to determine Washek plan for Stripe subscription ${subscription.id}`
     );
   }
 
-  const priceId =
-    subscription.items.data[0]?.price?.id ??
-    null;
+  const status =
+    String(
+      subscription.status ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
 
-  const isEntitled =
+  const entitled =
     PAID_STATUSES.has(
-      subscription.status,
+      status
     );
 
-  const subscriptionPlan =
-    isEntitled
+  const profilePlan =
+    entitled
       ? plan
-      : "free";
+      : 'free';
+
+  const customerId =
+    typeof subscription.customer ===
+    'string'
+      ? subscription.customer
+      : subscription.customer?.id ||
+        null;
+
+  const priceId =
+    subscription
+      .items
+      .data[0]
+      ?.price
+      ?.id ||
+    null;
 
   console.log(
-    "[WASHEK SYNC] Updating profile:",
+    '[WASHEK SYNC] Updating profile:',
     JSON.stringify({
       userId,
       subscriptionId:
         subscription.id,
-      status:
-        subscription.status,
+      status,
       plan:
-        subscriptionPlan,
+        profilePlan,
+      customerId,
       priceId,
-    }),
+    })
   );
 
-  const { data, error } =
+  const {
+    data,
+    error,
+  } =
     await supabase
-      .from("profiles")
+      .from('profiles')
       .update({
         subscription_plan:
-          subscriptionPlan,
+          profilePlan,
 
         subscription_status:
-          subscription.status,
+          status,
 
         stripe_subscription_id:
           subscription.id,
 
+        stripe_customer_id:
+          customerId,
+
         stripe_price_id:
           priceId,
 
-        stripe_customer_id:
-          typeof subscription.customer ===
-          "string"
-            ? subscription.customer
-            : subscription.customer?.id ??
-              null,
+        subscription_updated_at:
+          new Date().toISOString(),
+
+        updated_at:
+          new Date().toISOString(),
       })
-      .eq("id", userId)
+      .eq(
+        'id',
+        userId
+      )
       .select(
-        "id, subscription_plan, subscription_status, stripe_subscription_id",
+        'id, subscription_plan, subscription_status, stripe_subscription_id, stripe_customer_id, stripe_price_id'
       )
       .maybeSingle();
 
   if (error) {
     throw new Error(
-      `Failed to update profile ${userId}: ${error.message}`,
+      `Failed to update profile ${userId}: ${error.message}`
     );
   }
 
   if (!data) {
     throw new Error(
-      `Profile ${userId} was not found while syncing Stripe subscription ${subscription.id}`,
+      `Washek profile ${userId} was not found`
     );
   }
 
   console.log(
-    "[WASHEK SYNC] Profile successfully updated:",
-    JSON.stringify(data),
+    '[WASHEK SYNC] Profile successfully updated:',
+    JSON.stringify(data)
+  );
+
+  return data;
+}
+
+/*
+ * ============================================================
+ * VERIFY PROFILE IS STILL USING THIS SUBSCRIPTION
+ * ============================================================
+ *
+ * THIS PREVENTS THE OLD SUBSCRIPTION'S DELETE EVENT FROM
+ * REPLACING THE NEW SUBSCRIPTION WITH FREE.
+ * ============================================================
+ */
+
+async function profileUsesSubscription(
+  userId: string,
+  subscriptionId: string
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from('profiles')
+      .select(
+        'stripe_subscription_id'
+      )
+      .eq(
+        'id',
+        userId
+      )
+      .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Unable to verify current profile subscription: ${error.message}`
+    );
+  }
+
+  return (
+    data?.stripe_subscription_id ===
+    subscriptionId
   );
 }
 
 /*
  * ============================================================
- * CHECKOUT SESSION SYNC
+ * CANCEL OLD SUBSCRIPTION
  * ============================================================
  *
- * This is the critical new path.
- *
- * Stripe Checkout completing successfully now directly
- * retrieves the subscription and synchronizes the profile.
- *
- * We do NOT trust the browser's return page for entitlement.
+ * Called ONLY after the replacement Checkout has successfully
+ * completed payment.
+ * ============================================================
+ */
+
+async function cancelOldSubscription(
+  oldSubscriptionId: string,
+  newSubscriptionId: string
+) {
+  if (
+    !oldSubscriptionId
+  ) {
+    return;
+  }
+
+  if (
+    oldSubscriptionId ===
+    newSubscriptionId
+  ) {
+    return;
+  }
+
+  try {
+    const oldSubscription =
+      await stripe.subscriptions.retrieve(
+        oldSubscriptionId
+      );
+
+    if (
+      oldSubscription.status ===
+        'canceled' ||
+      oldSubscription.status ===
+        'incomplete_expired'
+    ) {
+      console.log(
+        '[WASHEK REPLACEMENT] Old subscription already canceled:',
+        oldSubscriptionId
+      );
+
+      return;
+    }
+
+    console.log(
+      '[WASHEK REPLACEMENT] Canceling OLD subscription:',
+      JSON.stringify({
+        oldSubscriptionId,
+        newSubscriptionId,
+        oldStatus:
+          oldSubscription.status,
+      })
+    );
+
+    await stripe.subscriptions.cancel(
+      oldSubscriptionId
+    );
+
+    console.log(
+      '[WASHEK REPLACEMENT] OLD subscription canceled:',
+      oldSubscriptionId
+    );
+  } catch (error) {
+    /*
+     * IMPORTANT:
+     *
+     * Throw the error so Stripe retries this webhook.
+     *
+     * We never silently leave two subscriptions running.
+     */
+
+    throw new Error(
+      `The new subscription was paid, but the old subscription ${oldSubscriptionId} could not be canceled: ${
+        error instanceof Error
+          ? error.message
+          : String(error)
+      }`
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * CHECKOUT SESSION
+ * ============================================================
  */
 
 async function handleCheckoutCompleted(
-  event: Stripe.Event,
-): Promise<void> {
+  event: Stripe.Event
+) {
   const session =
-    event.data.object as Stripe.Checkout.Session;
+    event.data
+      .object as Stripe.Checkout.Session;
 
-  console.log(
-    "[WASHEK CHECKOUT] Checkout completed:",
-    session.id,
-  );
-
-  /*
-   * A subscription Checkout must have a subscription ID.
-   */
   const subscriptionId =
     typeof session.subscription ===
-    "string"
+    'string'
       ? session.subscription
-      : session.subscription?.id ??
+      : session.subscription?.id ||
         null;
 
   if (!subscriptionId) {
-    /*
-     * One-time payment sessions are irrelevant to
-     * subscription synchronization.
-     */
     console.log(
-      `[WASHEK CHECKOUT] Session ${session.id} has no subscription. Ignoring.`,
+      '[WASHEK CHECKOUT] Checkout has no subscription:',
+      session.id
     );
 
     return;
   }
 
   /*
-   * Get the user ID from Checkout metadata first.
-   */
-  const sessionUserId =
-    getUserIdFromMetadata(
-      session.metadata,
-    );
-
-  /*
-   * Retrieve the actual current Stripe subscription.
+   * For normal card payments, Checkout is complete only after
+   * the payment is successful.
    *
-   * Stripe is the source of truth.
+   * Do not cancel the old subscription if Stripe has not
+   * confirmed payment.
    */
-  const subscription =
-    await stripe.subscriptions.retrieve(
-      subscriptionId,
+
+  const paymentStatus =
+    String(
+      session.payment_status ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const paymentConfirmed =
+    paymentStatus ===
+      'paid' ||
+    paymentStatus ===
+      'no_payment_required';
+
+  if (
+    !paymentConfirmed
+  ) {
+    console.log(
+      '[WASHEK CHECKOUT] Payment is not confirmed yet:',
+      JSON.stringify({
+        sessionId:
+          session.id,
+
+        paymentStatus,
+      })
     );
 
+    return;
+  }
+
   /*
-   * Prefer subscription metadata, then Checkout metadata.
+   * Retrieve the NEW subscription directly from Stripe.
    */
+
+  const newSubscription =
+    await stripe.subscriptions.retrieve(
+      subscriptionId
+    );
+
+  const sessionUserId =
+    getMetadataUserId(
+      session.metadata
+    );
+
   const subscriptionUserId =
-    getUserIdFromSubscription(
-      subscription,
+    getSubscriptionUserId(
+      newSubscription
     );
 
   const userId =
@@ -404,75 +612,109 @@ async function handleCheckoutCompleted(
 
   if (!userId) {
     throw new Error(
-      `Checkout session ${session.id} and subscription ${subscription.id} contain no metadata.user_id`,
+      `New subscription ${subscriptionId} is missing metadata.user_id`
+    );
+  }
+
+  /*
+   * Verify that the metadata on the subscription belongs to
+   * the authenticated Washek account before changing anything.
+   */
+
+  if (
+    subscriptionUserId &&
+    sessionUserId &&
+    subscriptionUserId !==
+      sessionUserId
+  ) {
+    throw new Error(
+      `Checkout session ${session.id} user_id does not match subscription ${subscriptionId}`
+    );
+  }
+
+  /*
+   * ==========================================================
+   * 1. SYNC NEW SUBSCRIPTION FIRST
+   * ==========================================================
+   *
+   * This makes the new subscription the current profile
+   * subscription before the old subscription is canceled.
+   */
+
+  await syncSubscriptionToProfile(
+    newSubscription,
+    userId
+  );
+
+  /*
+   * ==========================================================
+   * 2. FIND OLD SUBSCRIPTION
+   * ==========================================================
+   */
+
+  const oldSubscriptionId =
+    String(
+      session
+        ?.metadata
+        ?.old_subscription_id ||
+        newSubscription
+          ?.metadata
+          ?.old_subscription_id ||
+        ''
+    ).trim();
+
+  /*
+   * ==========================================================
+   * 3. CANCEL OLD ONLY AFTER NEW PAYMENT + SYNC
+   * ==========================================================
+   */
+
+  if (
+    oldSubscriptionId
+  ) {
+    await cancelOldSubscription(
+      oldSubscriptionId,
+      newSubscription.id
     );
   }
 
   console.log(
-    "[WASHEK CHECKOUT] Synchronizing subscription:",
+    '[WASHEK REPLACEMENT] Replacement completed:',
     JSON.stringify({
-      sessionId:
-        session.id,
-      subscriptionId:
-        subscription.id,
       userId,
-      status:
-        subscription.status,
-    }),
-  );
-
-  await syncSubscriptionToProfile(
-    subscription,
-    userId,
+      oldSubscriptionId:
+        oldSubscriptionId ||
+        null,
+      newSubscriptionId:
+        newSubscription.id,
+      plan:
+        getSubscriptionPlan(
+          newSubscription
+        ),
+    })
   );
 }
 
 /*
  * ============================================================
- * WEBHOOK IDEMPOTENCY
+ * SUBSCRIPTION EVENT
  * ============================================================
  */
 
-async function claimWebhookEvent(
+async function handleSubscriptionEvent(
   event: Stripe.Event,
-): Promise<boolean> {
-  const { data, error } =
+  subscriptionId: string
+) {
+  /*
+   * Prevent out-of-order events for the SAME subscription.
+   */
+
+  const {
+    data,
+    error,
+  } =
     await supabase.rpc(
-      "claim_stripe_webhook_event",
-      {
-        p_event_id:
-          event.id,
-
-        p_event_type:
-          event.type,
-
-        p_event_created:
-          event.created,
-      },
-    );
-
-  if (error) {
-    throw new Error(
-      `Failed to claim webhook event: ${error.message}`,
-    );
-  }
-
-  return data === true;
-}
-
-/*
- * ============================================================
- * SUBSCRIPTION EVENT ORDERING
- * ============================================================
- */
-
-async function claimOrderedSubscriptionEvent(
-  event: Stripe.Event,
-  subscriptionId: string,
-): Promise<boolean> {
-  const { data, error } =
-    await supabase.rpc(
-      "claim_stripe_subscription_event",
+      'claim_stripe_subscription_event',
       {
         p_event_id:
           event.id,
@@ -485,37 +727,183 @@ async function claimOrderedSubscriptionEvent(
 
         p_event_created:
           event.created,
-      },
+      }
     );
 
   if (error) {
     throw new Error(
-      `Failed to claim ordered subscription event: ${error.message}`,
+      `Failed to claim subscription event: ${error.message}`
     );
   }
 
-  return data === true;
+  if (
+    data !==
+    true
+  ) {
+    console.log(
+      '[WASHEK WEBHOOK] Ignoring duplicate/stale subscription event:',
+      event.id
+    );
+
+    return;
+  }
+
+  const subscription =
+    await stripe.subscriptions.retrieve(
+      subscriptionId
+    );
+
+  const userId =
+    getSubscriptionUserId(
+      subscription
+    );
+
+  if (!userId) {
+    throw new Error(
+      `Subscription ${subscriptionId} is missing metadata.user_id`
+    );
+  }
+
+  /*
+   * ==========================================================
+   * CRITICAL REPLACEMENT PROTECTION
+   * ==========================================================
+   *
+   * If this event belongs to an OLD subscription that has
+   * already been replaced, NEVER let it overwrite the NEW
+   * subscription in profiles.
+   */
+
+  if (
+    event.type ===
+      'customer.subscription.deleted' &&
+    !(await profileUsesSubscription(
+      userId,
+      subscriptionId
+    ))
+  ) {
+    console.log(
+      '[WASHEK REPLACEMENT] Ignoring deletion of old subscription:',
+      JSON.stringify({
+        userId,
+        deletedSubscriptionId:
+          subscriptionId,
+      })
+    );
+
+    return;
+  }
+
+  /*
+   * For created/updated events, a new replacement subscription
+   * is allowed to become the current subscription.
+   */
+
+  await syncSubscriptionToProfile(
+    subscription,
+    userId
+  );
 }
 
 /*
  * ============================================================
- * WEBHOOK STATUS
+ * INVOICE EVENT
  * ============================================================
- *
- * IMPORTANT:
- * The database column is last_error, NOT error_message.
+ */
+
+async function handleInvoiceEvent(
+  event: Stripe.Event
+) {
+  const invoice =
+    event.data
+      .object as Stripe.Invoice;
+
+  const subscriptionId =
+    typeof invoice.subscription ===
+    'string'
+      ? invoice.subscription
+      : invoice.subscription?.id ||
+        null;
+
+  if (!subscriptionId) {
+    console.log(
+      '[WASHEK INVOICE] Invoice has no subscription:',
+      event.id
+    );
+
+    return;
+  }
+
+  /*
+   * Successful/failed invoice events still synchronize the
+   * current Stripe subscription state.
+   */
+
+  await handleSubscriptionEvent(
+    event,
+    subscriptionId
+  );
+}
+
+/*
+ * ============================================================
+ * WEBHOOK IDEMPOTENCY
+ * ============================================================
+ */
+
+async function claimWebhookEvent(
+  event: Stripe.Event
+) {
+  const {
+    data,
+    error,
+  } =
+    await supabase.rpc(
+      'claim_stripe_webhook_event',
+      {
+        p_event_id:
+          event.id,
+
+        p_event_type:
+          event.type,
+
+        p_event_created:
+          event.created,
+      }
+    );
+
+  if (error) {
+    throw new Error(
+      `Failed to claim webhook event: ${error.message}`
+    );
+  }
+
+  return data ===
+    true;
+}
+
+/*
+ * ============================================================
+ * WEBHOOK RESULT
+ * ============================================================
  */
 
 async function markWebhookEvent(
   eventId: string,
   status:
-    | "succeeded"
-    | "failed",
-  errorMessage?: string,
-): Promise<void> {
-  const { error } =
+    | 'succeeded'
+    | 'failed',
+  errorMessage:
+    | string
+    | null = null
+) {
+  const {
+    error,
+  } =
     await supabase
-      .from("stripe_webhook_events")
+      .from(
+        'stripe_webhook_events'
+      )
       .update({
         status,
 
@@ -523,98 +911,19 @@ async function markWebhookEvent(
           new Date().toISOString(),
 
         last_error:
-          errorMessage ?? null,
+          errorMessage,
       })
       .eq(
-        "event_id",
-        eventId,
+        'event_id',
+        eventId
       );
 
   if (error) {
     console.error(
-      "[WASHEK WEBHOOK] Failed to update webhook event status:",
-      error,
+      '[WASHEK WEBHOOK] Could not update webhook record:',
+      error
     );
   }
-}
-
-/*
- * ============================================================
- * SUBSCRIPTION EVENT HANDLER
- * ============================================================
- */
-
-async function handleSubscriptionEvent(
-  event: Stripe.Event,
-  subscriptionId: string,
-): Promise<void> {
-  /*
-   * Serialize subscription events so older Stripe events
-   * cannot overwrite newer states.
-   */
-  const shouldProcess =
-    await claimOrderedSubscriptionEvent(
-      event,
-      subscriptionId,
-    );
-
-  if (!shouldProcess) {
-    console.log(
-      `[WASHEK WEBHOOK] Ignoring stale/duplicate subscription event ${event.id}`,
-    );
-
-    return;
-  }
-
-  /*
-   * Always retrieve the current Stripe subscription.
-   */
-  const subscription =
-    await stripe.subscriptions.retrieve(
-      subscriptionId,
-    );
-
-  await syncSubscriptionToProfile(
-    subscription,
-  );
-}
-
-/*
- * ============================================================
- * INVOICE EVENT HANDLER
- * ============================================================
- */
-
-async function handleInvoiceEvent(
-  event: Stripe.Event,
-): Promise<void> {
-  const invoice =
-    event.data.object as Stripe.Invoice;
-
-  const subscriptionId =
-    typeof invoice.subscription ===
-    "string"
-      ? invoice.subscription
-      : invoice.subscription?.id ??
-        null;
-
-  if (!subscriptionId) {
-    console.log(
-      `[WASHEK INVOICE] Invoice event ${event.id} has no subscription.`,
-    );
-
-    return;
-  }
-
-  /*
-   * A successful invoice can immediately restore access.
-   * The subscription is retrieved from Stripe so the profile
-   * receives the current authoritative state.
-   */
-  await handleSubscriptionEvent(
-    event,
-    subscriptionId,
-  );
 }
 
 /*
@@ -625,100 +934,114 @@ async function handleInvoiceEvent(
 
 Deno.serve(
   async (req) => {
-    /*
-     * Stripe does not use Supabase JWT authentication.
-     */
-
     if (
       req.method ===
-      "OPTIONS"
+      'OPTIONS'
     ) {
       return new Response(
-        "ok",
+        'ok',
         {
+          status:
+            200,
+
           headers:
             corsHeaders,
-        },
+        }
       );
     }
 
     if (
       req.method !==
-      "POST"
+      'POST'
     ) {
       return jsonResponse(
         {
           error:
-            "Method not allowed",
+            'Method not allowed',
         },
-        405,
+        405
       );
     }
 
     const signature =
       req.headers.get(
-        "stripe-signature",
+        'stripe-signature'
       );
 
     if (!signature) {
       return jsonResponse(
         {
           error:
-            "Missing Stripe signature",
+            'Missing Stripe signature',
         },
-        400,
+        400
       );
     }
 
     /*
      * Stripe signature verification MUST use the raw body.
      */
+
     const body =
       await req.text();
 
-    let event: Stripe.Event;
+    let event:
+      Stripe.Event;
 
     try {
       event =
         await stripe.webhooks.constructEventAsync(
           body,
           signature,
-          webhookSecret,
+          webhookSecret
         );
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
-        "[WASHEK WEBHOOK] Stripe signature verification failed:",
-        error,
+        '[WASHEK WEBHOOK] Invalid Stripe signature:',
+        error
       );
 
       return jsonResponse(
         {
           error:
-            "Invalid Stripe signature",
+            'Invalid Stripe signature',
         },
-        400,
+        400
       );
     }
 
     console.log(
-      `[WASHEK WEBHOOK] Received ${event.type} (${event.id})`,
+      '[WASHEK WEBHOOK] Received:',
+      JSON.stringify({
+        id:
+          event.id,
+
+        type:
+          event.type,
+
+        created:
+          event.created,
+      })
     );
 
     try {
       /*
-       * Prevent duplicate Stripe deliveries from being
-       * processed twice.
+       * ======================================================
+       * IDEMPOTENCY
+       * ======================================================
        */
+
       const shouldProcess =
         await claimWebhookEvent(
-          event,
+          event
         );
 
-      if (!shouldProcess) {
+      if (
+        !shouldProcess
+      ) {
         console.log(
-          `[WASHEK WEBHOOK] Event ${event.id} already processed.`,
+          '[WASHEK WEBHOOK] Duplicate event ignored:',
+          event.id
         );
 
         return jsonResponse({
@@ -732,19 +1055,17 @@ Deno.serve(
 
       /*
        * ======================================================
-       * CHECKOUT COMPLETION
+       * CHECKOUT
        * ======================================================
-       *
-       * THIS IS THE NEW PRIMARY INITIAL-SYNC PATH.
        */
 
       switch (
         event.type
       ) {
-        case "checkout.session.completed":
-        case "checkout.session.async_payment_succeeded": {
+        case 'checkout.session.completed':
+        case 'checkout.session.async_payment_succeeded': {
           await handleCheckoutCompleted(
-            event,
+            event
           );
 
           break;
@@ -752,29 +1073,42 @@ Deno.serve(
 
         /*
          * ====================================================
-         * SUBSCRIPTION LIFECYCLE
+         * SUBSCRIPTIONS
          * ====================================================
          */
 
-        case "customer.subscription.created":
-        case "customer.subscription.updated":
-        case "customer.subscription.deleted":
-        case "customer.subscription.paused":
-        case "customer.subscription.resumed": {
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted':
+        case 'customer.subscription.paused':
+        case 'customer.subscription.resumed': {
           const subscriptionId =
-            getSubscriptionIdFromEvent(
-              event,
-            );
+            (() => {
+              const object =
+                event.data
+                  .object as any;
 
-          if (!subscriptionId) {
+              if (
+                typeof object.id ===
+                'string'
+              ) {
+                return object.id;
+              }
+
+              return null;
+            })();
+
+          if (
+            !subscriptionId
+          ) {
             throw new Error(
-              `Unable to determine subscription ID for ${event.type}`,
+              `Could not determine subscription ID for ${event.type}`
             );
           }
 
           await handleSubscriptionEvent(
             event,
-            subscriptionId,
+            subscriptionId
           );
 
           break;
@@ -786,11 +1120,11 @@ Deno.serve(
          * ====================================================
          */
 
-        case "invoice.paid":
-        case "invoice.payment_failed":
-        case "invoice.finalization_failed": {
+        case 'invoice.paid':
+        case 'invoice.payment_failed':
+        case 'invoice.finalization_failed': {
           await handleInvoiceEvent(
-            event,
+            event
           );
 
           break;
@@ -798,53 +1132,63 @@ Deno.serve(
 
         default: {
           console.log(
-            `[WASHEK WEBHOOK] Unhandled event type: ${event.type}`,
+            '[WASHEK WEBHOOK] Event not used:',
+            event.type
           );
         }
       }
 
       await markWebhookEvent(
         event.id,
-        "succeeded",
+        'succeeded'
       );
 
       console.log(
-        `[WASHEK WEBHOOK] Successfully processed ${event.id}`,
+        '[WASHEK WEBHOOK] Successfully processed:',
+        event.id
       );
 
       return jsonResponse({
         received:
           true,
       });
-    } catch (
-      error
-    ) {
+    } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : String(error);
 
       console.error(
-        `[WASHEK WEBHOOK] Event ${event.id} failed:`,
-        message,
-      );
+        '[WASHEK WEBHOOK] Processing failed:',
+        JSON.stringify({
+          eventId:
+            event.id,
 
-      await markWebhookEvent(
-        event.id,
-        "failed",
-        message,
+          eventType:
+            event.type,
+
+          error:
+            message,
+        })
       );
 
       /*
-       * Non-2xx tells Stripe to retry the event.
+       * Mark failed so Stripe's retry can process it again.
        */
+
+      await markWebhookEvent(
+        event.id,
+        'failed',
+        message
+      );
+
       return jsonResponse(
         {
           error:
-            "Webhook processing failed",
+            'Webhook processing failed',
         },
-        500,
+        500
       );
     }
-  },
+  }
 );
