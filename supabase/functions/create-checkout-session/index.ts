@@ -315,7 +315,7 @@ async function createCheckoutSession(params: {
 
   body.set(
     'success_url',
-    `${APP_URL}/subscription-return?plan=${encodeURIComponent(plan)}`,
+    `${APP_URL}/subscription-return?plan=${encodeURIComponent(plan)}&session_id={CHECKOUT_SESSION_ID}`,
   )
 
   body.set(
