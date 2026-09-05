@@ -28,7 +28,6 @@ import {
 
 import {
   getServerMessageStats,
-  claimMessage,
 } from '@/lib/messageLimit';
 
 import {
@@ -747,23 +746,14 @@ export default function Kael() {
         /*
          * SERVER-SIDE QUOTA ENFORCEMENT
          *
-         * The database atomically claims the slot before the AI
-         * request is allowed to run. The browser cannot reset or
-         * increase this count, and concurrent requests cannot both
-         * consume the same final slot.
+         * The ai-generate Edge Function itself claims the
+         * monthly Kael message slot (via the atomic
+         * claim_kael_message() database function) before it
+         * ever contacts the AI provider. This happens
+         * server-side regardless of what the browser sends, so
+         * it cannot be skipped or bypassed by calling the Edge
+         * Function directly.
          */
-        const quota =
-          await claimMessage();
-
-        if (!quota?.allowed) {
-          setStats(quota);
-          throw new Error(
-            'You have reached your monthly Kael message limit.'
-          );
-        }
-
-        setStats(quota);
-
         const result =
           await supabaseApi.ai.invoke(
             {
@@ -772,6 +762,37 @@ export default function Kael() {
                 'kael',
             }
           );
+
+
+        if (
+          result &&
+          result.__ai_error
+        ) {
+
+          if (
+            result.code ===
+            'KAEL_LIMIT_REACHED'
+          ) {
+            if (
+              result.details
+                ?.quota
+            ) {
+              setStats(
+                result.details
+                  .quota
+              );
+            }
+
+            throw new Error(
+              'You have reached your monthly Kael message limit.'
+            );
+          }
+
+          throw new Error(
+            result.message ||
+              'Kael returned an empty response.'
+          );
+        }
 
 
         const responseText =
@@ -800,6 +821,29 @@ export default function Kael() {
 
         typingCancelledRef.current =
           false;
+
+
+        /*
+         * Refresh the displayed remaining-message count from
+         * the same server-authoritative source used to enforce
+         * it. The browser never sets this value itself.
+         */
+        getServerMessageStats()
+          .then(
+            (serverStats) => {
+              setStats(
+                serverStats
+              );
+            }
+          )
+          .catch(
+            (statsError) => {
+              console.error(
+                '[KAEL] Failed to refresh usage after send:',
+                statsError
+              );
+            }
+          );
 
 
         try {
