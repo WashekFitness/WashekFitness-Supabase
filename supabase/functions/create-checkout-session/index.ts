@@ -1,1094 +1,533 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods':
-    'POST, OPTIONS',
-  'Content-Type':
-    'application/json',
-};
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const SUPABASE_ANON_KEY =
+  Deno.env.get('SUPABASE_ANON_KEY') ??
+  Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ??
+  ''
 
-const SUPABASE_URL =
-  Deno.env.get('SUPABASE_URL') || '';
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? ''
+const APP_URL = Deno.env.get('APP_URL') ?? ''
 
-const SERVICE_ROLE_KEY =
-  Deno.env.get('SERVICE_ROLE_KEY') || '';
+if (
+  !SUPABASE_URL ||
+  !SERVICE_ROLE_KEY ||
+  !SUPABASE_ANON_KEY ||
+  !STRIPE_SECRET_KEY ||
+  !APP_URL
+) {
+  throw new Error('Missing required environment variables')
+}
 
-const STRIPE_SECRET_KEY =
-  Deno.env.get('STRIPE_SECRET_KEY') || '';
+const supabaseAdmin = createClient(
+  SUPABASE_URL,
+  SERVICE_ROLE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  },
+)
 
-const APP_URL =
-  Deno.env.get('APP_URL') ||
-  'https://washekfitness.com';
+const PRICE_IDS = {
+  progress: 'price_1TTYrbRuQpZftYKRoSyLbQ0c',
+  performance: 'price_1TTYs8RuQpZftYKR8ZzpNg7x',
+  elite: 'price_1TTYsWRuQpZftYKRKIm8V10E',
+} as const
 
-const PRICES = {
-  progress:
-    'price_1TTYrbRuQpZftYKRoSyLbQ0c',
-
-  performance:
-    'price_1TTYs8RuQpZftYKR8ZzpNg7x',
-
-  elite:
-    'price_1TTYsWRuQpZftYKRKIm8V10E',
-};
-
-const VALID_PLANS = [
+const VALID_PLANS = new Set([
   'progress',
   'performance',
   'elite',
-];
+])
 
-const ACTIVE_STATUSES = [
+const ACTIVE_STATUSES = new Set([
   'active',
   'trialing',
   'past_due',
   'unpaid',
-];
+])
 
-const supabaseAdmin =
-  createClient(
-    SUPABASE_URL,
-    SERVICE_ROLE_KEY,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
-  );
+type Plan = keyof typeof PRICE_IDS
 
-/*
- * ============================================================
- * RESPONSE
- * ============================================================
- */
-
-function json(
-  body: unknown,
-  status = 200
-) {
+function jsonResponse(
+  body: Record<string, unknown>,
+  status = 200,
+): Response {
   return new Response(
     JSON.stringify(body),
     {
       status,
-      headers: corsHeaders,
-    }
-  );
-}
-
-/*
- * ============================================================
- * AUTHENTICATION
- * ============================================================
- */
-
-function getSupabaseKey() {
-  const publishableKeys =
-    Deno.env.get(
-      'SUPABASE_PUBLISHABLE_KEYS'
-    );
-
-  if (
-    publishableKeys
-  ) {
-    try {
-      const parsed =
-        JSON.parse(
-          publishableKeys
-        );
-
-      if (
-        parsed?.default
-      ) {
-        return parsed.default;
-      }
-    } catch {
-      // Fall through.
-    }
-  }
-
-  return (
-    Deno.env.get(
-      'SUPABASE_ANON_KEY'
-    ) || ''
-  );
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+  )
 }
 
 async function getAuthenticatedUser(
-  req: Request
+  req: Request,
 ) {
-  const authorization =
-    req.headers.get(
-      'Authorization'
-    );
+  const authorization = req.headers.get('Authorization')
 
   if (!authorization) {
-    throw new Error(
-      'Missing Authorization header. Please sign in again.'
-    );
+    throw new Error('Missing Authorization header')
   }
 
-  const supabaseKey =
-    getSupabaseKey();
+  const token = authorization.replace(/^Bearer\s+/i, '').trim()
 
-  if (!supabaseKey) {
-    throw new Error(
-      'SUPABASE_PUBLISHABLE_KEYS or SUPABASE_ANON_KEY is not configured.'
-    );
+  if (!token) {
+    throw new Error('Missing access token')
   }
 
-  const supabase =
-    createClient(
-      SUPABASE_URL,
-      supabaseKey,
-      {
-        global: {
-          headers: {
-            Authorization:
-              authorization,
-          },
+  const supabaseUserClient = createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      }
-    );
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
+  )
 
   const {
-    data,
+    data: { user },
     error,
-  } =
-    await supabase.auth.getUser();
+  } = await supabaseUserClient.auth.getUser(token)
 
-  if (
-    error ||
-    !data?.user
-  ) {
-    throw new Error(
-      `Supabase authentication failed: ${
-        error?.message ||
-        'No authenticated user was found.'
-      }`
-    );
+  if (error || !user) {
+    throw new Error('Unauthorized')
   }
 
-  return data.user;
+  return user
 }
 
-/*
- * ============================================================
- * STRIPE API
- * ============================================================
- */
-
-async function stripe(
+async function stripeRequest(
   path: string,
-  options: RequestInit = {}
+  options: {
+    method?: string
+    body?: URLSearchParams
+  } = {},
 ) {
-  if (!STRIPE_SECRET_KEY) {
-    throw new Error(
-      'STRIPE_SECRET_KEY is not configured in Supabase.'
-    );
-  }
+  const response = await fetch(
+    `https://api.stripe.com/v1/${path}`,
+    {
+      method: options.method ?? 'GET',
+      headers: {
+        Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+        ...(options.body
+          ? {
+              'Content-Type':
+                'application/x-www-form-urlencoded',
+            }
+          : {}),
+      },
+      body: options.body,
+    },
+  )
 
-  const response =
-    await fetch(
-      `https://api.stripe.com/v1/${path}`,
-      {
-        ...options,
+  const text = await response.text()
 
-        headers: {
-          Authorization:
-            `Bearer ${STRIPE_SECRET_KEY}`,
-
-          'Content-Type':
-            'application/x-www-form-urlencoded',
-
-          ...(options.headers ||
-            {}),
-        },
-      }
-    );
-
-  const text =
-    await response.text();
-
-  let data: any;
+  let data: any
 
   try {
-    data =
-      JSON.parse(text);
+    data = JSON.parse(text)
   } catch {
     data = {
       raw: text,
-    };
-  }
-
-  if (
-    !response.ok
-  ) {
-    throw new Error(
-      data?.error?.message ||
-        `Stripe returned HTTP ${response.status}.`
-    );
-  }
-
-  return data;
-}
-
-/*
- * ============================================================
- * PLAN HELPERS
- * ============================================================
- */
-
-function getPriceId(
-  plan: string
-) {
-  const priceId =
-    PRICES[
-      plan as keyof typeof PRICES
-    ];
-
-  if (!priceId) {
-    throw new Error(
-      `Invalid subscription plan: ${plan}`
-    );
-  }
-
-  return priceId;
-}
-
-function getPlanFromPriceId(
-  priceId:
-    | string
-    | null
-    | undefined
-) {
-  if (!priceId) {
-    return null;
-  }
-
-  for (
-    const [
-      plan,
-      configuredPriceId,
-    ] of Object.entries(
-      PRICES
-    )
-  ) {
-    if (
-      configuredPriceId ===
-      priceId
-    ) {
-      return plan;
     }
   }
 
-  return null;
+  if (!response.ok) {
+    const message =
+      data?.error?.message ??
+      `Stripe request failed with status ${response.status}`
+
+    throw new Error(message)
+  }
+
+  return data
 }
 
-/*
- * ============================================================
- * PROFILE
- * ============================================================
- */
-
-async function getProfile(
-  userId: string
-) {
+async function getProfile(userId: string) {
   const {
     data,
     error,
-  } =
-    await supabaseAdmin
-      .from('profiles')
-      .select(
-        `
-        subscription_plan,
-        subscription_status,
-        stripe_subscription_id,
-        stripe_customer_id,
-        stripe_price_id
-        `
-      )
-      .eq(
-        'id',
-        userId
-      )
-      .maybeSingle();
+  } = await supabaseAdmin
+    .from('profiles')
+    .select(
+      [
+        'subscription_plan',
+        'subscription_status',
+        'stripe_subscription_id',
+        'stripe_customer_id',
+        'stripe_price_id',
+      ].join(','),
+    )
+    .eq('id', userId)
+    .maybeSingle()
 
   if (error) {
     throw new Error(
-      `Unable to read subscription profile: ${error.message}`
-    );
+      `Failed to load profile: ${error.message}`,
+    )
   }
 
-  return data;
+  return data
 }
-
-/*
- * ============================================================
- * STRIPE SUBSCRIPTION
- * ============================================================
- */
 
 async function getStripeSubscription(
-  subscriptionId: string
+  subscriptionId: string,
 ) {
-  try {
-    return await stripe(
-      `subscriptions/${encodeURIComponent(
-        subscriptionId
-      )}`
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error);
-
-    console.error(
-      '[CHECKOUT] Failed to retrieve Stripe subscription:',
-      message
-    );
-
-    throw new Error(
-      `Unable to retrieve your current Stripe subscription: ${message}`
-    );
-  }
+  return await stripeRequest(
+    `subscriptions/${encodeURIComponent(subscriptionId)}`,
+  )
 }
 
-/*
- * ============================================================
- * VERIFY SUBSCRIPTION OWNERSHIP
- * ============================================================
- */
-
-function verifySubscriptionOwnership(
+async function verifySubscriptionOwnership(
   subscription: any,
   userId: string,
-  profile: any
+  profile: any,
 ) {
-  if (!subscription) {
-    return false;
-  }
-
-  /*
-   * Must be the exact subscription stored on this profile.
-   */
-
-  if (
-    subscription.id !==
-    profile?.stripe_subscription_id
-  ) {
-    return false;
-  }
-
-  /*
-   * If metadata contains a user ID, it MUST match.
-   */
-
   const metadataUserId =
-    String(
-      subscription
-        ?.metadata
-        ?.user_id ||
-        ''
-    ).trim();
+    subscription?.metadata?.user_id
 
   if (
     metadataUserId &&
-    metadataUserId !==
-      userId
+    metadataUserId !== userId
   ) {
-    return false;
+    throw new Error(
+      'Current Stripe subscription does not belong to this user',
+    )
   }
 
-  /*
-   * If the profile has a Stripe customer ID, verify it too.
-   */
+  const profileSubscriptionId =
+    profile?.stripe_subscription_id
+
+  if (
+    profileSubscriptionId &&
+    subscription?.id !== profileSubscriptionId
+  ) {
+    throw new Error(
+      'Current Stripe subscription does not match the user profile',
+    )
+  }
 
   const profileCustomerId =
-    String(
-      profile
-        ?.stripe_customer_id ||
-        ''
-    ).trim();
+    profile?.stripe_customer_id
 
   const subscriptionCustomerId =
-    typeof subscription.customer ===
-    'string'
+    typeof subscription?.customer === 'string'
       ? subscription.customer
-      : subscription.customer?.id ||
-        '';
+      : subscription?.customer?.id
 
   if (
     profileCustomerId &&
     subscriptionCustomerId &&
-    profileCustomerId !==
-      subscriptionCustomerId
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-/*
- * ============================================================
- * PAID SUBSCRIPTION CHECK
- * ============================================================
- */
-
-function isPaidSubscription(
-  subscription: any
-) {
-  const status =
-    String(
-      subscription?.status ||
-        ''
-    )
-      .trim()
-      .toLowerCase();
-
-  return ACTIVE_STATUSES.includes(
-    status
-  );
-}
-
-/*
- * ============================================================
- * CREATE STRIPE CHECKOUT
- * ============================================================
- *
- * IMPORTANT:
- *
- * FREE -> PAID
- *     Creates one new subscription.
- *
- * PAID -> PAID
- *     Creates a completely NEW subscription.
- *
- * The OLD subscription is NOT canceled here.
- *
- * The OLD subscription is canceled by stripe-webhooks
- * only AFTER the NEW Checkout payment succeeds.
- * ============================================================
- */
-
-async function createCheckoutSession(
-  user: any,
-  plan: string,
-  priceId: string,
-  oldSubscriptionId:
-    | string
-    | null,
-  stripeCustomerId:
-    | string
-    | null
-) {
-  const params =
-    new URLSearchParams();
-
-  /*
-   * ----------------------------------------------------------
-   * Checkout mode
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'mode',
-    'subscription'
-  );
-
-  /*
-   * ----------------------------------------------------------
-   * New plan
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'line_items[0][price]',
-    priceId
-  );
-
-  params.set(
-    'line_items[0][quantity]',
-    '1'
-  );
-
-  /*
-   * ----------------------------------------------------------
-   * Redirects
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'success_url',
-    `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
-      plan
-    )}`
-  );
-
-  params.set(
-    'cancel_url',
-    `${APP_URL}/profile`
-  );
-
-  /*
-   * ----------------------------------------------------------
-   * User identity
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'client_reference_id',
-    user.id
-  );
-
-  /*
-   * Reuse the existing Stripe customer when available.
-   *
-   * This creates a NEW subscription under the same Stripe
-   * customer rather than creating a second customer.
-   */
-
-  if (
-    stripeCustomerId
-  ) {
-    params.set(
-      'customer',
-      stripeCustomerId
-    );
-  } else {
-    const email =
-      String(
-        user.email ||
-          ''
-      )
-        .trim()
-        .toLowerCase();
-
-    if (!email) {
-      throw new Error(
-        'Your Washek account does not have an email address.'
-      );
-    }
-
-    params.set(
-      'customer_email',
-      email
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Checkout metadata
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'metadata[user_id]',
-    user.id
-  );
-
-  params.set(
-    'metadata[plan]',
-    plan
-  );
-
-  params.set(
-    'metadata[price_id]',
-    priceId
-  );
-
-  params.set(
-    'metadata[checkout_type]',
-    oldSubscriptionId
-      ? 'subscription_change'
-      : 'new_subscription'
-  );
-
-  /*
-   * THIS IS THE KEY.
-   *
-   * The webhook will use this to cancel the OLD subscription
-   * after the NEW payment succeeds.
-   */
-
-  if (
-    oldSubscriptionId
-  ) {
-    params.set(
-      'metadata[old_subscription_id]',
-      oldSubscriptionId
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * NEW SUBSCRIPTION metadata
-   * ----------------------------------------------------------
-   */
-
-  params.set(
-    'subscription_data[metadata][user_id]',
-    user.id
-  );
-
-  params.set(
-    'subscription_data[metadata][plan]',
-    plan
-  );
-
-  params.set(
-    'subscription_data[metadata][price_id]',
-    priceId
-  );
-
-  params.set(
-    'subscription_data[metadata][checkout_type]',
-    oldSubscriptionId
-      ? 'subscription_change'
-      : 'new_subscription'
-  );
-
-  if (
-    oldSubscriptionId
-  ) {
-    params.set(
-      'subscription_data[metadata][old_subscription_id]',
-      oldSubscriptionId
-    );
-  }
-
-  /*
-   * Save the payment method to the new subscription.
-   */
-
-  params.set(
-    'payment_settings[save_default_payment_method]',
-    'on_subscription'
-  );
-
-  /*
-   * Create the Checkout Session.
-   */
-
-  const checkout =
-    await stripe(
-      'checkout/sessions',
-      {
-        method:
-          'POST',
-
-        body:
-          params.toString(),
-      }
-    );
-
-  if (
-    !checkout?.id ||
-    !checkout?.url
+    profileCustomerId !== subscriptionCustomerId
   ) {
     throw new Error(
-      'Stripe did not return a valid Checkout Session.'
-    );
+      'Current Stripe customer does not match the user profile',
+    )
   }
-
-  return checkout;
 }
 
-/*
- * ============================================================
- * MAIN
- * ============================================================
- */
-
-Deno.serve(
-  async (req) => {
-    /*
-     * --------------------------------------------------------
-     * CORS
-     * --------------------------------------------------------
-     */
-
-    if (
-      req.method ===
-      'OPTIONS'
-    ) {
-      return new Response(
-        'ok',
-        {
-          status:
-            200,
-
-          headers:
-            corsHeaders,
-        }
-      );
-    }
-
-    /*
-     * --------------------------------------------------------
-     * METHOD
-     * --------------------------------------------------------
-     */
-
-    if (
-      req.method !==
-      'POST'
-    ) {
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            'Method not allowed.',
-        },
-        405
-      );
-    }
-
-    try {
-      /*
-       * ------------------------------------------------------
-       * 1. AUTHENTICATE
-       * ------------------------------------------------------
-       */
-
-      const user =
-        await getAuthenticatedUser(
-          req
-        );
-
-      /*
-       * ------------------------------------------------------
-       * 2. READ REQUEST
-       * ------------------------------------------------------
-       */
-
-      const body =
-        await req
-          .json()
-          .catch(
-            () => ({})
-          );
-
-      const plan =
-        String(
-          body?.plan ||
-            ''
-        )
-          .trim()
-          .toLowerCase();
-
-      if (
-        !VALID_PLANS.includes(
-          plan
-        )
-      ) {
-        return json(
-          {
-            success:
-              false,
-
-            error:
-              'Invalid subscription plan.',
-          },
-          400
-        );
-      }
-
-      const priceId =
-        getPriceId(
-          plan
-        );
-
-      /*
-       * ------------------------------------------------------
-       * 3. READ CURRENT PROFILE
-       * ------------------------------------------------------
-       */
-
-      const profile =
-        await getProfile(
-          user.id
-        );
-
-      const currentPlan =
-        String(
-          profile
-            ?.subscription_plan ||
-            'free'
-        )
-          .trim()
-          .toLowerCase();
-
-      const currentSubscriptionId =
-        String(
-          profile
-            ?.stripe_subscription_id ||
-            ''
-        ).trim() ||
-        null;
-
-      const currentStatus =
-        String(
-          profile
-            ?.subscription_status ||
-            ''
-        )
-          .trim()
-          .toLowerCase();
-
-      /*
-       * ------------------------------------------------------
-       * 4. SAME PLAN
-       * ------------------------------------------------------
-       */
-
-      if (
-        currentPlan ===
-          plan &&
-        currentSubscriptionId &&
-        ACTIVE_STATUSES.includes(
-          currentStatus
-        )
-      ) {
-        return json({
-          success:
-            true,
-
-          action:
-            'already_active',
-
-          alreadyActive:
-            true,
-
-          plan,
-
-          subscription_id:
-            currentSubscriptionId,
-
-          price_id:
-            profile
-              ?.stripe_price_id ||
-            priceId,
-
-          message:
-            `You already have an active ${plan} subscription.`,
-        });
-      }
-
-      /*
-       * ------------------------------------------------------
-       * 5. DETERMINE OLD SUBSCRIPTION
-       * ------------------------------------------------------
-       */
-
-      let oldSubscriptionId:
-        string | null =
-          null;
-
-      let stripeCustomerId:
-        string | null =
-          profile
-            ?.stripe_customer_id ||
-          null;
-
-      if (
-        currentSubscriptionId
-      ) {
-        const existingSubscription =
-          await getStripeSubscription(
-            currentSubscriptionId
-          );
-
-        /*
-         * Verify that the subscription actually belongs to
-         * this Washek account.
-         */
-
-        const ownershipValid =
-          verifySubscriptionOwnership(
-            existingSubscription,
-            user.id,
-            profile
-          );
-
-        if (
-          !ownershipValid
-        ) {
-          throw new Error(
-            'The Stripe subscription associated with your Washek account could not be verified. Your current subscription was not changed.'
-          );
-        }
-
-        /*
-         * Get the real Stripe customer ID.
-         */
-
-        stripeCustomerId =
-          typeof existingSubscription.customer ===
-          'string'
-            ? existingSubscription.customer
-            : existingSubscription.customer?.id ||
-              stripeCustomerId;
-
-        /*
-         * Only treat it as a replacement if Stripe says it is
-         * still an active/paid subscription.
-         */
-
-        if (
-          isPaidSubscription(
-            existingSubscription
-          )
-        ) {
-          oldSubscriptionId =
-            existingSubscription.id;
-
-          console.log(
-            '[CHECKOUT] Paid-to-paid replacement:',
-            JSON.stringify({
-              userId:
-                user.id,
-
-              oldSubscriptionId,
-
-              oldPlan:
-                currentPlan,
-
-              newPlan:
-                plan,
-
-              oldStatus:
-                existingSubscription.status,
-
-              stripeCustomerId,
-            })
-          );
-        } else {
-          /*
-           * The profile still references an old subscription,
-           * but Stripe says it is no longer active.
-           *
-           * Treat this as a normal new purchase.
-           */
-
-          console.log(
-            '[CHECKOUT] Existing Stripe subscription is not active; creating fresh subscription:',
-            JSON.stringify({
-              userId:
-                user.id,
-
-              subscriptionId:
-                existingSubscription.id,
-
-              status:
-                existingSubscription.status,
-            })
-          );
-        }
-      }
-
-      /*
-       * ------------------------------------------------------
-       * 6. CREATE NEW CHECKOUT
-       * ------------------------------------------------------
-       */
-
-      const checkout =
-        await createCheckoutSession(
-          user,
-          plan,
-          priceId,
-          oldSubscriptionId,
-          stripeCustomerId
-        );
-
-      console.log(
-        '[CHECKOUT] Checkout created:',
-        JSON.stringify({
-          userId:
-            user.id,
-
-          sessionId:
-            checkout.id,
-
-          plan,
-
-          priceId,
-
-          oldSubscriptionId,
-
-          replacingSubscription:
-            Boolean(
-              oldSubscriptionId
-            ),
-        })
-      );
-
-      /*
-       * ------------------------------------------------------
-       * 7. RETURN URL
-       * ------------------------------------------------------
-       */
-
-      return json({
-        success:
-          true,
-
-        action:
-          'checkout',
-
-        plan,
-
-        price_id:
-          priceId,
-
-        url:
-          checkout.url,
-
-        session_id:
-          checkout.id,
-
-        replacing_subscription:
-          Boolean(
-            oldSubscriptionId
-          ),
-
-        old_subscription_id:
-          oldSubscriptionId,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(error);
-
-      console.error(
-        '[CHECKOUT] create-checkout-session failed:',
-        message
-      );
-
-      return json(
-        {
-          success:
-            false,
-
-          error:
-            message,
-        },
-        400
-      );
+function getPlanFromPriceId(
+  priceId: string | null | undefined,
+): Plan | null {
+  if (!priceId) {
+    return null
+  }
+
+  for (const [plan, id] of Object.entries(PRICE_IDS)) {
+    if (id === priceId) {
+      return plan as Plan
     }
   }
-);
+
+  return null
+}
+
+async function createCheckoutSession(params: {
+  userId: string
+  email: string | undefined
+  plan: Plan
+  customerId: string | null
+  oldSubscriptionId: string | null
+}) {
+  const {
+    userId,
+    email,
+    plan,
+    customerId,
+    oldSubscriptionId,
+  } = params
+
+  const body = new URLSearchParams()
+
+  body.set('mode', 'subscription')
+  body.set(
+    'line_items[0][price]',
+    PRICE_IDS[plan],
+  )
+  body.set(
+    'line_items[0][quantity]',
+    '1',
+  )
+
+  body.set(
+    'success_url',
+    `${APP_URL}/subscription-return?plan=${encodeURIComponent(plan)}`,
+  )
+
+  body.set(
+    'cancel_url',
+    `${APP_URL}/profile`,
+  )
+
+  body.set(
+    'client_reference_id',
+    userId,
+  )
+
+  if (customerId) {
+    body.set('customer', customerId)
+  } else if (email) {
+    body.set('customer_email', email)
+  }
+
+  body.set(
+    'metadata[user_id]',
+    userId,
+  )
+
+  body.set(
+    'metadata[plan]',
+    plan,
+  )
+
+  if (oldSubscriptionId) {
+    body.set(
+      'metadata[old_subscription_id]',
+      oldSubscriptionId,
+    )
+  }
+
+  body.set(
+    'subscription_data[metadata][user_id]',
+    userId,
+  )
+
+  body.set(
+    'subscription_data[metadata][plan]',
+    plan,
+  )
+
+  if (oldSubscriptionId) {
+    body.set(
+      'subscription_data[metadata][old_subscription_id]',
+      oldSubscriptionId,
+    )
+  }
+
+  /*
+   * IMPORTANT:
+   *
+   * Do NOT use:
+   *
+   * payment_settings[save_default_payment_method]
+   *
+   * on the Checkout Session.
+   *
+   * That is not a valid Checkout Session parameter.
+   *
+   * Checkout will handle the payment collection itself.
+   */
+
+  return await stripeRequest(
+    'checkout/sessions',
+    {
+      method: 'POST',
+      body,
+    },
+  )
+}
+
+Deno.serve(async (req) => {
+  try {
+    if (req.method !== 'POST') {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Method not allowed',
+        },
+        405,
+      )
+    }
+
+    const user =
+      await getAuthenticatedUser(req)
+
+    const requestBody =
+      await req.json().catch(() => null)
+
+    const requestedPlan =
+      typeof requestBody?.plan === 'string'
+        ? requestBody.plan.toLowerCase().trim()
+        : ''
+
+    if (!VALID_PLANS.has(requestedPlan)) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Invalid subscription plan',
+        },
+        400,
+      )
+    }
+
+    const plan =
+      requestedPlan as Plan
+
+    const profile =
+      await getProfile(user.id)
+
+    if (!profile) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Profile not found',
+        },
+        404,
+      )
+    }
+
+    /*
+     * If the user is already on the requested plan,
+     * there is nothing to purchase.
+     */
+    if (
+      profile.subscription_plan === plan &&
+      ACTIVE_STATUSES.has(
+        profile.subscription_status ?? '',
+      )
+    ) {
+      return jsonResponse({
+        success: true,
+        action: 'already_active',
+        plan,
+      })
+    }
+
+    let customerId =
+      profile.stripe_customer_id ?? null
+
+    let oldSubscriptionId: string | null = null
+
+    /*
+     * PAID -> PAID behavior:
+     *
+     * 1. Find the current Stripe subscription.
+     * 2. DO NOT cancel it.
+     * 3. Create a completely NEW Checkout subscription.
+     * 4. Put the old subscription ID in metadata.
+     * 5. The webhook cancels the old subscription ONLY
+     *    after the new payment/subscription succeeds.
+     */
+    if (profile.stripe_subscription_id) {
+      const currentSubscription =
+        await getStripeSubscription(
+          profile.stripe_subscription_id,
+        )
+
+      await verifySubscriptionOwnership(
+        currentSubscription,
+        user.id,
+        profile,
+      )
+
+      const stripeCustomerId =
+        typeof currentSubscription.customer ===
+        'string'
+          ? currentSubscription.customer
+          : currentSubscription.customer?.id
+
+      if (stripeCustomerId) {
+        customerId = stripeCustomerId
+      }
+
+      if (
+        ACTIVE_STATUSES.has(
+          currentSubscription.status,
+        )
+      ) {
+        oldSubscriptionId =
+          currentSubscription.id
+      }
+    }
+
+    const session =
+      await createCheckoutSession({
+        userId: user.id,
+        email: user.email,
+        plan,
+        customerId,
+        oldSubscriptionId,
+      })
+
+    if (!session?.url) {
+      throw new Error(
+        'Stripe did not return a Checkout URL',
+      )
+    }
+
+    console.log(
+      '[CHECKOUT] Created new Checkout Session',
+      {
+        user_id: user.id,
+        plan,
+        session_id: session.id,
+        customer_id: customerId,
+        old_subscription_id:
+          oldSubscriptionId,
+      },
+    )
+
+    return jsonResponse({
+      success: true,
+      action: 'checkout',
+      url: session.url,
+      session_id: session.id,
+      replacing_subscription:
+        Boolean(oldSubscriptionId),
+      old_subscription_id:
+        oldSubscriptionId,
+    })
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error)
+
+    console.error(
+      '[CHECKOUT] create-checkout-session failed:',
+      message,
+    )
+
+    return jsonResponse(
+      {
+        success: false,
+        error: message,
+      },
+      500,
+    )
+  }
+})
