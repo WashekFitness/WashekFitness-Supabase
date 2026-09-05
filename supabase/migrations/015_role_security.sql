@@ -1,6 +1,6 @@
 -- ============================================================
 -- Washek Fitness
--- Migration 014: Profile Role Security
+-- Migration 015: Profile Role Security
 --
 -- Purpose:
 -- Prevent authenticated users from changing their own
