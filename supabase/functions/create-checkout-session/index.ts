@@ -42,6 +42,8 @@ const VALID_PLANS = [
 const ACTIVE_STATUSES = [
   'active',
   'trialing',
+  'past_due',
+  'unpaid',
 ];
 
 const CHECKOUT_LOCK_MINUTES = 30;
@@ -58,6 +60,12 @@ const supabaseAdmin =
     }
   );
 
+/*
+ * ============================================================
+ * RESPONSE
+ * ============================================================
+ */
+
 function json(
   body: unknown,
   status = 200
@@ -73,7 +81,7 @@ function json(
 
 /*
  * ============================================================
- * SUPABASE AUTHENTICATION
+ * AUTHENTICATION
  * ============================================================
  */
 
@@ -114,12 +122,6 @@ async function getAuthenticatedUser(
   if (!authorization) {
     throw new Error(
       'Missing Authorization header. Please sign in again.'
-    );
-  }
-
-  if (!SUPABASE_URL) {
-    throw new Error(
-      'SUPABASE_URL is not configured.'
     );
   }
 
@@ -169,9 +171,7 @@ async function getAuthenticatedUser(
     );
   }
 
-  return {
-    user: data.user,
-  };
+  return data.user;
 }
 
 /*
@@ -235,7 +235,7 @@ async function stripe(
 
 /*
  * ============================================================
- * PRICE / PLAN HELPERS
+ * PLAN HELPERS
  * ============================================================
  */
 
@@ -277,13 +277,8 @@ function getPlanFromPriceId(
 
 /*
  * ============================================================
- * PROFILE SUBSCRIPTION STATE
+ * PROFILE
  * ============================================================
- *
- * This is intentionally checked BEFORE searching Stripe.
- *
- * A Stripe customer with the same email is NOT enough proof
- * that the subscription belongs to this Washek account.
  */
 
 async function getProfileSubscription(
@@ -347,14 +342,8 @@ function isProfilePaid(
 
 /*
  * ============================================================
- * EXISTING STRIPE SUBSCRIPTION
+ * GET EXISTING STRIPE SUBSCRIPTION
  * ============================================================
- *
- * We only retrieve a subscription by an exact Stripe
- * subscription ID already stored on the Washek profile.
- *
- * We DO NOT search Stripe by email and assume the first
- * subscription belongs to this user.
  */
 
 async function getExistingProfileSubscription(
@@ -371,17 +360,14 @@ async function getExistingProfileSubscription(
   }
 
   try {
-    const subscription =
-      await stripe(
-        `subscriptions/${encodeURIComponent(
-          subscriptionId
-        )}`
-      );
-
-    return subscription;
+    return await stripe(
+      `subscriptions/${encodeURIComponent(
+        subscriptionId
+      )}`
+    );
   } catch (error) {
     console.warn(
-      '[CHECKOUT] Could not retrieve profile Stripe subscription:',
+      '[CHECKOUT] Could not retrieve existing Stripe subscription:',
       error
     );
 
@@ -391,315 +377,64 @@ async function getExistingProfileSubscription(
 
 /*
  * ============================================================
- * CHANGE EXISTING PAID SUBSCRIPTION
+ * VERIFY EXISTING SUBSCRIPTION OWNERSHIP
  * ============================================================
- *
- * This path is ONLY used when the Washek profile already
- * contains a valid active paid subscription.
- *
- * Free users NEVER enter this path.
  */
 
-async function changeExistingSubscription(
+function verifySubscriptionOwnership(
   subscription: any,
-  priceId: string,
   userId: string,
-  plan: string
+  profile: any
 ) {
-  const item =
-    subscription
-      ?.items
-      ?.data?.[0];
-
-  if (!item) {
-    throw new Error(
-      'Your Stripe subscription has no subscription item to change.'
-    );
+  if (!subscription) {
+    return false;
   }
-
-  const currentPriceId =
-    item?.price?.id ||
-    null;
 
   if (
-    currentPriceId ===
-    priceId
+    subscription.id !==
+    profile?.stripe_subscription_id
   ) {
-    return {
-      subscriptionId:
-        subscription.id,
-
-      customerId:
-        typeof subscription.customer ===
-        'string'
-          ? subscription.customer
-          : subscription.customer?.id ||
-            null,
-
-      changed:
-        false,
-    };
+    return false;
   }
 
-  /*
-   * IMPORTANT:
-   *
-   * For an existing paid subscription, use Stripe's
-   * subscription update rather than creating a second
-   * subscription.
-   *
-   * Proration is enabled so Stripe can generate the
-   * appropriate billing adjustment for the upgrade.
-   */
-
-  const params =
-    new URLSearchParams();
-
-  params.set(
-    'items[0][id]',
-    item.id
-  );
-
-  params.set(
-    'items[0][price]',
-    priceId
-  );
-
-  params.set(
-    'items[0][quantity]',
+  const profileCustomerId =
     String(
-      item.quantity || 1
-    )
-  );
+      profile?.stripe_customer_id ||
+        ''
+    ).trim();
 
-  params.set(
-    'proration_behavior',
-    'always_invoice'
-  );
-
-  params.set(
-    'payment_behavior',
-    'pending_if_incomplete'
-  );
-
-  params.set(
-    'metadata[user_id]',
-    userId
-  );
-
-  params.set(
-    'metadata[plan]',
-    plan
-  );
-
-  params.set(
-    'metadata[price_id]',
-    priceId
-  );
-
-  const updated =
-    await stripe(
-      `subscriptions/${encodeURIComponent(
-        subscription.id
-      )}`,
-      {
-        method:
-          'POST',
-
-        body:
-          params.toString(),
-      }
-    );
-
-  /*
-   * Stripe may return a subscription with a pending update
-   * when payment is required.
-   *
-   * We do NOT immediately tell the UI that the user has
-   * successfully upgraded unless Stripe confirms the new
-   * price on the subscription.
-   */
-
-  const updatedPriceId =
-    updated
-      ?.items
-      ?.data?.[0]
-      ?.price
-      ?.id ||
-    null;
+  const stripeCustomerId =
+    typeof subscription.customer ===
+    'string'
+      ? subscription.customer
+      : subscription.customer?.id ||
+        '';
 
   if (
-    updatedPriceId !==
-    priceId
+    profileCustomerId &&
+    stripeCustomerId !==
+      profileCustomerId
   ) {
-    return {
-      subscriptionId:
-        updated.id,
-
-      customerId:
-        typeof updated.customer ===
-        'string'
-          ? updated.customer
-          : updated.customer?.id ||
-            null,
-
-      changed:
-        false,
-
-      paymentRequired:
-        true,
-
-      pending:
-        true,
-    };
+    return false;
   }
 
-  return {
-    subscriptionId:
-      updated.id,
-
-    customerId:
-      typeof updated.customer ===
-      'string'
-        ? updated.customer
-        : updated.customer?.id ||
-          null,
-
-    changed:
-      true,
-
-    paymentRequired:
-      false,
-
-    pending:
-      false,
-  };
-}
-
-/*
- * ============================================================
- * CREATE NEW CHECKOUT SESSION
- * ============================================================
- *
- * THIS IS THE NORMAL FREE -> PAID PATH.
- *
- * A real Stripe Checkout Session is created.
- * The user is redirected to Stripe.
- * Stripe collects payment.
- * Stripe creates the subscription.
- * Stripe webhook synchronizes the Washek profile.
- */
-
-async function createCheckout(
-  user: any,
-  email: string,
-  plan: string,
-  priceId: string
-) {
-  const params =
-    new URLSearchParams();
-
-  params.set(
-    'mode',
-    'subscription'
-  );
-
-  params.set(
-    'line_items[0][price]',
-    priceId
-  );
-
-  params.set(
-    'line_items[0][quantity]',
-    '1'
-  );
-
-  params.set(
-    'success_url',
-    `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
-      plan
-    )}`
-  );
-
-  params.set(
-    'cancel_url',
-    `${APP_URL}/profile`
-  );
-
-  params.set(
-    'client_reference_id',
-    user.id
-  );
-
-  params.set(
-    'customer_email',
-    email
-  );
-
-  /*
-   * Checkout metadata.
-   */
-
-  params.set(
-    'metadata[user_id]',
-    user.id
-  );
-
-  params.set(
-    'metadata[plan]',
-    plan
-  );
-
-  params.set(
-    'metadata[price_id]',
-    priceId
-  );
-
-  /*
-   * Subscription metadata.
-   *
-   * This is critical because the Stripe webhook uses the
-   * subscription metadata to associate the Stripe subscription
-   * with the correct Washek account.
-   */
-
-  params.set(
-    'subscription_data[metadata][user_id]',
-    user.id
-  );
-
-  params.set(
-    'subscription_data[metadata][plan]',
-    plan
-  );
-
-  params.set(
-    'subscription_data[metadata][price_id]',
-    priceId
-  );
-
-  const checkout =
-    await stripe(
-      'checkout/sessions',
-      {
-        method:
-          'POST',
-
-        body:
-          params.toString(),
-      }
-    );
+  const metadataUserId =
+    String(
+      subscription
+        ?.metadata
+        ?.user_id ||
+        ''
+    ).trim();
 
   if (
-    !checkout?.id ||
-    !checkout?.url
+    metadataUserId &&
+    metadataUserId !==
+      userId
   ) {
-    throw new Error(
-      'Stripe created a Checkout Session but did not return a usable Checkout URL.'
-    );
+    return false;
   }
 
-  return checkout;
+  return true;
 }
 
 /*
@@ -712,12 +447,6 @@ async function claimCheckoutLock(
   userId: string,
   plan: string
 ) {
-  if (!SERVICE_ROLE_KEY) {
-    throw new Error(
-      'SERVICE_ROLE_KEY is not configured in Supabase.'
-    );
-  }
-
   const {
     data,
     error,
@@ -788,7 +517,7 @@ async function finishCheckoutLock(
 
   if (error) {
     console.error(
-      '[CHECKOUT] Failed to save checkout lock result:',
+      '[CHECKOUT] Failed to save checkout lock:',
       error
     );
   }
@@ -820,7 +549,7 @@ async function releaseCheckoutLock(
 
 /*
  * ============================================================
- * GET STORED CHECKOUT SESSION
+ * CHECKOUT SESSION HELPERS
  * ============================================================
  */
 
@@ -839,19 +568,13 @@ async function getCheckoutSession(
     );
   } catch (error) {
     console.warn(
-      '[CHECKOUT] Unable to retrieve stored Checkout Session:',
+      '[CHECKOUT] Could not retrieve Checkout Session:',
       error
     );
 
     return null;
   }
 }
-
-/*
- * ============================================================
- * EXPIRE CHECKOUT SESSION
- * ============================================================
- */
 
 async function expireCheckoutSession(
   sessionId: string
@@ -875,17 +598,11 @@ async function expireCheckoutSession(
     );
   } catch (error) {
     console.warn(
-      '[CHECKOUT] Could not expire old Checkout Session:',
+      '[CHECKOUT] Could not expire Checkout Session:',
       error
     );
   }
 }
-
-/*
- * ============================================================
- * HANDLE EXISTING CHECKOUT LOCK
- * ============================================================
- */
 
 async function resolveExistingCheckoutLock(
   userId: string,
@@ -898,14 +615,6 @@ async function resolveExistingCheckoutLock(
         'continue',
     };
   }
-
-  const lockedPlan =
-    String(
-      lock.plan ||
-        ''
-    )
-      .trim()
-      .toLowerCase();
 
   const sessionId =
     lock.stripe_session_id ||
@@ -934,37 +643,32 @@ async function resolveExistingCheckoutLock(
     };
   }
 
-  const sessionStatus =
+  const status =
     String(
       session?.status ||
         ''
-    )
-      .trim()
-      .toLowerCase();
+    ).toLowerCase();
 
-  const sessionPlan =
+  const lockedPlan =
     String(
       session
         ?.metadata
         ?.plan ||
-        lockedPlan ||
+        lock?.plan ||
         ''
     )
       .trim()
       .toLowerCase();
 
-  /*
-   * Completed Checkout Session:
-   *
-   * The user already went through Stripe. Do not reuse the
-   * completed session. The webhook will be responsible for
-   * synchronizing the subscription.
-   */
-
   if (
-    sessionStatus ===
+    status ===
     'complete'
   ) {
+    /*
+     * Stripe already completed this Checkout.
+     * The webhook is responsible for synchronization.
+     */
+
     await releaseCheckoutLock(
       userId
     );
@@ -975,12 +679,8 @@ async function resolveExistingCheckoutLock(
     };
   }
 
-  /*
-   * Expired Checkout Session.
-   */
-
   if (
-    sessionStatus ===
+    status ===
     'expired'
   ) {
     await releaseCheckoutLock(
@@ -993,14 +693,10 @@ async function resolveExistingCheckoutLock(
     };
   }
 
-  /*
-   * Existing open session for the SAME plan.
-   */
-
   if (
-    sessionStatus ===
+    status ===
       'open' &&
-    sessionPlan ===
+    lockedPlan ===
       requestedPlan
   ) {
     return {
@@ -1011,12 +707,8 @@ async function resolveExistingCheckoutLock(
     };
   }
 
-  /*
-   * Existing open session for a DIFFERENT plan.
-   */
-
   if (
-    sessionStatus ===
+    status ===
     'open'
   ) {
     await expireCheckoutSession(
@@ -1033,10 +725,6 @@ async function resolveExistingCheckoutLock(
     };
   }
 
-  /*
-   * Unknown state.
-   */
-
   await releaseCheckoutLock(
     userId
   );
@@ -1049,7 +737,185 @@ async function resolveExistingCheckoutLock(
 
 /*
  * ============================================================
- * MAIN FUNCTION
+ * CREATE CHECKOUT
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * For a paid -> paid plan change, this creates a BRAND NEW
+ * Stripe subscription.
+ *
+ * The old subscription is NOT canceled here.
+ *
+ * The old subscription is canceled by stripe-webhooks only
+ * after Stripe confirms the new Checkout payment succeeded.
+ */
+
+async function createCheckout(
+  user: any,
+  email: string,
+  plan: string,
+  priceId: string,
+  customerId: string | null,
+  oldSubscriptionId: string | null
+) {
+  const params =
+    new URLSearchParams();
+
+  params.set(
+    'mode',
+    'subscription'
+  );
+
+  params.set(
+    'line_items[0][price]',
+    priceId
+  );
+
+  params.set(
+    'line_items[0][quantity]',
+    '1'
+  );
+
+  params.set(
+    'success_url',
+    `${APP_URL}/subscription-return?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(
+      plan
+    )}`
+  );
+
+  params.set(
+    'cancel_url',
+    `${APP_URL}/profile`
+  );
+
+  params.set(
+    'client_reference_id',
+    user.id
+  );
+
+  /*
+   * Reuse the same Stripe Customer when one already exists.
+   *
+   * This keeps the user's Stripe billing identity together
+   * while still creating a completely NEW subscription.
+   */
+
+  if (
+    customerId
+  ) {
+    params.set(
+      'customer',
+      customerId
+    );
+  } else {
+    params.set(
+      'customer_email',
+      email
+    );
+  }
+
+  /*
+   * ==========================================================
+   * CHECKOUT SESSION METADATA
+   * ==========================================================
+   */
+
+  params.set(
+    'metadata[user_id]',
+    user.id
+  );
+
+  params.set(
+    'metadata[plan]',
+    plan
+  );
+
+  params.set(
+    'metadata[price_id]',
+    priceId
+  );
+
+  /*
+   * This tells the webhook which old subscription must be
+   * canceled AFTER the new payment succeeds.
+   */
+
+  if (
+    oldSubscriptionId
+  ) {
+    params.set(
+      'metadata[old_subscription_id]',
+      oldSubscriptionId
+    );
+  }
+
+  /*
+   * ==========================================================
+   * NEW SUBSCRIPTION METADATA
+   * ==========================================================
+   */
+
+  params.set(
+    'subscription_data[metadata][user_id]',
+    user.id
+  );
+
+  params.set(
+    'subscription_data[metadata][plan]',
+    plan
+  );
+
+  params.set(
+    'subscription_data[metadata][price_id]',
+    priceId
+  );
+
+  if (
+    oldSubscriptionId
+  ) {
+    params.set(
+      'subscription_data[metadata][old_subscription_id]',
+      oldSubscriptionId
+    );
+  }
+
+  /*
+   * Tell Stripe that this is a new subscription purchase.
+   */
+
+  params.set(
+    'payment_settings[save_default_payment_method]',
+    'on_subscription'
+  );
+
+  const checkout =
+    await stripe(
+      'checkout/sessions',
+      {
+        method:
+          'POST',
+
+        body:
+          params.toString(),
+      }
+    );
+
+  if (
+    !checkout?.id ||
+    !checkout?.url
+  ) {
+    throw new Error(
+      'Stripe created Checkout but did not return a usable Checkout URL.'
+    );
+  }
+
+  return checkout;
+}
+
+/*
+ * ============================================================
+ * MAIN
  * ============================================================
  */
 
@@ -1060,12 +926,6 @@ Deno.serve(
 
     let checkoutLockOwned =
       false;
-
-    /*
-     * --------------------------------------------------------
-     * CORS
-     * --------------------------------------------------------
-     */
 
     if (
       req.method ===
@@ -1082,12 +942,6 @@ Deno.serve(
         }
       );
     }
-
-    /*
-     * --------------------------------------------------------
-     * POST ONLY
-     * --------------------------------------------------------
-     */
 
     if (
       req.method !==
@@ -1112,9 +966,7 @@ Deno.serve(
        * ======================================================
        */
 
-      const {
-        user,
-      } =
+      const user =
         await getAuthenticatedUser(
           req
         );
@@ -1178,13 +1030,8 @@ Deno.serve(
 
       /*
        * ======================================================
-       * 3. READ WASHEK PROFILE FIRST
+       * 3. READ PROFILE
        * ======================================================
-       *
-       * This is the critical change.
-       *
-       * We no longer search Stripe by email and assume that
-       * whatever subscription we find belongs to this user.
        */
 
       const profile =
@@ -1197,293 +1044,34 @@ Deno.serve(
           profile
         );
 
-      console.log(
-        '[CHECKOUT] Subscription state:',
-        {
-          userId:
-            user.id,
-
-          requestedPlan:
-            plan,
-
-          profilePlan:
-            profile?.subscription_plan ||
-            'free',
-
-          profileStatus:
-            profile?.subscription_status ||
-            'none',
-
-          profileStripeSubscriptionId:
-            profile?.stripe_subscription_id ||
-            null,
-
-          profilePaid,
-        }
-      );
-
-      /*
-       * ======================================================
-       * 4. CLAIM CHECKOUT LOCK
-       * ======================================================
-       *
-       * The lock is needed for the new Checkout path.
-       */
-
-      checkoutLockUserId =
-        user.id;
-
-      /*
-       * IMPORTANT:
-       *
-       * Only use the checkout lock for a NEW Checkout Session.
-       *
-       * Existing paid subscriptions are handled directly below.
-       */
-
-      if (
-        !profilePaid
-      ) {
-        let lock =
-          await claimCheckoutLock(
-            user.id,
-            plan
-          );
-
-        /*
-         * ====================================================
-         * 5. HANDLE EXISTING CHECKOUT LOCK
-         * ====================================================
-         */
-
-        if (
-          lock?.locked
-        ) {
-          const resolved =
-            await resolveExistingCheckoutLock(
-              user.id,
-              plan,
-              lock
-            );
-
-          if (
-            resolved.action ===
-            'reuse'
-          ) {
-            const session =
-              resolved.session;
-
-            checkoutLockOwned =
-              false;
-
-            return json({
-              success:
-                true,
-
-              action:
-                'checkout',
-
-              plan,
-
-              price_id:
-                priceId,
-
-              url:
-                session.url,
-
-              session_id:
-                session.id ||
-                null,
-
-              reused:
-                true,
-            });
-          }
-
-          if (
-            resolved.action ===
-            'in_progress'
-          ) {
-            return json(
-              {
-                success:
-                  false,
-
-                action:
-                  'checkout_in_progress',
-
-                error:
-                  'A checkout session is already being created. Please wait a moment and try again.',
-              },
-              409
-            );
-          }
-
-          if (
-            resolved.action ===
-            'retry'
-          ) {
-            lock =
-              await claimCheckoutLock(
-                user.id,
-                plan
-              );
-
-            if (
-              lock?.locked
-            ) {
-              const retryResolved =
-                await resolveExistingCheckoutLock(
-                  user.id,
-                  plan,
-                  lock
-                );
-
-              if (
-                retryResolved.action ===
-                'reuse'
-              ) {
-                const session =
-                  retryResolved.session;
-
-                return json({
-                  success:
-                    true,
-
-                  action:
-                    'checkout',
-
-                  plan,
-
-                  price_id:
-                    priceId,
-
-                  url:
-                    session.url,
-
-                  session_id:
-                    session.id ||
-                    null,
-
-                  reused:
-                    true,
-                });
-              }
-
-              return json(
-                {
-                  success:
-                    false,
-
-                  action:
-                    'checkout_in_progress',
-
-                  error:
-                    'A checkout session is already being created. Please wait a moment and try again.',
-                },
-                409
-              );
-            }
-          }
-        }
-
-        /*
-         * ====================================================
-         * 6. CREATE REAL STRIPE CHECKOUT
-         * ====================================================
-         *
-         * THIS IS THE FIX.
-         *
-         * A free user cannot be upgraded merely by changing a
-         * Stripe subscription found by email.
-         *
-         * They must go through Checkout.
-         */
-
-        checkoutLockOwned =
-          true;
-
-        console.log(
-          '[CHECKOUT] Free/unpaid Washek account. Creating real Stripe Checkout Session:',
-          {
-            userId:
-              user.id,
-
-            plan,
-
-            priceId,
-          }
-        );
-
-        const checkout =
-          await createCheckout(
-            user,
-            email,
-            plan,
-            priceId
-          );
-
-        await finishCheckoutLock(
-          user.id,
-          plan,
-          checkout.id,
-          checkout.url
-        );
-
-        checkoutLockOwned =
-          false;
-
-        return json({
-          success:
-            true,
-
-          action:
-            'checkout',
-
-          plan,
-
-          price_id:
-            priceId,
-
-          url:
-            checkout.url,
-
-          session_id:
-            checkout.id,
-        });
-      }
-
-      /*
-       * ======================================================
-       * 7. EXISTING PAID WASHEK SUBSCRIPTION
-       * ======================================================
-       */
-
       const currentPlan =
         String(
           profile?.subscription_plan ||
-            ''
+            'free'
         )
           .trim()
           .toLowerCase();
 
       /*
-       * Same plan.
+       * ======================================================
+       * 4. SAME PLAN
+       * ======================================================
        */
 
       if (
+        profilePaid &&
         currentPlan ===
-        plan
+          plan
       ) {
         return json({
           success:
             true,
 
-          alreadyActive:
-            true,
-
           action:
             'already_active',
+
+          alreadyActive:
+            true,
 
           plan,
 
@@ -1502,63 +1090,195 @@ Deno.serve(
 
       /*
        * ======================================================
-       * 8. VERIFY EXISTING STRIPE SUBSCRIPTION
+       * 5. GET / VERIFY OLD SUBSCRIPTION
        * ======================================================
        */
 
-      const existingSubscription =
-        await getExistingProfileSubscription(
-          profile
+      let oldSubscription:
+        any = null;
+
+      let oldSubscriptionId:
+        string | null = null;
+
+      let stripeCustomerId:
+        string | null = null;
+
+      if (
+        profilePaid &&
+        profile?.stripe_subscription_id
+      ) {
+        oldSubscriptionId =
+          String(
+            profile.stripe_subscription_id
+          ).trim();
+
+        oldSubscription =
+          await getExistingProfileSubscription(
+            profile
+          );
+
+        /*
+         * If the profile says the user is paid but Stripe
+         * cannot retrieve the subscription, do NOT create a
+         * second subscription blindly.
+         */
+
+        if (
+          !oldSubscription
+        ) {
+          throw new Error(
+            'Your Washek account references a Stripe subscription that could not be retrieved. Please contact support before purchasing another plan.'
+          );
+        }
+
+        /*
+         * Verify the subscription really belongs to this user.
+         */
+
+        const ownershipValid =
+          verifySubscriptionOwnership(
+            oldSubscription,
+            user.id,
+            profile
+          );
+
+        if (
+          !ownershipValid
+        ) {
+          throw new Error(
+            'The Stripe subscription associated with this Washek account could not be verified.'
+          );
+        }
+
+        stripeCustomerId =
+          typeof oldSubscription.customer ===
+          'string'
+            ? oldSubscription.customer
+            : oldSubscription.customer?.id ||
+              null;
+
+        /*
+         * Only subscriptions that are currently billing/entitled
+         * enter the replacement flow.
+         */
+
+        const oldStatus =
+          String(
+            oldSubscription?.status ||
+              ''
+          )
+            .trim()
+            .toLowerCase();
+
+        if (
+          !ACTIVE_STATUSES.includes(
+            oldStatus
+          )
+        ) {
+          /*
+           * The old subscription is no longer active.
+           * Treat this as a fresh checkout.
+           */
+
+          oldSubscription =
+            null;
+
+          oldSubscriptionId =
+            null;
+
+          /*
+           * Keep the customer if we have a verified Stripe
+           * customer ID.
+           */
+
+          stripeCustomerId =
+            typeof profile?.stripe_customer_id ===
+            'string'
+              ? profile.stripe_customer_id
+              : null;
+        }
+      }
+
+      /*
+       * ======================================================
+       * 6. LOCK NEW CHECKOUT
+       * ======================================================
+       */
+
+      checkoutLockUserId =
+        user.id;
+
+      let lock =
+        await claimCheckoutLock(
+          user.id,
+          plan
         );
 
       if (
-        !existingSubscription
+        lock?.locked
       ) {
-        /*
-         * The profile claims the user is paid, but Stripe no
-         * longer has the subscription.
-         *
-         * Do NOT silently upgrade.
-         *
-         * Clear the stale subscription state and require a
-         * fresh Checkout Session.
-         */
-
-        console.warn(
-          '[CHECKOUT] Profile referenced a missing Stripe subscription. Creating fresh Checkout.',
-          {
-            userId:
-              user.id,
-
-            stripeSubscriptionId:
-              profile?.stripe_subscription_id,
-          }
-        );
-
-        await supabaseAdmin
-          .from('profiles')
-          .update({
-            subscription_plan:
-              'free',
-
-            subscription_status:
-              'canceled',
-
-            stripe_subscription_id:
-              null,
-
-            stripe_price_id:
-              null,
-          })
-          .eq(
-            'id',
-            user.id
+        const resolved =
+          await resolveExistingCheckoutLock(
+            user.id,
+            plan,
+            lock
           );
 
-        checkoutLockOwned =
-          true;
+        if (
+          resolved.action ===
+          'reuse'
+        ) {
+          checkoutLockOwned =
+            false;
 
-        const lock =
+          return json({
+            success:
+              true,
+
+            action:
+              'checkout',
+
+            plan,
+
+            price_id:
+              priceId,
+
+            url:
+              resolved.session.url,
+
+            session_id:
+              resolved.session.id ||
+              null,
+
+            reused:
+              true,
+          });
+        }
+
+        if (
+          resolved.action ===
+          'in_progress'
+        ) {
+          return json(
+            {
+              success:
+                false,
+
+              action:
+                'checkout_in_progress',
+
+              error:
+                'A checkout session is already in progress. Please wait a moment and try again.',
+            },
+            409
+          );
+        }
+
+        /*
+         * Retry after an expired/different checkout.
+         */
+
+        lock =
           await claimCheckoutLock(
             user.id,
             plan
@@ -1567,7 +1287,7 @@ Deno.serve(
         if (
           lock?.locked
         ) {
-          const resolved =
+          const retryResolved =
             await resolveExistingCheckoutLock(
               user.id,
               plan,
@@ -1575,12 +1295,9 @@ Deno.serve(
             );
 
           if (
-            resolved.action ===
+            retryResolved.action ===
             'reuse'
           ) {
-            const session =
-              resolved.session;
-
             return json({
               success:
                 true,
@@ -1594,295 +1311,131 @@ Deno.serve(
                 priceId,
 
               url:
-                session.url,
+                retryResolved.session.url,
 
               session_id:
-                session.id ||
+                retryResolved.session.id ||
                 null,
 
               reused:
                 true,
             });
           }
+
+          return json(
+            {
+              success:
+                false,
+
+              action:
+                'checkout_in_progress',
+
+              error:
+                'A checkout session is already in progress. Please wait a moment and try again.',
+            },
+            409
+          );
         }
-
-        const checkout =
-          await createCheckout(
-            user,
-            email,
-            plan,
-            priceId
-          );
-
-        await finishCheckoutLock(
-          user.id,
-          plan,
-          checkout.id,
-          checkout.url
-        );
-
-        checkoutLockOwned =
-          false;
-
-        return json({
-          success:
-            true,
-
-          action:
-            'checkout',
-
-          plan,
-
-          price_id:
-            priceId,
-
-          url:
-            checkout.url,
-
-          session_id:
-            checkout.id,
-        });
       }
 
       /*
        * ======================================================
-       * 9. VERIFY SUBSCRIPTION REALLY BELONGS TO USER
+       * 7. CREATE THE NEW SUBSCRIPTION
        * ======================================================
-       */
-
-      const subscriptionUserId =
-        String(
-          existingSubscription
-            ?.metadata
-            ?.user_id ||
-            ''
-        ).trim();
-
-      if (
-        subscriptionUserId &&
-        subscriptionUserId !==
-          user.id
-      ) {
-        throw new Error(
-          'The Stripe subscription associated with this account does not belong to the current Washek user.'
-        );
-      }
-
-      /*
-       * If the subscription has no user metadata, only trust it
-       * when its ID is already stored on this user's profile.
        *
-       * This prevents email-based account collisions.
+       * IMPORTANT:
+       *
+       * If the user already has a paid subscription:
+       *
+       * OLD SUBSCRIPTION:
+       *     remains alive
+       *
+       * NEW SUBSCRIPTION:
+       *     gets created through Checkout
+       *
+       * ONLY AFTER PAYMENT:
+       *     webhook cancels OLD
        */
 
-      if (
-        existingSubscription.id !==
-        profile.stripe_subscription_id
-      ) {
-        throw new Error(
-          'The Stripe subscription could not be verified for this Washek account.'
-        );
-      }
-
-      /*
-       * ======================================================
-       * 10. VERIFY ACTIVE STATUS
-       * ======================================================
-       */
-
-      const stripeStatus =
-        String(
-          existingSubscription?.status ||
-            ''
-        )
-          .trim()
-          .toLowerCase();
-
-      if (
-        !ACTIVE_STATUSES.includes(
-          stripeStatus
-        )
-      ) {
-        /*
-         * Subscription is not active anymore.
-         *
-         * Require a new Checkout flow.
-         */
-
-        await supabaseAdmin
-          .from('profiles')
-          .update({
-            subscription_plan:
-              'free',
-
-            subscription_status:
-              stripeStatus ||
-              'canceled',
-
-            stripe_subscription_id:
-              null,
-
-            stripe_price_id:
-              null,
-          })
-          .eq(
-            'id',
-            user.id
-          );
-
-        checkoutLockOwned =
-          true;
-
-        await claimCheckoutLock(
-          user.id,
-          plan
-        );
-
-        const checkout =
-          await createCheckout(
-            user,
-            email,
-            plan,
-            priceId
-          );
-
-        await finishCheckoutLock(
-          user.id,
-          plan,
-          checkout.id,
-          checkout.url
-        );
-
-        checkoutLockOwned =
-          false;
-
-        return json({
-          success:
-            true,
-
-          action:
-            'checkout',
-
-          plan,
-
-          price_id:
-            priceId,
-
-          url:
-            checkout.url,
-
-          session_id:
-            checkout.id,
-        });
-      }
-
-      /*
-       * ======================================================
-       * 11. PAID -> PAID PLAN CHANGE
-       * ======================================================
-       */
+      checkoutLockOwned =
+        true;
 
       console.log(
-        '[CHECKOUT] Existing verified paid subscription. Updating Stripe subscription:',
+        '[CHECKOUT] Creating new subscription:',
         {
           userId:
             user.id,
 
-          currentPlan,
-
           requestedPlan:
             plan,
 
-          subscriptionId:
-            existingSubscription.id,
+          newPriceId:
+            priceId,
+
+          oldSubscriptionId,
+
+          stripeCustomerId,
         }
       );
 
-      const changed =
-        await changeExistingSubscription(
-          existingSubscription,
-          priceId,
-          user.id,
-          plan
-        );
-
-      /*
-       * Stripe did not actually apply the requested price.
-       *
-       * Do NOT tell the user they upgraded.
-       */
-
-      if (
-        changed.pending ||
-        changed.paymentRequired
-      ) {
-        return json({
-          success:
-            false,
-
-          action:
-            'payment_required',
-
+      const checkout =
+        await createCheckout(
+          user,
+          email,
           plan,
-
-          subscription_id:
-            changed.subscriptionId,
-
-          price_id:
-            priceId,
-
-          error:
-            'Stripe requires payment confirmation before this subscription can be upgraded. Your current plan has not been changed yet.',
-        }, 402);
-      }
-
-      if (
-        !changed.changed
-      ) {
-        throw new Error(
-          'Stripe did not confirm the requested subscription change.'
+          priceId,
+          stripeCustomerId,
+          oldSubscriptionId
         );
-      }
+
+      await finishCheckoutLock(
+        user.id,
+        plan,
+        checkout.id,
+        checkout.url
+      );
+
+      checkoutLockOwned =
+        false;
 
       return json({
         success:
           true,
 
         action:
-          'changed',
+          'checkout',
 
         plan,
 
-        subscription_id:
-          changed.subscriptionId,
-
-        customer_id:
-          changed.customerId,
-
         price_id:
           priceId,
+
+        url:
+          checkout.url,
+
+        session_id:
+          checkout.id,
+
+        replacing_subscription:
+          Boolean(
+            oldSubscriptionId
+          ),
+
+        old_subscription_id:
+          oldSubscriptionId,
       });
     } catch (error) {
       console.error(
-        '[CHECKOUT] create-checkout-session error:',
+        '[CHECKOUT] create-checkout-session failed:',
         error
       );
 
-      try {
-        if (
-          checkoutLockUserId &&
-          checkoutLockOwned
-        ) {
-          await releaseCheckoutLock(
-            checkoutLockUserId
-          );
-        }
-      } catch (
-        releaseError
+      if (
+        checkoutLockUserId &&
+        checkoutLockOwned
       ) {
-        console.error(
-          '[CHECKOUT] Failed to release checkout lock after error:',
-          releaseError
+        await releaseCheckoutLock(
+          checkoutLockUserId
         );
       }
 
@@ -1894,7 +1447,7 @@ Deno.serve(
           error:
             error instanceof Error
               ? error.message
-              : 'Unable to start checkout.',
+              : 'Unable to start Stripe Checkout.',
         },
         400
       );
