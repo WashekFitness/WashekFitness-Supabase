@@ -636,19 +636,16 @@ export function buildWeekPrompt(
         : mesocycleIndex === 1
           ? 'Intensification & Progression'
           : 'Peak & Specialization',
-
     focus:
       mesocycleIndex === 0
         ? 'Foundation and adaptation'
         : mesocycleIndex === 1
           ? 'Intensification and progression'
           : 'Peak and specialization',
-
     intensity:
       safeWeek % 4 === 0
         ? 'deload / reduced fatigue'
         : 'moderate to high',
-
     week_start: safeWeek,
     week_end: safeWeek,
   };
