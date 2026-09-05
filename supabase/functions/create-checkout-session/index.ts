@@ -20,6 +20,35 @@ if (
   throw new Error('Missing required environment variables')
 }
 
+/*
+ * ============================================================
+ * CORS
+ * ============================================================
+ *
+ * This function is called directly from the browser via
+ * supabase.functions.invoke(). Because that call sends an
+ * Authorization header and a JSON body, the browser first
+ * issues a CORS preflight (OPTIONS) request. Without these
+ * headers and an OPTIONS handler below, the browser blocks
+ * the request before it ever reaches this function, and
+ * supabase-js surfaces it as:
+ *
+ *   "Failed to send a request to the Edge Function"
+ *
+ * This matches the corsHeaders pattern already used in the
+ * other Edge Functions in this project (cancel-subscription,
+ * delete-account, send-contact-email, stripe-webhooks,
+ * ai-generate).
+ */
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
+}
+
 const supabaseAdmin = createClient(
   SUPABASE_URL,
   SERVICE_ROLE_KEY,
@@ -62,6 +91,7 @@ function jsonResponse(
       status,
       headers: {
         'Content-Type': 'application/json',
+        ...corsHeaders,
       },
     },
   )
@@ -362,6 +392,18 @@ async function createCheckoutSession(params: {
 }
 
 Deno.serve(async (req) => {
+  /*
+   * Handle the browser's CORS preflight request first, before
+   * any auth/body parsing. This MUST return 2xx with the
+   * corsHeaders or the browser will never send the real POST.
+   */
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      status: 200,
+      headers: corsHeaders,
+    })
+  }
+
   try {
     if (req.method !== 'POST') {
       return jsonResponse(
