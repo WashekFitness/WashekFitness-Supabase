@@ -38,19 +38,30 @@ const supabase = createClient(
   serviceRoleKey,
 );
 
+/*
+ * ============================================================
+ * WASHEK FITNESS PLAN CONFIGURATION
+ * ============================================================
+ */
+
 const PAID_STATUSES = new Set([
   "active",
   "trialing",
+  "past_due",
+  "unpaid",
 ]);
-
-const GRACE_PERIOD_SECONDS =
-  3 * 24 * 60 * 60;
 
 const PLAN_BY_PRICE_ID: Record<string, string> = {
   "price_1TTYrbRuQpZftYKRoSyLbQ0c": "progress",
   "price_1TTYs8RuQpZftYKR8ZzpNg7x": "performance",
   "price_1TTYsWRuQpZftYKRKIm8V10E": "elite",
 };
+
+/*
+ * ============================================================
+ * RESPONSE
+ * ============================================================
+ */
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -68,12 +79,21 @@ function jsonResponse(
   );
 }
 
+/*
+ * ============================================================
+ * STRIPE HELPERS
+ * ============================================================
+ */
+
 function getSubscriptionIdFromEvent(
   event: Stripe.Event,
 ): string | null {
   const object =
     event.data.object as Record<string, unknown>;
 
+  /*
+   * Invoice events.
+   */
   if (
     typeof object.subscription === "string"
   ) {
@@ -89,6 +109,9 @@ function getSubscriptionIdFromEvent(
     return object.subscription.id;
   }
 
+  /*
+   * Subscription events.
+   */
   if (
     typeof object.id === "string" &&
     event.type.startsWith(
@@ -101,39 +124,56 @@ function getSubscriptionIdFromEvent(
   return null;
 }
 
-function getUserIdFromSubscription(
-  subscription: Stripe.Subscription,
+function getUserIdFromMetadata(
+  metadata:
+    | Stripe.Metadata
+    | Record<string, string>
+    | null
+    | undefined,
 ): string | null {
-  const metadataUserId =
-    subscription.metadata?.user_id;
+  if (!metadata) {
+    return null;
+  }
+
+  const userId = metadata.user_id;
 
   if (
-    metadataUserId &&
-    typeof metadataUserId === "string"
+    typeof userId === "string" &&
+    userId.trim()
   ) {
-    return metadataUserId;
+    return userId.trim();
   }
 
   return null;
 }
 
-function getPlanFromSubscription(
-  subscription: Stripe.Subscription,
+function getPlanFromMetadata(
+  metadata:
+    | Stripe.Metadata
+    | Record<string, string>
+    | null
+    | undefined,
 ): string | null {
-  const metadataPlan =
-    subscription.metadata?.plan;
-
-  if (
-    metadataPlan === "progress" ||
-    metadataPlan === "performance" ||
-    metadataPlan === "elite"
-  ) {
-    return metadataPlan;
+  if (!metadata) {
+    return null;
   }
 
-  const priceId =
-    subscription.items.data[0]?.price?.id;
+  const plan = metadata.plan;
 
+  if (
+    plan === "progress" ||
+    plan === "performance" ||
+    plan === "elite"
+  ) {
+    return plan;
+  }
+
+  return null;
+}
+
+function getPlanFromPriceId(
+  priceId: string | null | undefined,
+): string | null {
   if (!priceId) {
     return null;
   }
@@ -141,104 +181,55 @@ function getPlanFromSubscription(
   return PLAN_BY_PRICE_ID[priceId] ?? null;
 }
 
-async function claimWebhookEvent(
-  event: Stripe.Event,
-): Promise<boolean> {
-  const { data, error } =
-    await supabase.rpc(
-      "claim_stripe_webhook_event",
-      {
-        p_event_id: event.id,
-        p_event_type: event.type,
-        p_event_created: event.created,
-      },
+function getPlanFromSubscription(
+  subscription: Stripe.Subscription,
+): string | null {
+  /*
+   * Metadata is the primary source of truth.
+   */
+  const metadataPlan =
+    getPlanFromMetadata(
+      subscription.metadata,
     );
 
-  if (error) {
-    throw new Error(
-      `Failed to claim webhook event: ${error.message}`,
-    );
+  if (metadataPlan) {
+    return metadataPlan;
   }
 
-  return data === true;
+  /*
+   * Price ID is the fallback.
+   */
+  const priceId =
+    subscription.items.data[0]?.price?.id;
+
+  return getPlanFromPriceId(priceId);
 }
 
-async function claimOrderedSubscriptionEvent(
-  event: Stripe.Event,
-  subscriptionId: string,
-): Promise<boolean> {
-  const { data, error } =
-    await supabase.rpc(
-      "claim_stripe_subscription_event",
-      {
-        p_event_id: event.id,
-        p_event_type: event.type,
-        p_event_created: event.created,
-        p_subscription_id: subscriptionId,
-      },
-    );
-
-  if (error) {
-    throw new Error(
-      `Failed to claim ordered subscription event: ${error.message}`,
-    );
-  }
-
-  return data === true;
-}
-
-async function markWebhookEvent(
-  eventId: string,
-  status: "succeeded" | "failed",
-  errorMessage?: string,
-): Promise<void> {
-  const { error } =
-    await supabase
-      .from("stripe_webhook_events")
-      .update({
-        status,
-        processed_at:
-          new Date().toISOString(),
-        error_message:
-          errorMessage ?? null,
-      })
-      .eq("event_id", eventId);
-
-  if (error) {
-    console.error(
-      "Failed to update webhook event status:",
-      error,
-    );
-  }
-}
-
-async function getExistingGraceDeadline(
-  userId: string,
-): Promise<string | null> {
-  const { data, error } =
-    await supabase
-      .from("profiles")
-      .select("subscription_grace_until")
-      .eq("id", userId)
-      .maybeSingle();
-
-  if (error) {
-    throw new Error(
-      `Failed to read existing subscription grace period: ${error.message}`,
-    );
-  }
-
-  return (
-    data?.subscription_grace_until ??
-    null
+function getUserIdFromSubscription(
+  subscription: Stripe.Subscription,
+): string | null {
+  return getUserIdFromMetadata(
+    subscription.metadata,
   );
 }
 
-async function syncSubscription(
+/*
+ * ============================================================
+ * PROFILE SYNC
+ * ============================================================
+ *
+ * THIS is the important part.
+ *
+ * Stripe is the billing source of truth.
+ * Supabase profiles receives the resulting subscription state.
+ */
+
+async function syncSubscriptionToProfile(
   subscription: Stripe.Subscription,
-  graceUntil: string | null = null,
+  explicitUserId?: string | null,
 ): Promise<void> {
   const userId =
+    explicitUserId ||
     getUserIdFromSubscription(
       subscription,
     );
@@ -260,88 +251,62 @@ async function syncSubscription(
     );
   }
 
-  let effectiveGraceUntil =
-    graceUntil;
+  const priceId =
+    subscription.items.data[0]?.price?.id ??
+    null;
 
-  if (
-    !effectiveGraceUntil &&
-    (
-      subscription.status === "past_due" ||
-      subscription.status === "unpaid"
-    )
-  ) {
-    effectiveGraceUntil =
-      await getExistingGraceDeadline(
-        userId,
-      );
-  }
-
-  const graceActive =
-    (
-      subscription.status ===
-        "past_due" ||
-      subscription.status ===
-        "unpaid"
-    ) &&
-    Boolean(effectiveGraceUntil) &&
-    new Date(
-      effectiveGraceUntil as string,
-    ).getTime() > Date.now();
-
-  const isPaidStatus =
+  const isEntitled =
     PAID_STATUSES.has(
       subscription.status,
     );
 
-  const isEntitled =
-    isPaidStatus ||
-    graceActive;
+  const subscriptionPlan =
+    isEntitled
+      ? plan
+      : "free";
 
-  const isCanceled =
-    subscription.status ===
-      "canceled" ||
-    subscription.status ===
-      "incomplete_expired";
+  console.log(
+    "[WASHEK SYNC] Updating profile:",
+    JSON.stringify({
+      userId,
+      subscriptionId:
+        subscription.id,
+      status:
+        subscription.status,
+      plan:
+        subscriptionPlan,
+      priceId,
+    }),
+  );
 
-  const update = {
-    subscription_plan:
-      isEntitled
-        ? plan
-        : "free",
-
-    subscription_status:
-      subscription.status,
-
-    subscription_updated_at:
-      new Date().toISOString(),
-
-    subscription_grace_until:
-      graceActive
-        ? effectiveGraceUntil
-        : null,
-
-    subscription_cancelled_at:
-      isCanceled
-        ? new Date().toISOString()
-        : null,
-
-    stripe_subscription_id:
-      isEntitled
-        ? subscription.id
-        : null,
-
-    stripe_price_id:
-      isEntitled
-        ? subscription.items.data[0]
-            ?.price?.id ?? null
-        : null,
-  };
-
-  const { error } =
+  const { data, error } =
     await supabase
       .from("profiles")
-      .update(update)
-      .eq("id", userId);
+      .update({
+        subscription_plan:
+          subscriptionPlan,
+
+        subscription_status:
+          subscription.status,
+
+        stripe_subscription_id:
+          subscription.id,
+
+        stripe_price_id:
+          priceId,
+
+        stripe_customer_id:
+          typeof subscription.customer ===
+          "string"
+            ? subscription.customer
+            : subscription.customer?.id ??
+              null,
+      })
+      .eq("id", userId)
+      .select(
+        "id, subscription_plan, subscription_status, stripe_subscription_id",
+      )
+      .maybeSingle();
 
   if (error) {
     throw new Error(
@@ -349,29 +314,244 @@ async function syncSubscription(
     );
   }
 
+  if (!data) {
+    throw new Error(
+      `Profile ${userId} was not found while syncing Stripe subscription ${subscription.id}`,
+    );
+  }
+
   console.log(
+    "[WASHEK SYNC] Profile successfully updated:",
+    JSON.stringify(data),
+  );
+}
+
+/*
+ * ============================================================
+ * CHECKOUT SESSION SYNC
+ * ============================================================
+ *
+ * This is the critical new path.
+ *
+ * Stripe Checkout completing successfully now directly
+ * retrieves the subscription and synchronizes the profile.
+ *
+ * We do NOT trust the browser's return page for entitlement.
+ */
+
+async function handleCheckoutCompleted(
+  event: Stripe.Event,
+): Promise<void> {
+  const session =
+    event.data.object as Stripe.Checkout.Session;
+
+  console.log(
+    "[WASHEK CHECKOUT] Checkout completed:",
+    session.id,
+  );
+
+  /*
+   * A subscription Checkout must have a subscription ID.
+   */
+  const subscriptionId =
+    typeof session.subscription ===
+    "string"
+      ? session.subscription
+      : session.subscription?.id ??
+        null;
+
+  if (!subscriptionId) {
+    /*
+     * One-time payment sessions are irrelevant to
+     * subscription synchronization.
+     */
+    console.log(
+      `[WASHEK CHECKOUT] Session ${session.id} has no subscription. Ignoring.`,
+    );
+
+    return;
+  }
+
+  /*
+   * Get the user ID from Checkout metadata first.
+   */
+  const sessionUserId =
+    getUserIdFromMetadata(
+      session.metadata,
+    );
+
+  /*
+   * Retrieve the actual current Stripe subscription.
+   *
+   * Stripe is the source of truth.
+   */
+  const subscription =
+    await stripe.subscriptions.retrieve(
+      subscriptionId,
+    );
+
+  /*
+   * Prefer subscription metadata, then Checkout metadata.
+   */
+  const subscriptionUserId =
+    getUserIdFromSubscription(
+      subscription,
+    );
+
+  const userId =
+    subscriptionUserId ||
+    sessionUserId;
+
+  if (!userId) {
+    throw new Error(
+      `Checkout session ${session.id} and subscription ${subscription.id} contain no metadata.user_id`,
+    );
+  }
+
+  console.log(
+    "[WASHEK CHECKOUT] Synchronizing subscription:",
     JSON.stringify({
-      action:
-        "subscription_sync",
+      sessionId:
+        session.id,
       subscriptionId:
         subscription.id,
       userId,
-      stripeStatus:
+      status:
         subscription.status,
-      plan:
-        update.subscription_plan,
-      entitled:
-        isEntitled,
-      graceUntil:
-        update.subscription_grace_until,
     }),
   );
+
+  await syncSubscriptionToProfile(
+    subscription,
+    userId,
+  );
 }
+
+/*
+ * ============================================================
+ * WEBHOOK IDEMPOTENCY
+ * ============================================================
+ */
+
+async function claimWebhookEvent(
+  event: Stripe.Event,
+): Promise<boolean> {
+  const { data, error } =
+    await supabase.rpc(
+      "claim_stripe_webhook_event",
+      {
+        p_event_id:
+          event.id,
+
+        p_event_type:
+          event.type,
+
+        p_event_created:
+          event.created,
+      },
+    );
+
+  if (error) {
+    throw new Error(
+      `Failed to claim webhook event: ${error.message}`,
+    );
+  }
+
+  return data === true;
+}
+
+/*
+ * ============================================================
+ * SUBSCRIPTION EVENT ORDERING
+ * ============================================================
+ */
+
+async function claimOrderedSubscriptionEvent(
+  event: Stripe.Event,
+  subscriptionId: string,
+): Promise<boolean> {
+  const { data, error } =
+    await supabase.rpc(
+      "claim_stripe_subscription_event",
+      {
+        p_event_id:
+          event.id,
+
+        p_event_type:
+          event.type,
+
+        p_subscription_id:
+          subscriptionId,
+
+        p_event_created:
+          event.created,
+      },
+    );
+
+  if (error) {
+    throw new Error(
+      `Failed to claim ordered subscription event: ${error.message}`,
+    );
+  }
+
+  return data === true;
+}
+
+/*
+ * ============================================================
+ * WEBHOOK STATUS
+ * ============================================================
+ *
+ * IMPORTANT:
+ * The database column is last_error, NOT error_message.
+ */
+
+async function markWebhookEvent(
+  eventId: string,
+  status:
+    | "succeeded"
+    | "failed",
+  errorMessage?: string,
+): Promise<void> {
+  const { error } =
+    await supabase
+      .from("stripe_webhook_events")
+      .update({
+        status,
+
+        processed_at:
+          new Date().toISOString(),
+
+        last_error:
+          errorMessage ?? null,
+      })
+      .eq(
+        "event_id",
+        eventId,
+      );
+
+  if (error) {
+    console.error(
+      "[WASHEK WEBHOOK] Failed to update webhook event status:",
+      error,
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * SUBSCRIPTION EVENT HANDLER
+ * ============================================================
+ */
 
 async function handleSubscriptionEvent(
   event: Stripe.Event,
   subscriptionId: string,
 ): Promise<void> {
+  /*
+   * Serialize subscription events so older Stripe events
+   * cannot overwrite newer states.
+   */
   const shouldProcess =
     await claimOrderedSubscriptionEvent(
       event,
@@ -380,406 +560,291 @@ async function handleSubscriptionEvent(
 
   if (!shouldProcess) {
     console.log(
-      `Ignoring stale/duplicate subscription event ${event.id}`,
+      `[WASHEK WEBHOOK] Ignoring stale/duplicate subscription event ${event.id}`,
     );
 
     return;
   }
 
+  /*
+   * Always retrieve the current Stripe subscription.
+   */
   const subscription =
     await stripe.subscriptions.retrieve(
       subscriptionId,
     );
 
-  await syncSubscription(
+  await syncSubscriptionToProfile(
     subscription,
   );
 }
 
-async function establishPaymentGracePeriod(
-  subscription: Stripe.Subscription,
-): Promise<void> {
-  const userId =
-    getUserIdFromSubscription(
-      subscription,
-    );
-
-  if (!userId) {
-    throw new Error(
-      `Subscription ${subscription.id} is missing metadata.user_id`,
-    );
-  }
-
-  /*
-   * NEVER extend an existing grace period.
-   *
-   * If a previous invoice.payment_failed event
-   * already established a deadline, preserve it.
-   */
-  const existingGraceUntil =
-    await getExistingGraceDeadline(
-      userId,
-    );
-
-  if (existingGraceUntil) {
-    const existingDeadline =
-      new Date(
-        existingGraceUntil,
-      ).getTime();
-
-    if (
-      existingDeadline >
-      Date.now()
-    ) {
-      console.log(
-        `Existing 3-day grace period remains active until ${existingGraceUntil}.`,
-      );
-
-      /*
-       * Keep the existing deadline.
-       * Do NOT move it forward.
-       */
-      await syncSubscription(
-        subscription,
-        existingGraceUntil,
-      );
-
-      return;
-    }
-
-    /*
-     * Existing deadline has already passed.
-     * Cancel immediately.
-     */
-    console.warn(
-      `Existing grace period expired for ${subscription.id}. Canceling subscription.`,
-    );
-
-    const canceled =
-      await stripe.subscriptions.cancel(
-        subscription.id,
-      );
-
-    await syncSubscription(
-      canceled,
-      null,
-    );
-
-    return;
-  }
-
-  /*
-   * Stripe's subscription current period end
-   * represents the scheduled end of the current
-   * billing period.
-   *
-   * The grace deadline is exactly 3 days after
-   * that billing boundary.
-   */
-  const scheduledBillingAt =
-    subscription.current_period_end;
-
-  const nowEpoch =
-    Math.floor(
-      Date.now() / 1000,
-    );
-
-  const graceUntilEpoch =
-    scheduledBillingAt +
-    GRACE_PERIOD_SECONDS;
-
-  if (
-    graceUntilEpoch <=
-    nowEpoch
-  ) {
-    console.warn(
-      `Subscription ${subscription.id} is already beyond the 3-day grace deadline. Canceling immediately.`,
-    );
-
-    const canceled =
-      await stripe.subscriptions.cancel(
-        subscription.id,
-      );
-
-    await syncSubscription(
-      canceled,
-      null,
-    );
-
-    return;
-  }
-
-  const graceUntil =
-    new Date(
-      graceUntilEpoch * 1000,
-    ).toISOString();
-
-  /*
-   * Ask Stripe to cancel automatically
-   * at the exact grace deadline.
-   */
-  const scheduledCancellation =
-    await stripe.subscriptions.update(
-      subscription.id,
-      {
-        cancel_at:
-          graceUntilEpoch,
-      },
-    );
-
-  await syncSubscription(
-    scheduledCancellation,
-    graceUntil,
-  );
-
-  console.log(
-    `Payment failed for ${subscription.id}. Grace period established until ${graceUntil}.`,
-  );
-}
+/*
+ * ============================================================
+ * INVOICE EVENT HANDLER
+ * ============================================================
+ */
 
 async function handleInvoiceEvent(
   event: Stripe.Event,
 ): Promise<void> {
-  const object =
+  const invoice =
     event.data.object as Stripe.Invoice;
 
   const subscriptionId =
-    typeof object.subscription ===
+    typeof invoice.subscription ===
     "string"
-      ? object.subscription
-      : object.subscription?.id ??
+      ? invoice.subscription
+      : invoice.subscription?.id ??
         null;
 
   if (!subscriptionId) {
     console.log(
-      `Invoice event ${event.id} has no subscription; ignoring.`,
+      `[WASHEK INVOICE] Invoice event ${event.id} has no subscription.`,
     );
 
     return;
   }
 
-  const subscription =
-    await stripe.subscriptions.retrieve(
-      subscriptionId,
-    );
-
-  if (
-    event.type ===
-    "invoice.payment_failed"
-  ) {
-    await establishPaymentGracePeriod(
-      subscription,
-    );
-
-    return;
-  }
-
-  if (
-    event.type ===
-    "invoice.paid"
-  ) {
-    /*
-     * Successful payment completely clears
-     * the payment grace state.
-     *
-     * If Stripe has a scheduled cancellation,
-     * remove it.
-     */
-    let currentSubscription =
-      subscription;
-
-    if (
-      subscription.cancel_at
-    ) {
-      currentSubscription =
-        await stripe.subscriptions.update(
-          subscriptionId,
-          {
-            cancel_at: null,
-          },
-        );
-    }
-
-    await syncSubscription(
-      currentSubscription,
-      null,
-    );
-
-    console.log(
-      `Successful payment for ${subscriptionId}. Grace period cleared.`,
-    );
-
-    return;
-  }
-
-  await syncSubscription(
-    subscription,
-    null,
+  /*
+   * A successful invoice can immediately restore access.
+   * The subscription is retrieved from Stripe so the profile
+   * receives the current authoritative state.
+   */
+  await handleSubscriptionEvent(
+    event,
+    subscriptionId,
   );
 }
 
-Deno.serve(async (req) => {
-  if (
-    req.method ===
-    "OPTIONS"
-  ) {
-    return new Response(
-      "ok",
-      {
-        headers:
-          corsHeaders,
-      },
-    );
-  }
+/*
+ * ============================================================
+ * MAIN WEBHOOK
+ * ============================================================
+ */
 
-  if (
-    req.method !==
-    "POST"
-  ) {
-    return jsonResponse(
-      {
-        error:
-          "Method not allowed",
-      },
-      405,
-    );
-  }
+Deno.serve(
+  async (req) => {
+    /*
+     * Stripe does not use Supabase JWT authentication.
+     */
 
-  const signature =
-    req.headers.get(
-      "stripe-signature",
-    );
-
-  if (!signature) {
-    return jsonResponse(
-      {
-        error:
-          "Missing Stripe signature",
-      },
-      400,
-    );
-  }
-
-  const body =
-    await req.text();
-
-  let event: Stripe.Event;
-
-  try {
-    event =
-      await stripe.webhooks.constructEventAsync(
-        body,
-        signature,
-        webhookSecret,
+    if (
+      req.method ===
+      "OPTIONS"
+    ) {
+      return new Response(
+        "ok",
+        {
+          headers:
+            corsHeaders,
+        },
       );
-  } catch (error) {
-    console.error(
-      "Stripe signature verification failed:",
-      error,
-    );
-
-    return jsonResponse(
-      {
-        error:
-          "Invalid Stripe signature",
-      },
-      400,
-    );
-  }
-
-  console.log(
-    `Received Stripe event ${event.id} (${event.type})`,
-  );
-
-  try {
-    const shouldProcess =
-      await claimWebhookEvent(
-        event,
-      );
-
-    if (!shouldProcess) {
-      console.log(
-        `Webhook event ${event.id} already processed; returning 200.`,
-      );
-
-      return jsonResponse({
-        received: true,
-        duplicate: true,
-      });
     }
 
-    switch (event.type) {
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted":
-      case "customer.subscription.paused":
-      case "customer.subscription.resumed": {
-        const subscriptionId =
-          getSubscriptionIdFromEvent(
+    if (
+      req.method !==
+      "POST"
+    ) {
+      return jsonResponse(
+        {
+          error:
+            "Method not allowed",
+        },
+        405,
+      );
+    }
+
+    const signature =
+      req.headers.get(
+        "stripe-signature",
+      );
+
+    if (!signature) {
+      return jsonResponse(
+        {
+          error:
+            "Missing Stripe signature",
+        },
+        400,
+      );
+    }
+
+    /*
+     * Stripe signature verification MUST use the raw body.
+     */
+    const body =
+      await req.text();
+
+    let event: Stripe.Event;
+
+    try {
+      event =
+        await stripe.webhooks.constructEventAsync(
+          body,
+          signature,
+          webhookSecret,
+        );
+    } catch (
+      error
+    ) {
+      console.error(
+        "[WASHEK WEBHOOK] Stripe signature verification failed:",
+        error,
+      );
+
+      return jsonResponse(
+        {
+          error:
+            "Invalid Stripe signature",
+        },
+        400,
+      );
+    }
+
+    console.log(
+      `[WASHEK WEBHOOK] Received ${event.type} (${event.id})`,
+    );
+
+    try {
+      /*
+       * Prevent duplicate Stripe deliveries from being
+       * processed twice.
+       */
+      const shouldProcess =
+        await claimWebhookEvent(
+          event,
+        );
+
+      if (!shouldProcess) {
+        console.log(
+          `[WASHEK WEBHOOK] Event ${event.id} already processed.`,
+        );
+
+        return jsonResponse({
+          received:
+            true,
+
+          duplicate:
+            true,
+        });
+      }
+
+      /*
+       * ======================================================
+       * CHECKOUT COMPLETION
+       * ======================================================
+       *
+       * THIS IS THE NEW PRIMARY INITIAL-SYNC PATH.
+       */
+
+      switch (
+        event.type
+      ) {
+        case "checkout.session.completed":
+        case "checkout.session.async_payment_succeeded": {
+          await handleCheckoutCompleted(
             event,
           );
 
-        if (!subscriptionId) {
-          throw new Error(
-            `Unable to determine subscription ID for ${event.type}`,
-          );
+          break;
         }
 
-        await handleSubscriptionEvent(
-          event,
-          subscriptionId,
-        );
+        /*
+         * ====================================================
+         * SUBSCRIPTION LIFECYCLE
+         * ====================================================
+         */
 
-        break;
+        case "customer.subscription.created":
+        case "customer.subscription.updated":
+        case "customer.subscription.deleted":
+        case "customer.subscription.paused":
+        case "customer.subscription.resumed": {
+          const subscriptionId =
+            getSubscriptionIdFromEvent(
+              event,
+            );
+
+          if (!subscriptionId) {
+            throw new Error(
+              `Unable to determine subscription ID for ${event.type}`,
+            );
+          }
+
+          await handleSubscriptionEvent(
+            event,
+            subscriptionId,
+          );
+
+          break;
+        }
+
+        /*
+         * ====================================================
+         * INVOICES
+         * ====================================================
+         */
+
+        case "invoice.paid":
+        case "invoice.payment_failed":
+        case "invoice.finalization_failed": {
+          await handleInvoiceEvent(
+            event,
+          );
+
+          break;
+        }
+
+        default: {
+          console.log(
+            `[WASHEK WEBHOOK] Unhandled event type: ${event.type}`,
+          );
+        }
       }
 
-      case "invoice.paid":
-      case "invoice.payment_failed":
-      case "invoice.finalization_failed": {
-        await handleInvoiceEvent(
-          event,
-        );
+      await markWebhookEvent(
+        event.id,
+        "succeeded",
+      );
 
-        break;
-      }
+      console.log(
+        `[WASHEK WEBHOOK] Successfully processed ${event.id}`,
+      );
 
-      default:
-        console.log(
-          `Unhandled Stripe event type: ${event.type}`,
-        );
+      return jsonResponse({
+        received:
+          true,
+      });
+    } catch (
+      error
+    ) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      console.error(
+        `[WASHEK WEBHOOK] Event ${event.id} failed:`,
+        message,
+      );
+
+      await markWebhookEvent(
+        event.id,
+        "failed",
+        message,
+      );
+
+      /*
+       * Non-2xx tells Stripe to retry the event.
+       */
+      return jsonResponse(
+        {
+          error:
+            "Webhook processing failed",
+        },
+        500,
+      );
     }
-
-    await markWebhookEvent(
-      event.id,
-      "succeeded",
-    );
-
-    return jsonResponse({
-      received: true,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error);
-
-    console.error(
-      `Stripe webhook ${event.id} failed:`,
-      message,
-    );
-
-    await markWebhookEvent(
-      event.id,
-      "failed",
-      message,
-    );
-
-    return jsonResponse(
-      {
-        error:
-          "Webhook processing failed",
-      },
-      500,
-    );
-  }
-});
+  },
+);
