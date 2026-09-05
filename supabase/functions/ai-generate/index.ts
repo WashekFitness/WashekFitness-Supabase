@@ -407,6 +407,89 @@ async function enforcePlanAccess(
 }
 
 /* ============================================================
+ * KAEL MESSAGE QUOTA (SERVER-ENFORCED)
+ * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * The Kael monthly message limit MUST be claimed here, inside
+ * this Edge Function, and not merely trusted from the browser.
+ *
+ * The `claim_kael_message()` Postgres function is SECURITY
+ * DEFINER and atomically reserves one message slot for
+ * whichever user's JWT is attached to the request. Because we
+ * call it here — server-side, after the caller is already
+ * authenticated — a user cannot get free/unlimited Kael
+ * messages by calling this function directly and skipping
+ * whatever the frontend normally does first.
+ */
+
+async function claimKaelMessageServerSide(
+  req: Request
+) {
+  const authHeader =
+    req.headers.get(
+      'Authorization'
+    );
+
+  const supabaseUrl =
+    Deno.env.get(
+      'SUPABASE_URL'
+    );
+
+  const supabaseKey =
+    getSupabaseAnonKey();
+
+  if (
+    !authHeader ||
+    !supabaseUrl ||
+    !supabaseKey
+  ) {
+    throw new Error(
+      'Supabase function authentication is not configured.'
+    );
+  }
+
+  const client =
+    createClient(
+      supabaseUrl,
+      supabaseKey,
+      {
+        global: {
+          headers: {
+            Authorization:
+              authHeader,
+          },
+        },
+      }
+    );
+
+  const {
+    data,
+    error,
+  } =
+    await client.rpc(
+      'claim_kael_message'
+    );
+
+  if (error) {
+    console.error(
+      '[AI] KAEL QUOTA RPC ERROR',
+      {
+        message:
+          error.message,
+      }
+    );
+
+    throw new Error(
+      'Unable to verify your Kael message quota. Please try again.'
+    );
+  }
+
+  return data;
+}
+
+/* ============================================================
  * STORAGE / MEDIA
  * ============================================================ */
 
@@ -1394,6 +1477,90 @@ Deno.serve(
       }
 
       /* --------------------------------------------------------
+       * KAEL MESSAGE QUOTA
+       *
+       * This is the actual enforcement point. It cannot be
+       * bypassed by skipping a client-side RPC call, because
+       * it runs here regardless of what the caller sent.
+       * ------------------------------------------------------ */
+
+      let kaelQuota: any = null;
+
+      if (type === 'kael') {
+        try {
+          kaelQuota =
+            await claimKaelMessageServerSide(
+              req
+            );
+        } catch (
+          quotaError
+        ) {
+          console.error(
+            '[AI] KAEL QUOTA ERROR',
+            {
+              userId:
+                user.id,
+              error:
+                quotaError instanceof
+                Error
+                  ? quotaError.message
+                  : quotaError,
+            }
+          );
+
+          return json(
+            {
+              success:
+                false,
+
+              error:
+                quotaError instanceof
+                Error
+                  ? quotaError.message
+                  : 'Unable to verify your Kael message quota.',
+
+              error_code:
+                'KAEL_QUOTA_ERROR',
+            },
+            500
+          );
+        }
+
+        if (
+          !kaelQuota?.allowed
+        ) {
+          console.warn(
+            '[AI] KAEL LIMIT REACHED',
+            {
+              userId:
+                user.id,
+              quota:
+                kaelQuota,
+            }
+          );
+
+          return json(
+            {
+              success:
+                false,
+
+              error:
+                'You have reached your monthly Kael message limit.',
+
+              error_code:
+                'KAEL_LIMIT_REACHED',
+
+              quota:
+                kaelQuota,
+
+              type,
+            },
+            429
+          );
+        }
+      }
+
+      /* --------------------------------------------------------
        * OPENROUTER KEY
        * ------------------------------------------------------ */
 
@@ -1571,6 +1738,9 @@ Deno.serve(
 
                 usage:
                   result.usage,
+
+                quota:
+                  kaelQuota,
               },
               200
             );
