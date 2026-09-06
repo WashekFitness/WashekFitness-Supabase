@@ -93,6 +93,194 @@ const PAID_STATUSES =
 
 /*
  * ============================================================
+ * PAYMENT-FAILURE GRACE PERIOD
+ * ============================================================
+ *
+ * When a recurring payment fails, Stripe moves the subscription
+ * to past_due (then eventually unpaid if all retries fail).
+ *
+ * Rules:
+ * 1. Paid access remains available for 3 days after the FIRST
+ *    failure.
+ * 2. That deadline is established once and is never extended by
+ *    further failed retries.
+ * 3. Stripe itself is told to cancel the subscription at that
+ *    same deadline, so the customer is not billed indefinitely
+ *    while Washek has already downgraded them internally.
+ * 4. A successful payment (status returns to active/trialing)
+ *    clears the deadline and cancels the scheduled Stripe
+ *    cancellation.
+ *
+ * The deadline is enforced by:
+ * - kael_effective_plan() (Postgres, migration 016) for Kael.
+ * - getUserPlan() in ai-generate/index.ts for all other
+ *   plan-gated AI features.
+ * ============================================================
+ */
+
+const GRACE_PERIOD_MS =
+  3 *
+  24 *
+  60 *
+  60 *
+  1000;
+
+const GRACE_ELIGIBLE_STATUSES =
+  new Set([
+    'past_due',
+    'unpaid',
+  ]);
+
+/*
+ * Decide the new subscription_grace_until value given the
+ * profile's previous status/deadline and the new status just
+ * received from Stripe.
+ */
+function computeGraceUntil(
+  previousStatus:
+    | string
+    | null,
+  previousGraceUntil:
+    | string
+    | null,
+  newStatus: string
+):
+  | string
+  | null {
+  const normalizedPreviousStatus =
+    String(
+      previousStatus ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    GRACE_ELIGIBLE_STATUSES.has(
+      newStatus
+    )
+  ) {
+    /*
+     * Still inside the SAME failure state as before, and a
+     * deadline already exists: keep it exactly as-is. Repeated
+     * payment failures must never push the deadline further
+     * out.
+     */
+    if (
+      previousGraceUntil &&
+      GRACE_ELIGIBLE_STATUSES.has(
+        normalizedPreviousStatus
+      )
+    ) {
+      return previousGraceUntil;
+    }
+
+    /*
+     * First failure: establish the deadline now.
+     */
+    return new Date(
+      Date.now() +
+        GRACE_PERIOD_MS
+    ).toISOString();
+  }
+
+  /*
+   * Any other status (active, trialing, canceled, incomplete,
+   * incomplete_expired, paused, etc.) means there is no
+   * currently active payment-failure grace window.
+   */
+  return null;
+}
+
+/*
+ * Best-effort: schedule Stripe to cancel the subscription at
+ * the grace deadline. This is a defense-in-depth measure — our
+ * own database is what actually gates feature access — but it
+ * stops Stripe from continuing to retry/charge the card well
+ * past the point where Washek has already downgraded the
+ * account internally.
+ *
+ * Failures here are logged but never thrown: they must not
+ * block the profile sync, which is the authoritative part of
+ * this operation.
+ */
+async function scheduleGracePeriodCancellation(
+  subscriptionId: string,
+  cancelAt: Date
+) {
+  try {
+    await stripe.subscriptions.update(
+      subscriptionId,
+      {
+        cancel_at:
+          Math.floor(
+            cancelAt.getTime() /
+              1000
+          ),
+      }
+    );
+
+    console.log(
+      '[WASHEK GRACE] Scheduled Stripe cancellation at grace deadline:',
+      JSON.stringify({
+        subscriptionId,
+        cancelAt:
+          cancelAt.toISOString(),
+      })
+    );
+  } catch (error) {
+    console.error(
+      '[WASHEK GRACE] Failed to schedule Stripe cancellation:',
+      JSON.stringify({
+        subscriptionId,
+        error:
+          error instanceof
+          Error
+            ? error.message
+            : String(error),
+      })
+    );
+  }
+}
+
+/*
+ * Best-effort: clear a previously scheduled Stripe cancellation
+ * after a payment recovers. Same non-throwing contract as
+ * scheduleGracePeriodCancellation().
+ */
+async function clearGracePeriodCancellation(
+  subscriptionId: string
+) {
+  try {
+    await stripe.subscriptions.update(
+      subscriptionId,
+      {
+        cancel_at:
+          null,
+      }
+    );
+
+    console.log(
+      '[WASHEK GRACE] Cleared scheduled Stripe cancellation after payment recovery:',
+      subscriptionId
+    );
+  } catch (error) {
+    console.error(
+      '[WASHEK GRACE] Failed to clear scheduled Stripe cancellation:',
+      JSON.stringify({
+        subscriptionId,
+        error:
+          error instanceof
+          Error
+            ? error.message
+            : String(error),
+      })
+    );
+  }
+}
+
+/*
+ * ============================================================
  * PRICE -> PLAN
  * ============================================================
  */
@@ -324,6 +512,54 @@ async function syncSubscriptionToProfile(
       ?.id ||
     null;
 
+  /*
+   * ==========================================================
+   * PAYMENT-FAILURE GRACE PERIOD
+   * ==========================================================
+   *
+   * Load the profile's PRIOR status/deadline before overwriting
+   * them, so we can tell whether this is a brand-new payment
+   * failure (establish a deadline), a repeat failure in the
+   * same dunning cycle (keep the existing deadline), or a
+   * recovery (clear the deadline).
+   */
+
+  const {
+    data: priorProfile,
+    error: priorProfileError,
+  } =
+    await supabase
+      .from('profiles')
+      .select(
+        'subscription_status, subscription_grace_until'
+      )
+      .eq(
+        'id',
+        userId
+      )
+      .maybeSingle();
+
+  if (priorProfileError) {
+    throw new Error(
+      `Failed to load existing profile before sync: ${priorProfileError.message}`
+    );
+  }
+
+  const previousStatus =
+    priorProfile?.subscription_status ||
+    null;
+
+  const previousGraceUntil =
+    priorProfile?.subscription_grace_until ||
+    null;
+
+  const graceUntil =
+    computeGraceUntil(
+      previousStatus,
+      previousGraceUntil,
+      status
+    );
+
   console.log(
     '[WASHEK SYNC] Updating profile:',
     JSON.stringify({
@@ -335,6 +571,7 @@ async function syncSubscriptionToProfile(
         profilePlan,
       customerId,
       priceId,
+      graceUntil,
     })
   );
 
@@ -360,6 +597,9 @@ async function syncSubscriptionToProfile(
         stripe_price_id:
           priceId,
 
+        subscription_grace_until:
+          graceUntil,
+
         subscription_updated_at:
           new Date().toISOString(),
 
@@ -371,7 +611,7 @@ async function syncSubscriptionToProfile(
         userId
       )
       .select(
-        'id, subscription_plan, subscription_status, stripe_subscription_id, stripe_customer_id, stripe_price_id'
+        'id, subscription_plan, subscription_status, stripe_subscription_id, stripe_customer_id, stripe_price_id, subscription_grace_until'
       )
       .maybeSingle();
 
@@ -391,6 +631,47 @@ async function syncSubscriptionToProfile(
     '[WASHEK SYNC] Profile successfully updated:',
     JSON.stringify(data)
   );
+
+  /*
+   * A grace deadline was just established for the first time
+   * this dunning cycle: tell Stripe to cancel the subscription
+   * at that same deadline.
+   */
+  const graceJustEstablished =
+    graceUntil !==
+      null &&
+    graceUntil !==
+      previousGraceUntil;
+
+  if (
+    graceJustEstablished
+  ) {
+    await scheduleGracePeriodCancellation(
+      subscription.id,
+      new Date(
+        graceUntil as string
+      )
+    );
+  }
+
+  /*
+   * A previously active grace deadline was just cleared
+   * (payment recovered): remove the scheduled Stripe
+   * cancellation so the subscription keeps running normally.
+   */
+  const graceJustCleared =
+    graceUntil ===
+      null &&
+    previousGraceUntil !==
+      null;
+
+  if (
+    graceJustCleared
+  ) {
+    await clearGracePeriodCancellation(
+      subscription.id
+    );
+  }
 
   return data;
 }
