@@ -84,9 +84,25 @@ const PLAN_HIERARCHY = [
   'elite',
 ];
 
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
+/*
+ * Statuses where the subscription is fully paid and current.
+ * These are always entitled to the stored plan, no time limit.
+ */
+const FULLY_ACTIVE_STATUSES = new Set([
   'active',
   'trialing',
+]);
+
+/*
+ * Statuses where the most recent payment failed.
+ *
+ * These remain entitled to the stored plan ONLY until the
+ * profile's subscription_grace_until deadline passes. That
+ * deadline is set once, by the Stripe webhook, the first time
+ * a subscription enters one of these statuses (see
+ * stripe-webhooks/index.ts -> syncSubscriptionToProfile).
+ */
+const GRACE_ELIGIBLE_STATUSES = new Set([
   'past_due',
   'unpaid',
 ]);
@@ -307,7 +323,7 @@ async function getUserPlan(
     await client
       .from('profiles')
       .select(
-        'subscription_plan, subscription_status'
+        'subscription_plan, subscription_status, subscription_grace_until'
       )
       .eq(
         'id',
@@ -337,11 +353,44 @@ async function getUserPlan(
         ''
     ).toLowerCase();
 
+  /*
+   * A subscription that is fully paid (active/trialing) is
+   * always entitled to its stored plan.
+   *
+   * A subscription with a recently failed payment
+   * (past_due/unpaid) is ONLY entitled to its stored plan
+   * until the grace deadline set by the Stripe webhook
+   * passes. Once that deadline is in the past, treat the
+   * user as Free — matching the same rule enforced by the
+   * kael_effective_plan() database function.
+   */
+  const graceUntil =
+    data?.subscription_grace_until
+      ? new Date(
+          data.subscription_grace_until
+        )
+      : null;
+
+  const withinGracePeriod =
+    GRACE_ELIGIBLE_STATUSES.has(
+      status
+    ) &&
+    graceUntil !== null &&
+    !Number.isNaN(
+      graceUntil.getTime()
+    ) &&
+    graceUntil.getTime() >
+      Date.now();
+
+  const isEntitled =
+    FULLY_ACTIVE_STATUSES.has(
+      status
+    ) ||
+    withinGracePeriod;
+
   const plan =
     normalizePlan(
-      ACTIVE_SUBSCRIPTION_STATUSES.has(
-        status
-      )
+      isEntitled
         ? data?.subscription_plan
         : 'free'
     );
