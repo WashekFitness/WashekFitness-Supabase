@@ -158,15 +158,20 @@ function getSupabaseAnonKey() {
 
 function getServiceRoleKey() {
   /*
-   * IMPORTANT:
-   *
-   * This project uses SERVICE_ROLE_KEY.
-   * Do not rename it.
+   * SERVICE_ROLE_KEY is a manually-configured project secret.
+   * Fall back to SUPABASE_SERVICE_ROLE_KEY, which Supabase
+   * always provides automatically to every Edge Function, so
+   * this never silently breaks if the manual secret is missing
+   * or gets lost on a redeploy.
    */
   return (
     Deno.env.get(
       'SERVICE_ROLE_KEY'
-    ) || ''
+    ) ||
+    Deno.env.get(
+      'SUPABASE_SERVICE_ROLE_KEY'
+    ) ||
+    ''
   );
 }
 
