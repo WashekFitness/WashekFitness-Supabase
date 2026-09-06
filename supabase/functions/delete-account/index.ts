@@ -61,6 +61,9 @@ Deno.serve(
       const serviceRoleKey =
         Deno.env.get(
           "SERVICE_ROLE_KEY"
+        ) ||
+        Deno.env.get(
+          "SUPABASE_SERVICE_ROLE_KEY"
         );
 
       const stripeSecretKey =
