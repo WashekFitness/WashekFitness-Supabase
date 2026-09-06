@@ -27,6 +27,17 @@ const supabaseUrl =
 const serviceRoleKey =
   Deno.env.get(
     'SERVICE_ROLE_KEY'
+  ) ||
+  /*
+   * Supabase automatically provides SUPABASE_SERVICE_ROLE_KEY to
+   * every Edge Function with no manual configuration required.
+   * SERVICE_ROLE_KEY (no prefix) is a project-specific secret
+   * that has to be set by hand and is easy to forget or lose on
+   * a fresh project/redeploy. Fall back to the one that always
+   * exists so this function cannot silently fail to boot.
+   */
+  Deno.env.get(
+    'SUPABASE_SERVICE_ROLE_KEY'
   );
 
 if (!stripeSecretKey) {
@@ -49,7 +60,7 @@ if (!supabaseUrl) {
 
 if (!serviceRoleKey) {
   throw new Error(
-    'Missing SERVICE_ROLE_KEY'
+    'Missing SERVICE_ROLE_KEY (and no SUPABASE_SERVICE_ROLE_KEY fallback was available either)'
   );
 }
 
