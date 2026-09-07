@@ -24,6 +24,8 @@ import {
 } from '@/lib/countries';
 
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 
 function SearchableDropdown({
@@ -33,6 +35,15 @@ function SearchableDropdown({
   placeholder,
 }) {
   const [open, setOpen] =
+    useState(false);
+
+  const [newPassword, setNewPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [changingPassword, setChangingPassword] =
     useState(false);
 
   const [search, setSearch] =
@@ -236,6 +247,15 @@ function CountryDropdown({
   onChange,
 }) {
   const [open, setOpen] =
+    useState(false);
+
+  const [newPassword, setNewPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [changingPassword, setChangingPassword] =
     useState(false);
 
   const [search, setSearch] =
@@ -448,6 +468,15 @@ export default function AppSettingsModal() {
   const [open, setOpen] =
     useState(false);
 
+  const [newPassword, setNewPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [changingPassword, setChangingPassword] =
+    useState(false);
+
 
   const [local, setLocal] =
     useState(
@@ -470,6 +499,9 @@ export default function AppSettingsModal() {
     setLocal(
       settings
     );
+
+    setNewPassword('');
+    setConfirmPassword('');
 
     setOpen(
       false
@@ -499,6 +531,37 @@ export default function AppSettingsModal() {
           defaults.unit,
       })
     );
+  };
+
+
+  const changePassword = async () => {
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setChangingPassword(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      toast.success('Password updated successfully.');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      toast.error(error?.message || 'Unable to update password.');
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
 
@@ -843,7 +906,67 @@ export default function AppSettingsModal() {
                 </div>
 
 
-                {/* Units */}
+                {/* Password */}
+
+                <div>
+
+                  <p className="
+                    text-xs
+                    font-bold
+                    uppercase
+                    tracking-wider
+                    text-muted-foreground
+                    mb-2
+                  >
+                    Password
+                  </p>
+
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      placeholder="New password"
+                      value={newPassword}
+                      onChange={(event) =>
+                        setNewPassword(event.target.value)
+                      }
+                      minLength={6}
+                      disabled={changingPassword}
+                      className="w-full h-11 px-3 rounded-xl border border-border bg-muted/50 text-sm outline-none focus:border-primary/40"
+                    />
+
+                    <input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                      minLength={6}
+                      disabled={changingPassword}
+                      className="w-full h-11 px-3 rounded-xl border border-border bg-muted/50 text-sm outline-none focus:border-primary/40"
+                    />
+
+                    <Button
+                      type="button"
+                      onClick={changePassword}
+                      disabled={
+                        changingPassword ||
+                        !newPassword ||
+                        !confirmPassword
+                      }
+                      variant="outline"
+                      className="w-full h-11"
+                    >
+                      {changingPassword
+                        ? 'Updating…'
+                        : 'Change Password'}
+                    </Button>
+                  </div>
+
+                </div>
+
+
+                {marker}
 
                 <div>
 
