@@ -23,6 +23,8 @@ import Onboarding from '@/pages/Onboarding';
 import About from '@/pages/About';
 import Contact from '@/pages/Contact';
 import Login from '@/pages/Login';
+import ResetPassword from '@/pages/ResetPassword';
+import ResetPassword from '@/pages/ResetPassword';
 
 const Program = lazy(() => import('@/pages/Program'));
 const Nutrition = lazy(() => import('@/pages/Nutrition'));
@@ -53,7 +55,7 @@ function AuthenticatedApp() {
     return <PageLoader />;
   }
 
-  if (!isAuthenticated && location.pathname !== '/login') {
+  if (!isAuthenticated && !['/login', '/reset-password'].includes(location.pathname)) {
     return <Navigate to="/login" replace />;
   }
 
@@ -68,6 +70,8 @@ function AuthenticatedApp() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route path="/onboarding" element={<Onboarding />} />
 
