@@ -9,6 +9,7 @@ import {
   Globe,
   Languages,
   Ruler,
+  LockKeyhole,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -35,15 +36,6 @@ function SearchableDropdown({
   placeholder,
 }) {
   const [open, setOpen] =
-    useState(false);
-
-  const [newPassword, setNewPassword] =
-    useState('');
-
-  const [confirmPassword, setConfirmPassword] =
-    useState('');
-
-  const [changingPassword, setChangingPassword] =
     useState(false);
 
   const [search, setSearch] =
@@ -247,15 +239,6 @@ function CountryDropdown({
   onChange,
 }) {
   const [open, setOpen] =
-    useState(false);
-
-  const [newPassword, setNewPassword] =
-    useState('');
-
-  const [confirmPassword, setConfirmPassword] =
-    useState('');
-
-  const [changingPassword, setChangingPassword] =
     useState(false);
 
   const [search, setSearch] =
@@ -468,26 +451,23 @@ export default function AppSettingsModal() {
   const [open, setOpen] =
     useState(false);
 
-  const [newPassword, setNewPassword] =
-    useState('');
-
-  const [confirmPassword, setConfirmPassword] =
-    useState('');
-
-  const [changingPassword, setChangingPassword] =
-    useState(false);
-
 
   const [local, setLocal] =
     useState(
       settings
     );
 
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
 
   const openModal = () => {
     setLocal(
       settings
     );
+    setNewPassword('');
+    setConfirmPassword('');
 
     setOpen(
       true
@@ -499,7 +479,6 @@ export default function AppSettingsModal() {
     setLocal(
       settings
     );
-
     setNewPassword('');
     setConfirmPassword('');
 
@@ -534,6 +513,19 @@ export default function AppSettingsModal() {
   };
 
 
+  const save = () => {
+    updateSettings(
+      {
+        ...local,
+      }
+    );
+
+    setOpen(
+      false
+    );
+  };
+
+
   const changePassword = async () => {
     if (newPassword.length < 6) {
       toast.error('Password must be at least 6 characters.');
@@ -554,27 +546,14 @@ export default function AppSettingsModal() {
 
       if (error) throw error;
 
-      toast.success('Password updated successfully.');
       setNewPassword('');
       setConfirmPassword('');
+      toast.success('Password changed successfully.');
     } catch (error) {
-      toast.error(error?.message || 'Unable to update password.');
+      toast.error(error?.message || 'Unable to change your password.');
     } finally {
       setChangingPassword(false);
     }
-  };
-
-
-  const save = () => {
-    updateSettings(
-      {
-        ...local,
-      }
-    );
-
-    setOpen(
-      false
-    );
   };
 
 
@@ -906,67 +885,7 @@ export default function AppSettingsModal() {
                 </div>
 
 
-                {/* Password */}
-
-                <div>
-
-                  <p className="
-                    text-xs
-                    font-bold
-                    uppercase
-                    tracking-wider
-                    text-muted-foreground
-                    mb-2
-                  >
-                    Password
-                  </p>
-
-                  <div className="space-y-2">
-                    <input
-                      type="password"
-                      placeholder="New password"
-                      value={newPassword}
-                      onChange={(event) =>
-                        setNewPassword(event.target.value)
-                      }
-                      minLength={6}
-                      disabled={changingPassword}
-                      className="w-full h-11 px-3 rounded-xl border border-border bg-muted/50 text-sm outline-none focus:border-primary/40"
-                    />
-
-                    <input
-                      type="password"
-                      placeholder="Confirm new password"
-                      value={confirmPassword}
-                      onChange={(event) =>
-                        setConfirmPassword(event.target.value)
-                      }
-                      minLength={6}
-                      disabled={changingPassword}
-                      className="w-full h-11 px-3 rounded-xl border border-border bg-muted/50 text-sm outline-none focus:border-primary/40"
-                    />
-
-                    <Button
-                      type="button"
-                      onClick={changePassword}
-                      disabled={
-                        changingPassword ||
-                        !newPassword ||
-                        !confirmPassword
-                      }
-                      variant="outline"
-                      className="w-full h-11"
-                    >
-                      {changingPassword
-                        ? 'Updating…'
-                        : 'Change Password'}
-                    </Button>
-                  </div>
-
-                </div>
-
-
-                {marker}
+                {/* Units */}
 
                 <div>
 
@@ -1063,6 +982,89 @@ export default function AppSettingsModal() {
 
                       )
                     )}
+
+                  </div>
+
+                </div>
+
+
+                {/* Change Password */}
+
+                <div>
+
+                  <p className="
+                    text-xs
+                    font-bold
+                    uppercase
+                    tracking-wider
+                    text-muted-foreground
+                    mb-2
+                    flex
+                    items-center
+                    gap-1.5
+                  ">
+
+                    <LockKeyhole className="w-3 h-3" />
+
+                    Change Password
+
+                  </p>
+
+                  <div className="space-y-2">
+
+                    <input
+                      type="password"
+                      placeholder="New password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      minLength={6}
+                      autoComplete="new-password"
+                      disabled={changingPassword}
+                      className="
+                        w-full
+                        h-11
+                        px-3
+                        rounded-xl
+                        border
+                        border-border
+                        bg-muted/50
+                        text-sm
+                        outline-none
+                        focus:border-primary
+                      "
+                    />
+
+                    <input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      minLength={6}
+                      autoComplete="new-password"
+                      disabled={changingPassword}
+                      className="
+                        w-full
+                        h-11
+                        px-3
+                        rounded-xl
+                        border
+                        border-border
+                        bg-muted/50
+                        text-sm
+                        outline-none
+                        focus:border-primary
+                      "
+                    />
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={changePassword}
+                      disabled={changingPassword || !newPassword || !confirmPassword}
+                      className="w-full h-11 font-semibold"
+                    >
+                      {changingPassword ? 'Changing Password…' : 'Change Password'}
+                    </Button>
 
                   </div>
 
