@@ -24,7 +24,6 @@ import About from '@/pages/About';
 import Contact from '@/pages/Contact';
 import Login from '@/pages/Login';
 import ResetPassword from '@/pages/ResetPassword';
-import ResetPassword from '@/pages/ResetPassword';
 
 const Program = lazy(() => import('@/pages/Program'));
 const Nutrition = lazy(() => import('@/pages/Nutrition'));
