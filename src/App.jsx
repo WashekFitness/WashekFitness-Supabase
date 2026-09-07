@@ -54,7 +54,10 @@ function AuthenticatedApp() {
     return <PageLoader />;
   }
 
-  if (!isAuthenticated && !['/login', '/reset-password'].includes(location.pathname)) {
+  if (
+    !isAuthenticated &&
+    !['/login', '/reset-password'].includes(location.pathname)
+  ) {
     return <Navigate to="/login" replace />;
   }
 
@@ -69,8 +72,11 @@ function AuthenticatedApp() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+
+          <Route
+            path="/reset-password"
+            element={<ResetPassword />}
+          />
 
           <Route path="/onboarding" element={<Onboarding />} />
 
@@ -91,24 +97,45 @@ function AuthenticatedApp() {
               element={<ProgramDay />}
             />
 
-            <Route path="/nutrition" element={<Nutrition />} />
+            <Route
+              path="/nutrition"
+              element={<Nutrition />}
+            />
 
-            <Route path="/progress" element={<Progress />} />
+            <Route
+              path="/progress"
+              element={<Progress />}
+            />
 
-            <Route path="/profile" element={<Profile />} />
+            <Route
+              path="/profile"
+              element={<Profile />}
+            />
 
             <Route path="/kael" element={<Kael />} />
 
-            <Route path="/photos" element={<ProgressPhotos />} />
+            <Route
+              path="/photos"
+              element={<ProgressPhotos />}
+            />
 
-            <Route path="/formlab" element={<FormLab />} />
+            <Route
+              path="/formlab"
+              element={<FormLab />}
+            />
 
             <Route path="/about" element={<About />} />
 
-            <Route path="/contact" element={<Contact />} />
+            <Route
+              path="/contact"
+              element={<Contact />}
+            />
           </Route>
 
-          <Route path="*" element={<PageNotFound />} />
+          <Route
+            path="*"
+            element={<PageNotFound />}
+          />
         </Routes>
       </Suspense>
     </>
