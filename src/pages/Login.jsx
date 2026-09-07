@@ -9,40 +9,14 @@ export default function Login() {
   const navigate = useNavigate();
 
   const [mode, setMode] = useState('login');
+  const [forgotPassword, setForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [forgotPassword, setForgotPassword] = useState(false);
 
-  const resetPassword = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      );
-
-      if (error) throw error;
-
-      toast.success(
-        'If an account exists for that email, a password reset email has been sent.'
-      );
-    } catch (error) {
-      toast.error(
-        error?.message || 'Unable to send password reset email.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async (event) => {
+    event.preventDefault();
     setLoading(true);
 
     try {
@@ -84,6 +58,44 @@ export default function Login() {
     }
   };
 
+  const sendResetEmail = async (event) => {
+    event.preventDefault();
+
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      toast.error(
+        'Enter the email you used to create your account.'
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { error } =
+        await supabase.auth.resetPasswordForEmail(
+          trimmedEmail,
+          {
+            redirectTo: `${window.location.origin}/reset-password`,
+          }
+        );
+
+      if (error) throw error;
+
+      toast.success(
+        'If an account exists for that email, a password reset link has been sent.'
+      );
+    } catch (error) {
+      toast.error(
+        error?.message ||
+          'Unable to send the reset email.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (forgotPassword) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-6">
@@ -100,19 +112,24 @@ export default function Login() {
             </h1>
 
             <p className="text-muted-foreground mt-2">
-              Enter the email you used to create your account.
+              Enter the email you used to sign up and we’ll
+              send you a secure reset link.
             </p>
           </div>
 
           <form
-            onSubmit={resetPassword}
+            onSubmit={sendResetEmail}
             className="space-y-4 bg-card border border-border rounded-3xl p-6"
           >
             <Input
               type="email"
               placeholder="Email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
+              autoComplete="email"
+              disabled={loading}
               required
             />
 
@@ -121,15 +138,20 @@ export default function Login() {
               className="w-full h-12"
               disabled={loading}
             >
-              {loading ? 'Please wait…' : 'Send Reset Email'}
+              {loading
+                ? 'Sending…'
+                : 'Send Reset Email'}
             </Button>
 
             <button
               type="button"
               className="w-full text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setForgotPassword(false)}
+              onClick={() =>
+                setForgotPassword(false)
+              }
+              disabled={loading}
             >
-              Back to Sign In
+              Back to sign in
             </button>
           </form>
         </div>
@@ -140,7 +162,6 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-md">
-        {/* Brand */}
         <div className="text-center mb-8">
           <img
             src="/washek-fitness-logo.jpg"
@@ -165,9 +186,11 @@ export default function Login() {
             <Input
               placeholder="First name"
               value={firstName}
-              onChange={(e) =>
-                setFirstName(e.target.value)
+              onChange={(event) =>
+                setFirstName(event.target.value)
               }
+              autoComplete="given-name"
+              disabled={loading}
               required
             />
           )}
@@ -176,9 +199,11 @@ export default function Login() {
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(e) =>
-              setEmail(e.target.value)
+            onChange={(event) =>
+              setEmail(event.target.value)
             }
+            autoComplete="email"
+            disabled={loading}
             required
           />
 
@@ -186,10 +211,16 @@ export default function Login() {
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) =>
-              setPassword(e.target.value)
+            onChange={(event) =>
+              setPassword(event.target.value)
             }
             minLength={6}
+            autoComplete={
+              mode === 'login'
+                ? 'current-password'
+                : 'new-password'
+            }
+            disabled={loading}
             required
           />
 
@@ -209,7 +240,10 @@ export default function Login() {
             <button
               type="button"
               className="w-full text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setForgotPassword(true)}
+              onClick={() =>
+                setForgotPassword(true)
+              }
+              disabled={loading}
             >
               Forgot password?
             </button>
@@ -225,6 +259,7 @@ export default function Login() {
                   : 'login'
               )
             }
+            disabled={loading}
           >
             {mode === 'login'
               ? 'Need an account? Create one'
